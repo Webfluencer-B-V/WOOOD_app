@@ -1,80 +1,66 @@
 # API Reference
 
-> Complete API endpoint documentation for the WOOOD Delivery Date Picker system.
+> Complete API endpoint documentation for the WOOOD Delivery Date Picker extension system.
 
 ## Base URLs
 
-- **Production**: `https://woood-delivery-api.workers.dev`
-- **Development**: `https://woood-delivery-api-dev.workers.dev`
-- **Local**: `https://localhost:8787`
+- **Production**: `https://woood-production.leander-4e0.workers.dev`
+- **Development**: `https://woood-staging.leander-4e0.workers.dev`
+- **Local**: `http://localhost:8787`
 
 ## Authentication
 
-All API endpoints (except `/health`) require authentication. See [Authentication Guide](authentication.md) for detailed information.
+Extension endpoints use simple token-based authentication. Webhook endpoints use HMAC signature validation.
 
-### Authentication Headers
+### Extension API Authentication
 
 ```http
-Authorization: Bearer <session_token>
+Authorization: Bearer <shop_token>
 X-Shopify-Shop-Domain: your-shop.myshopify.com
-X-Request-ID: <uuid>
 Content-Type: application/json
 ```
 
-## 📅 Delivery Dates API
+### Webhook Authentication
+
+```http
+X-Shopify-Hmac-Sha256: <webhook_signature>
+X-Shopify-Topic: <webhook_topic>
+X-Shopify-Shop-Domain: your-shop.myshopify.com
+Content-Type: application/json
+```
+
+## 📅 Extension API Endpoints
 
 ### Get Available Delivery Dates
 
-Retrieve available delivery dates based on postal code and products.
+Retrieve available delivery dates for checkout extension.
 
 ```http
-POST /api/delivery-dates/available
+GET /api/delivery-dates/available?postal_code=1234AB&country=NL
 ```
 
-**Request Headers:**
-```http
-Content-Type: application/json
-X-Shopify-Shop-Domain: your-shop.myshopify.com
-Authorization: Bearer <session_token>
-```
-
-**Request Body:**
-```json
-{
-  "postal_code": "1234AB",
-  "country": "NL",
-  "product_ids": [123456, 789012],
-  "quantity": 2
-}
-```
+**Query Parameters:**
+- `postal_code` (required): Dutch postal code
+- `country` (optional): Country code, defaults to "NL"
 
 **Response:**
 ```json
 {
   "success": true,
-  "data": {
-    "available_dates": [
-      {
-        "date": "2024-07-15",
-        "day_name": "Monday",
-        "available": true,
-        "time_slots": [
-          {
-            "start_time": "09:00",
-            "end_time": "17:00",
-            "available": true,
-            "price_adjustment": 0.00
-          }
-        ]
-      }
-    ],
-    "earliest_date": "2024-07-15",
-    "latest_date": "2024-08-15",
-    "postal_code": "1234AB",
-    "delivery_area": "Amsterdam"
-  },
-  "cache_duration": 300,
-  "request_id": "req_123456789"
+  "dates": [
+    {
+      "date": "2025-01-15",
+      "available": true,
+      "displayName": "Woensdag 15 januari"
+    },
+    {
+      "date": "2025-01-16", 
+      "available": true,
+      "displayName": "Donderdag 16 januari"
+    }
+  ],
+  "cached": true,
+  "postal_code": "1234AB"
 }
 ```
 
@@ -82,17 +68,14 @@ Authorization: Bearer <session_token>
 ```json
 {
   "success": false,
-  "error": "Invalid postal code format",
-  "error_code": "INVALID_POSTAL_CODE",
-  "request_id": "req_123456789"
+  "error": "Valid postal code required",
+  "error_code": "INVALID_POSTAL_CODE"
 }
 ```
 
-## 🚚 Shipping Methods API
-
 ### Get Product Shipping Methods
 
-Retrieve available shipping methods for specific products.
+Retrieve shipping methods based on product metafields.
 
 ```http
 POST /api/products/shipping-methods
@@ -102,55 +85,6 @@ POST /api/products/shipping-methods
 ```json
 {
   "product_id": 123456,
-  "postal_code": "1234AB",
-  "quantity": 1
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "shipping_methods": [
-      {
-        "id": "standard_delivery",
-        "name": "Standard Delivery",
-        "description": "Delivered within 2-5 business days",
-        "price": 9.95,
-        "currency": "EUR",
-        "delivery_time": "2-5 days",
-        "available": true
-      },
-      {
-        "id": "express_delivery",
-        "name": "Express Delivery",
-        "description": "Next day delivery",
-        "price": 19.95,
-        "currency": "EUR",
-        "delivery_time": "1 day",
-        "available": true
-      }
-    ],
-    "product_id": 123456,
-    "postal_code": "1234AB"
-  },
-  "request_id": "req_123456789"
-}
-```
-
-### Get ERP Delivery Times
-
-Retrieve delivery time information from ERP system.
-
-```http
-POST /api/products/erp-delivery-times
-```
-
-**Request Body:**
-```json
-{
-  "product_ids": [123456, 789012],
   "shop_domain": "your-shop.myshopify.com"
 }
 ```
@@ -159,146 +93,24 @@ POST /api/products/erp-delivery-times
 ```json
 {
   "success": true,
-  "data": {
-    "delivery_times": [
-      {
-        "product_id": 123456,
-        "sku": "WOOOD-CHAIR-001",
-        "delivery_time_days": 14,
-        "in_stock": true,
-        "stock_level": 25,
-        "next_restock_date": "2024-07-20"
-      }
-    ]
-  },
-  "request_id": "req_123456789"
+  "shipping_methods": [
+    {
+      "id": "woood_standard",
+      "name": "WOOOD Standard Delivery",
+      "description": "Delivered within 2-5 business days",
+      "estimated_days": 3,
+      "priority": 1
+    }
+  ],
+  "product_id": 123456
 }
 ```
 
-## 📦 Order Processing API
-
-### Save Order Metafields
-
-Save delivery information as order metafields (used by webhooks).
-
-```http
-POST /api/order-metafields/save
-```
-
-**Request Body:**
-```json
-{
-  "order_id": 987654321,
-  "delivery_date": "2024-07-15",
-  "shipping_method": "standard_delivery",
-  "time_slot": "09:00-17:00",
-  "special_instructions": "Ring doorbell twice"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "metafields_created": [
-      {
-        "id": 123456789,
-        "key": "delivery_date",
-        "value": "2024-07-15",
-        "namespace": "woood_delivery"
-      },
-      {
-        "id": 123456790,
-        "key": "shipping_method",
-        "value": "standard_delivery",
-        "namespace": "woood_delivery"
-      }
-    ],
-    "order_id": 987654321
-  },
-  "request_id": "req_123456789"
-}
-```
-
-## 🔔 Webhooks API
-
-### Register Webhooks
-
-Register required webhooks with Shopify (admin only).
-
-```http
-POST /api/webhooks/register
-```
-
-**Request Headers:**
-```http
-Authorization: Bearer <admin_session_token>
-X-Shopify-Shop-Domain: your-shop.myshopify.com
-```
-
-**Request Body:**
-```json
-{
-  "topics": ["orders/paid", "orders/updated"],
-  "endpoint_base": "https://woood-delivery-api.workers.dev"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "webhooks_registered": [
-      {
-        "id": 123456789,
-        "topic": "orders/paid",
-        "endpoint": "https://woood-delivery-api.workers.dev/api/webhooks/orders/paid",
-        "status": "active"
-      }
-    ],
-    "total_registered": 1
-  },
-  "request_id": "req_123456789"
-}
-```
-
-### Webhook Status
-
-Check webhook registration status (admin only).
-
-```http
-GET /api/webhooks/status?shop=your-shop.myshopify.com
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "webhooks": [
-      {
-        "id": 123456789,
-        "topic": "orders/paid",
-        "endpoint": "https://woood-delivery-api.workers.dev/api/webhooks/orders/paid",
-        "status": "active",
-        "created_at": "2024-06-29T10:00:00Z",
-        "last_triggered": "2024-06-29T12:30:00Z"
-      }
-    ],
-    "total_webhooks": 1,
-    "health_status": "healthy"
-  },
-  "request_id": "req_123456789"
-}
-```
-
-## 🔄 Webhook Endpoints
+## 🔔 Webhook Endpoints
 
 ### Order Paid Webhook
 
-Processes orders after payment (Shopify webhook).
+Processes orders after payment to create metafields from note_attributes.
 
 ```http
 POST /api/webhooks/orders/paid
@@ -312,175 +124,120 @@ X-Shopify-Shop-Domain: your-shop.myshopify.com
 Content-Type: application/json
 ```
 
-**Request Body:**
-Shopify order payload (automatically sent by Shopify).
-
-**Response:**
+**Request Body (Shopify Order):**
 ```json
 {
-  "success": true,
-  "data": {
-    "order_id": 987654321,
-    "processed": true,
-    "metafields_created": 3,
-    "delivery_date_processed": true
-  },
-  "request_id": "req_123456789"
-}
-```
-
-### Order Updated Webhook
-
-Processes order updates (Shopify webhook).
-
-```http
-POST /api/webhooks/orders/updated
-```
-
-**Request Headers:**
-```http
-X-Shopify-Hmac-Sha256: <webhook_signature>
-X-Shopify-Topic: orders/updated
-X-Shopify-Shop-Domain: your-shop.myshopify.com
-Content-Type: application/json
-```
-
-## 🏢 Admin API
-
-### Feature Flags
-
-#### Get Feature Flags
-
-```http
-GET /api/admin/feature-flags
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "feature_flags": {
-      "enable_delivery_date_picker": true,
-      "enable_time_slot_selection": true,
-      "enable_dutchned_api": true,
-      "enable_mock_fallback": false
+  "id": 987654321,
+  "name": "#1001",
+  "email": "customer@example.com",
+  "note_attributes": [
+    {
+      "name": "delivery_date",
+      "value": "2025-01-15"
     },
-    "shop_domain": "your-shop.myshopify.com"
-  },
-  "request_id": "req_123456789"
+    {
+      "name": "shipping_method", 
+      "value": "woood_standard"
+    }
+  ]
 }
-```
-
-#### Update Feature Flag
-
-```http
-POST /api/admin/feature-flags
-```
-
-**Request Body:**
-```json
-{
-  "flag": "enable_delivery_date_picker",
-  "value": true,
-  "reason": "Enable for testing"
-}
-```
-
-#### Bulk Update Feature Flags
-
-```http
-POST /api/admin/feature-flags/bulk
-```
-
-**Request Body:**
-```json
-{
-  "flags": {
-    "enable_delivery_date_picker": true,
-    "enable_time_slot_selection": false,
-    "enable_mock_fallback": true
-  },
-  "reason": "Configuration update for testing"
-}
-```
-
-### System Health
-
-#### Get System Health
-
-```http
-GET /api/admin/system-health
 ```
 
 **Response:**
 ```json
 {
   "success": true,
-  "data": {
-    "overall_status": "healthy",
-    "services": {
-      "dutchned_api": {
-        "status": "healthy",
-        "response_time": 45,
-        "last_check": "2024-06-29T12:00:00Z"
-      },
-      "shopify_api": {
-        "status": "healthy",
-        "response_time": 120,
-        "last_check": "2024-06-29T12:00:00Z"
-      },
-      "kv_storage": {
-        "status": "healthy",
-        "response_time": 5,
-        "last_check": "2024-06-29T12:00:00Z"
-      }
-    },
-    "performance_metrics": {
-      "avg_response_time": 89,
-      "request_count_24h": 15234,
-      "error_rate_24h": 0.02
-    }
-  },
-  "request_id": "req_123456789"
+  "metafieldsCreated": 2,
+  "processingTime": 1250,
+  "orderId": 987654321
 }
 ```
 
-#### Get Activity Log
+### Order Created Webhook
+
+Alternative processing for order creation events.
 
 ```http
-GET /api/admin/activity-log?limit=50&offset=0
+POST /api/webhooks/orders/created
+```
+
+**Headers and Body:** Same as Order Paid webhook
+
+**Response:**
+```json
+{
+  "success": true,
+  "metafieldsCreated": 2,
+  "processingTime": 890,
+  "orderId": 987654321
+}
+```
+
+### App Uninstalled Webhook
+
+Handles cleanup when app is uninstalled.
+
+```http
+POST /api/webhooks/app/uninstalled
+```
+
+**Request Body (Shopify App Uninstall):**
+```json
+{
+  "id": 123456,
+  "name": "WOOOD Delivery Date Picker",
+  "shop": {
+    "id": 789012,
+    "domain": "your-shop.myshopify.com"
+  }
+}
 ```
 
 **Response:**
 ```json
 {
   "success": true,
-  "data": {
-    "activities": [
-      {
-        "id": "activity_123456",
-        "timestamp": "2024-06-29T12:00:00Z",
-        "type": "api_request",
-        "endpoint": "/api/delivery-dates/available",
-        "shop_domain": "your-shop.myshopify.com",
-        "status": "success",
-        "response_time": 45,
-        "user_agent": "Shopify Mobile App"
-      }
-    ],
-    "total_count": 15234,
-    "pagination": {
-      "limit": 50,
-      "offset": 0,
-      "has_more": true
-    }
-  },
-  "request_id": "req_123456789"
+  "tokensRemoved": 1,
+  "cacheCleared": true,
+  "shop": "your-shop.myshopify.com"
 }
 ```
 
-## 🏥 Health & Monitoring
+## 🔐 OAuth Endpoints
+
+### Start OAuth Flow
+
+Initiate OAuth installation process.
+
+```http
+GET /auth/start?shop=your-shop.myshopify.com
+```
+
+**Response:**
+```http
+302 Redirect to Shopify OAuth URL
+Location: https://your-shop.myshopify.com/admin/oauth/authorize?...
+```
+
+### OAuth Callback
+
+Handle OAuth callback from Shopify.
+
+```http
+GET /auth/callback?code=<auth_code>&shop=your-shop.myshopify.com&state=<state>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "shop": "your-shop.myshopify.com",
+  "tokenStored": true,
+  "webhooksRegistered": ["orders/paid", "app/uninstalled"]
+}
+```
+
+## 🏥 System Endpoints
 
 ### Health Check
 
@@ -494,55 +251,177 @@ GET /health
 ```json
 {
   "status": "healthy",
-  "timestamp": "2024-06-29T12:00:00Z",
-  "version": "1.15.0",
+  "timestamp": "2025-01-03T12:00:00Z",
+  "version": "2.0.0",
   "environment": "production",
-  "features": {
-    "oauth_integration": true,
-    "dutchned_api": true,
-    "webhook_processing": true,
-    "shipping_method_processing": true,
-    "caching": true,
-    "logging": true
+  "services": {
+    "dutchned_api": "healthy",
+    "shopify_api": "healthy", 
+    "kv_storage": "healthy"
   },
-  "uptime": 1656504000000,
   "performance": {
-    "avg_response_time": 45,
-    "request_count": 15234,
-    "error_rate": 0.02
+    "response_time_ms": 45,
+    "cpu_usage_percent": 8,
+    "memory_usage_mb": 32
   }
 }
 ```
 
-## 📊 Rate Limits
+### Service Status
 
-- **Public APIs**: 100 requests/minute per IP
-- **Authenticated APIs**: 1000 requests/minute per shop
-- **Admin APIs**: 100 requests/minute per admin session
-- **Webhook APIs**: No limit (Shopify-signed only)
+Detailed service health information.
 
-## 🔒 Error Codes
+```http
+GET /status
+```
 
-| Code | Description | Resolution |
-|------|-------------|------------|
-| `AUTHENTICATION_REQUIRED` | Missing or invalid authentication | Include valid session token |
-| `INVALID_SHOP_DOMAIN` | Shop domain validation failed | Verify shop domain format |
-| `RATE_LIMIT_EXCEEDED` | Too many requests | Wait before retrying |
-| `INVALID_POSTAL_CODE` | Postal code format invalid | Use valid Dutch postal code (1234AB) |
-| `DUTCHNED_API_ERROR` | DutchNed API unavailable | Check service status |
-| `SHOPIFY_API_ERROR` | Shopify API error | Verify OAuth permissions |
-| `WEBHOOK_SIGNATURE_INVALID` | Invalid webhook signature | Check webhook secret |
-| `INTERNAL_SERVER_ERROR` | Unexpected server error | Check system status |
+**Response:**
+```json
+{
+  "success": true,
+  "services": {
+    "workers": {
+      "status": "operational",
+      "response_time": 25,
+      "uptime_percent": 99.99
+    },
+    "dutchned_api": {
+      "status": "operational", 
+      "response_time": 150,
+      "last_success": "2025-01-03T11:59:30Z"
+    },
+    "kv_storage": {
+      "status": "operational",
+      "response_time": 8,
+      "cache_hit_rate": 0.85
+    }
+  },
+  "metrics": {
+    "requests_24h": 15234,
+    "errors_24h": 12,
+    "error_rate": 0.0008
+  }
+}
+```
 
-## 📞 Support
+## 📊 Data Structures
 
-For API support:
+### DeliveryDate
 
-- **Authentication Issues**: See [Authentication Guide](authentication.md)
-- **Webhook Problems**: Check [Webhooks Guide](webhooks.md)
-- **Error Troubleshooting**: Review [Error Codes Guide](error-codes.md)
-- **Rate Limiting**: Contact support for increases
+```typescript
+interface DeliveryDate {
+  date: string;           // ISO date format: "2025-01-15"
+  available: boolean;     // Whether date is available
+  displayName: string;    // Localized display name: "Woensdag 15 januari"
+}
+```
+
+### ShippingMethod
+
+```typescript
+interface ShippingMethod {
+  id: string;            // Method identifier: "woood_standard"
+  name: string;          // Display name: "WOOOD Standard Delivery"
+  description: string;   // Method description
+  estimated_days: number;// Estimated delivery days
+  priority: number;      // Priority for selection (higher = preferred)
+}
+```
+
+### OrderMetafield
+
+```typescript
+interface OrderMetafield {
+  namespace: string;     // "woood_delivery"
+  key: string;          // "selected_date" | "shipping_method"
+  value: string;        // The metafield value
+  type: string;         // "date" | "single_line_text_field"
+}
+```
+
+### ProcessingResult
+
+```typescript
+interface ProcessingResult {
+  success: boolean;
+  metafieldsCreated: number;
+  processingTime: number;  // milliseconds
+  orderId?: number;
+  error?: string;
+}
+```
+
+## 🔄 Order Processing Flow
+
+1. **Checkout Extension**: Customer selects delivery date
+2. **Note Attributes**: Extension saves as `note_attributes` on order
+3. **Order Creation**: Shopify creates order with note_attributes
+4. **Webhook Trigger**: Shopify sends webhook to `/api/webhooks/orders/paid`
+5. **Processing**: Workers transforms note_attributes → metafields
+6. **Metafield Creation**: Structured delivery data stored as metafields
+7. **Fulfillment Ready**: Order ready with delivery information
+
+## ⚡ Performance Targets
+
+| Endpoint | Target Response Time | SLA |
+|----------|---------------------|-----|
+| GET /api/delivery-dates/available | <50ms | <100ms |
+| POST /api/products/shipping-methods | <100ms | <200ms |
+| POST /api/webhooks/orders/paid | <2000ms | <5000ms |
+| GET /health | <25ms | <50ms |
+
+## 🛡️ Security
+
+### Webhook Signature Validation
+
+All webhooks validate HMAC-SHA256 signatures using `APP_CLIENT_SECRET`:
+
+```typescript
+const signature = request.headers.get('X-Shopify-Hmac-Sha256');
+const body = await request.text();
+const expectedSignature = await createHmac('sha256', APP_CLIENT_SECRET, body);
+
+if (signature !== expectedSignature) {
+  return new Response('Unauthorized', { status: 401 });
+}
+```
+
+### Token Storage Security
+
+- OAuth tokens encrypted in Cloudflare KV
+- Automatic token expiration
+- Per-shop isolation
+- Secure token rotation on refresh
+
+## 🐛 Error Codes
+
+| Code | Description | HTTP Status |
+|------|------------|-------------|
+| `INVALID_POSTAL_CODE` | Invalid or missing postal code | 400 |
+| `EXTERNAL_API_ERROR` | DutchNed API unavailable | 503 |
+| `INVALID_SIGNATURE` | Invalid webhook signature | 401 |
+| `PROCESSING_FAILED` | Order processing failed | 500 |
+| `TOKEN_EXPIRED` | OAuth token expired | 401 |
+| `SHOP_NOT_FOUND` | Shop not registered | 404 |
+
+## 📝 Rate Limiting
+
+- **Extension APIs**: 1000 requests/minute per shop
+- **Webhook Processing**: 100 webhooks/minute per shop  
+- **Health Endpoints**: Unlimited
+
+Rate limits return HTTP 429 with retry headers:
+
+```http
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1641024000
+Retry-After: 60
+```
 
 ---
 
-**📝 Note**: All timestamps are in ISO 8601 UTC format. All monetary values are in EUR unless specified otherwise.
+**API Version**: 2.0 (Extension + Workers)
+**Last Updated**: January 2025
+**Status**: 🚀 Production Ready - Streamlined API

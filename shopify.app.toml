@@ -6,11 +6,6 @@ handle = "woood-2"
 application_url = "https://woood-production.leander-4e0.workers.dev/"
 embedded = true
 
-[build]
-automatically_update_urls_on_dev = true
-dev_store_url = "woood-shop.myshopify.com"
-include_config_on_deploy = true
-
 [webhooks]
 api_version = "2025-04"
 

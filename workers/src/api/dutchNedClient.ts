@@ -21,7 +21,7 @@ export async function fetchDeliveryDatesFromAPI(
   if (!apiUrl) {
     throw new Error('DUTCHNED_API_URL is not configured');
   }
-  
+
   if (!credentials) {
     throw new Error('DUTCHNED_API_CREDENTIALS is not configured');
   }
@@ -79,7 +79,7 @@ export async function fetchDeliveryDatesFromAPI(
         // If we can't read the error text, use the status
         errorText = `HTTP ${response.status}: ${response.statusText}`;
       }
-      
+
       if (logger) {
         logger.error('DutchNed API request failed with non-OK status', {
           requestId,
@@ -89,7 +89,7 @@ export async function fetchDeliveryDatesFromAPI(
           errorBody: errorText.substring(0, 1000) // Limit error body size for logging
         });
       }
-      
+
       throw new Error(`DutchNed API request failed with status: ${response.status} ${response.statusText}`);
     }
 
@@ -164,7 +164,7 @@ function formatApiResponse(apiData: any, logger?: any, requestId?: string): Deli
         data: typeof apiData === 'object' ? JSON.stringify(apiData).substring(0, 500) : apiData
       });
     }
-    
+
     // Try to extract array from object wrapper if it exists
     if (apiData && typeof apiData === 'object') {
       // Common API response patterns
@@ -181,7 +181,7 @@ function formatApiResponse(apiData: any, logger?: any, requestId?: string): Deli
         }
       }
     }
-    
+
     return dates;
   }
 
@@ -226,9 +226,9 @@ function formatApiResponse(apiData: any, logger?: any, requestId?: string): Deli
       }
     } else {
       if (logger) {
-        logger.warn('Invalid item found in API response (missing date)', { 
+        logger.warn('Invalid item found in API response (missing date)', {
           requestId,
-          item: JSON.stringify(item).substring(0, 200) 
+          item: JSON.stringify(item).substring(0, 200)
         });
       }
       invalidCount++;
@@ -263,11 +263,11 @@ function formatDateInDutch(date: Date): string {
     // Fallback formatting
     const weekdays = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
     const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
-    
+
     const weekday = weekdays[date.getDay()] || 'onbekend';
     const day = date.getDate();
     const month = months[date.getMonth()] || 'onbekend';
-    
+
     return `${weekday} ${day} ${month}`;
   }
 }
@@ -283,7 +283,7 @@ export async function testDutchNedAPIConnection(
   requestId?: string
 ): Promise<{ success: boolean; message: string; responseTime?: number }> {
   const startTime = Date.now();
-  
+
   try {
     // Quick test with shorter timeout
     const testConfig = {
@@ -293,9 +293,9 @@ export async function testDutchNedAPIConnection(
         timeout: 5000 // 5 second timeout for health check
       }
     };
-    
+
     await fetchDeliveryDatesFromAPI(env, testConfig, logger, requestId);
-    
+
     const responseTime = Date.now() - startTime;
     return {
       success: true,
@@ -310,4 +310,4 @@ export async function testDutchNedAPIConnection(
       responseTime
     };
   }
-} 
+}

@@ -109,3 +109,38 @@ head_sampling_rate = 0.01
 # [[env.development.analytics_engine_datasets]]
 # binding = "WORKER_ANALYTICS"
 # dataset = "woood_delivery_analytics_dev"
+
+[env.staging]
+name = "woood-staging"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+API_TIMEOUT = "10000"
+MAX_RETRIES = "3"
+CACHE_DURATION = "300000"
+CORS_ORIGINS = "https://shop.app,https://checkout.shopify.com,https://pay.shopify.com,https://extensions.shopifycdn.com,https://*.myshopify.com,https://*.shopify.com,https://*.shopifycdn.com"
+DUTCHNED_API_URL = "https://eekhoorn-connector.dutchned.com/api/delivery-dates/available"
+SHOPIFY_API_VERSION = "2025-04"
+SHOPIFY_APP_CLIENT_ID = "d22869905669a81f0678f4549458a4d7"
+SHOPIFY_APP_URL = "https://woood-staging.leander-4e0.workers.dev"
+ENABLE_DEBUG_LOGGING = "true"
+ENABLE_RATE_LIMITING = "true"
+ENABLE_CACHING = "true"
+ENABLE_MOCK_FALLBACK = "true"
+ENABLE_WEBHOOK_NOTIFICATIONS = "true"
+ENABLE_SHIPPING_METHOD_PROCESSING = "true"
+ENABLE_REQUEST_LOGGING = "true"
+
+[[env.staging.kv_namespaces]]
+binding = "DELIVERY_CACHE"
+id = "8423effbd4e34e3bb4b84e383b1eb094"
+preview_id = "a119d3d1b509421a844d6e96fe1a8356"
+
+[[env.staging.kv_namespaces]]
+binding = "WOOOD_KV"
+id = "8423effbd4e34e3bb4b84e383b1eb094"
+preview_id = "a119d3d1b509421a844d6e96fe1a8356"
+
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 0.1
