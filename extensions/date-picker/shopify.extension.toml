@@ -17,8 +17,8 @@ description = "Delivery date picker for Netherlands customers with DutchNed API 
 # https://shopify.dev/docs/api/checkout-ui-extensions/unstable/extension-targets-overview
 
 [[extensions.targeting]]
-module = "./src/index.tsx"
 target = "purchase.checkout.shipping-option-list.render-after"
+module = "./src/index.tsx"
 
 [extensions.capabilities]
 # Gives your extension access to directly query Shopify's storefront API.
@@ -38,20 +38,32 @@ network_access = true
 namespace = "erp"
 key = "levertijd"
 
+[[extensions.metafields]]
+namespace = "custom"
+key = "ShippingMethod2"
+
+
 # Defines settings that will be collected from merchants installing
 # your extension. Learn more:
 # https://shopify.dev/docs/api/checkout-ui-extensions/unstable/configuration#settings-definition
 
 [extensions.settings]
 [[extensions.settings.fields]]
+key = "hide_date_picker"
+type = "boolean"
+name = "Hide Date Picker"
+default = false
+description = "Completely hide the delivery date picker from checkout"
+
+[[extensions.settings.fields]]
 key = "enable_mock_mode"
 type = "boolean"
-name = "Enable Mock Mode"
+name = "Enable Mock Dates"
 description = "Enable mock delivery dates for testing (fallback when API is unavailable)"
 
 [[extensions.settings.fields]]
 key = "enable_week_number_filtering"
 type = "boolean"
 name = "Enable Week Number Filtering"
-description = "Filter delivery dates based on product metafield 'erp.levertijd' week numbers"
 default = true
+description = "Enable filtering of delivery dates based on product ERP delivery times"

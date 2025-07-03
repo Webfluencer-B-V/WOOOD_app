@@ -35,7 +35,7 @@ graph TB
     SF --> RT
     RT --> EH
     RT --> WH
-    
+
     EH --> DS
     WH --> OPS
     RT --> TS
@@ -95,7 +95,7 @@ export function DeliveryDatePicker({
   onDateSelect
 }: DeliveryDatePickerProps) {
   const { data: deliveryDates, isLoading } = useDeliveryDates(postalCode, country);
-  
+
   return (
     <BlockStack spacing="base">
       {deliveryDates?.map(date => (
@@ -174,7 +174,7 @@ const router = Router();
 router.get('/api/delivery-dates/available', authMiddleware, handleDeliveryDates);
 router.post('/api/products/shipping-methods', authMiddleware, handleShippingMethods);
 
-// Webhook endpoints  
+// Webhook endpoints
 router.post('/api/webhooks/orders/paid', webhookAuthMiddleware, handleOrderPaid);
 router.post('/api/webhooks/orders/created', webhookAuthMiddleware, handleOrderCreated);
 
@@ -240,7 +240,7 @@ export async function handleOrderPaid(request: Request, env: Env): Promise<Respo
 
   // Parse order data
   const orderData = await request.json() as ShopifyOrder;
-  
+
   // Process note_attributes → metafields
   const processingService = new OrderProcessingService();
   const result = await processingService.processOrder(orderData, env);
@@ -279,7 +279,7 @@ class DeliveryDatesService {
     // Check cache first
     const cacheKey = `delivery:${postalCode}:${country}`;
     const cached = await env.WOOOD_KV.get(cacheKey, 'json');
-    
+
     if (cached) {
       return cached as DeliveryDate[];
     }
@@ -289,8 +289,8 @@ class DeliveryDatesService {
     const dates = await dutchNedClient.getDeliveryDates(postalCode, country);
 
     // Cache for 30 minutes
-    await env.WOOOD_KV.put(cacheKey, JSON.stringify(dates), { 
-      expirationTtl: 1800 
+    await env.WOOOD_KV.put(cacheKey, JSON.stringify(dates), {
+      expirationTtl: 1800
     });
 
     return dates;
@@ -322,10 +322,10 @@ class OrderProcessingService {
     try {
       // Extract note_attributes
       const noteAttributes = orderData.note_attributes || [];
-      
+
       // Transform to metafields
       const metafields = this.transformNoteAttributesToMetafields(noteAttributes);
-      
+
       if (metafields.length === 0) {
         return { success: true, metafieldsCreated: 0, processingTime: Date.now() - startTime };
       }
@@ -438,20 +438,20 @@ class SimpleTokenService {
 ```typescript
 // Token storage with automatic expiration
 const tokenKey = `shop_token:${shop}`;
-await env.WOOOD_KV.put(tokenKey, JSON.stringify(tokenData), { 
-  expirationTtl: 86400 
+await env.WOOOD_KV.put(tokenKey, JSON.stringify(tokenData), {
+  expirationTtl: 86400
 });
 
 // Delivery date cache with short TTL
 const deliveryKey = `delivery:${postalCode}:${date}`;
-await env.WOOOD_KV.put(deliveryKey, JSON.stringify(dates), { 
-  expirationTtl: 1800 
+await env.WOOOD_KV.put(deliveryKey, JSON.stringify(dates), {
+  expirationTtl: 1800
 });
 
 // Processing status tracking
 const statusKey = `order_processing:${orderId}`;
-await env.WOOOD_KV.put(statusKey, JSON.stringify(status), { 
-  expirationTtl: 3600 
+await env.WOOOD_KV.put(statusKey, JSON.stringify(status), {
+  expirationTtl: 3600
 });
 ```
 

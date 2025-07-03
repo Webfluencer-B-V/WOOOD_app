@@ -57,7 +57,7 @@ api_version = "2023-10"
 
 [[extensions]]
 type = "ui_extension"
-name = "woood-delivery-date-picker"
+name = "woood-app"
 handle = "woood-date-picker"
 
 [extensions.metafields]

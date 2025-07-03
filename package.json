@@ -1,5 +1,5 @@
 {
-  "name": "woood-delivery-date-picker",
+  "name": "woood-app",
   "version": "2.0.0",
   "description": "WOOOD Delivery Date Picker - Modern Shopify Checkout Extension with React Query, itty-router, and webhook-based architecture powered by Cloudflare Workers for global performance",
   "private": true,

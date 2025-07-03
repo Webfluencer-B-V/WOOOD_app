@@ -1,40 +1,43 @@
 {
-    "name": "woood-delivery-api-workers",
-    "version": "1.0.0",
-    "description": "Cloudflare Workers API for WOOOD delivery date picker",
+    "name": "@woood/delivery-date-picker-workers",
+    "version": "2.0.0",
+    "description": "Cloudflare Workers API for WOOOD Delivery Date Picker - Simplified Extension Architecture",
     "main": "src/index.ts",
     "scripts": {
-        "dev": "wrangler dev",
         "deploy": "wrangler deploy",
         "deploy:staging": "wrangler deploy --env staging",
         "deploy:production": "wrangler deploy --env production",
-        "build": "wrangler build",
+        "dev": "wrangler dev",
+        "dev:staging": "wrangler dev --env staging",
+        "dev:production": "wrangler dev --env production",
         "tail": "wrangler tail",
+        "tail:staging": "wrangler tail --env staging",
+        "tail:production": "wrangler tail --env production",
+        "lint": "eslint src --ext .ts",
         "type-check": "tsc --noEmit",
-        "test": "echo \"Error: no tests specified\" && exit 1"
-    },
-    "dependencies": {
-        "@shopify/shopify-api": "^11.0.0",
-        "itty-router": "^5.0.17"
+        "preview": "wrangler dev --local",
+        "cf-typegen": "wrangler types"
     },
     "devDependencies": {
-        "@cloudflare/workers-types": "^4.20240112.0",
-        "wrangler": "^3.22.0",
-        "typescript": "^5.0.0"
+        "@cloudflare/workers-types": "^4.20241205.0",
+        "@types/node": "^20.10.6",
+        "@typescript-eslint/eslint-plugin": "^6.21.0",
+        "@typescript-eslint/parser": "^6.21.0",
+        "eslint": "^8.56.0",
+        "typescript": "^5.3.3",
+        "wrangler": "^3.84.0"
     },
+    "dependencies": {},
+    "keywords": [
+        "shopify",
+        "cloudflare-workers",
+        "delivery-dates",
+        "checkout-extension",
+        "api"
+    ],
+    "author": "WOOOD",
+    "license": "MIT",
     "engines": {
         "node": ">=18.0.0"
-    },
-    "keywords": [
-        "cloudflare",
-        "workers",
-        "api",
-        "delivery",
-        "shopify",
-        "woood",
-        "oauth",
-        "session-management"
-    ],
-    "author": "WOOOD Development Team",
-    "license": "UNLICENSED"
+    }
 }

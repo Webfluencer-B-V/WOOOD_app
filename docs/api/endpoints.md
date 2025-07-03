@@ -48,17 +48,17 @@ GET /api/delivery-dates/available?postal_code=1234AB&country=NL
 {
   "success": true,
   "dates": [
-    {
+      {
       "date": "2025-01-15",
-      "available": true,
+        "available": true,
       "displayName": "Woensdag 15 januari"
     },
-    {
+          {
       "date": "2025-01-16", 
-      "available": true,
+            "available": true,
       "displayName": "Donderdag 16 januari"
-    }
-  ],
+      }
+    ],
   "cached": true,
   "postal_code": "1234AB"
 }
@@ -94,14 +94,14 @@ POST /api/products/shipping-methods
 {
   "success": true,
   "shipping_methods": [
-    {
+      {
       "id": "woood_standard",
       "name": "WOOOD Standard Delivery",
       "description": "Delivered within 2-5 business days",
       "estimated_days": 3,
       "priority": 1
-    }
-  ],
+      }
+    ],
   "product_id": 123456
 }
 ```
@@ -189,7 +189,7 @@ POST /api/webhooks/app/uninstalled
   "shop": {
     "id": 789012,
     "domain": "your-shop.myshopify.com"
-  }
+}
 }
 ```
 

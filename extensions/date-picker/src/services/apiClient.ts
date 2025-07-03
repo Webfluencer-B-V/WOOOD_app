@@ -19,22 +19,11 @@ export interface FetchConfig {
   enableMockMode?: boolean;
 }
 
-import { config } from '../config/environment';
-
-// Get API base URL from centralized configuration
-const getApiBaseUrl = (): string => {
-  return config.apiBaseUrl;
-};
-
-const getEnableMockMode = (): boolean => {
-  return config.enableMockMode;
-};
-
 const DEFAULT_CONFIG: FetchConfig = {
   timeout: 15000, // 15 seconds
   retries: 2,
-  apiBaseUrl: getApiBaseUrl(),
-  enableMockMode: getEnableMockMode()
+  apiBaseUrl: 'https://woood-staging.leander-4e0.workers.dev',
+  enableMockMode: false
 };
 
 /**
@@ -56,7 +45,7 @@ function getAuthenticationHeaders(): Record<string, string> {
   return headers;
 }
 
-export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): Promise<DeliveryDate[]> {
+export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG, shopDomain?: string): Promise<DeliveryDate[]> {
   // Use configured API base URL or fallback to default
   const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
   const enableMockMode = config.enableMockMode || DEFAULT_CONFIG.enableMockMode;
@@ -67,81 +56,49 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
     return generateMockDeliveryDates();
   }
 
-  const url = `${apiBaseUrl}/api/delivery-dates/available`;
+  try {
+    const url = `${apiBaseUrl}/api/delivery-dates/available`;
 
-  for (let attempt = 1; attempt <= (config.retries || DEFAULT_CONFIG.retries!); attempt++) {
-    try {
-      console.log(`🌐 Fetching delivery dates (attempt ${attempt}): ${url}`);
+    // Get authentication headers for session-based authentication
+    const authHeaders = getAuthenticationHeaders();
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, config.timeout || DEFAULT_CONFIG.timeout!);
+    // Use provided shop domain or fallback
+    const domain = shopDomain || 'unknown-shop';
 
-      // Get authentication headers for session-based authentication
-      const authHeaders = getAuthenticationHeaders();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...authHeaders,
+      },
+      body: JSON.stringify({
+        shopDomain: domain,
+        timestamp: new Date().toISOString(),
+        source: 'checkout_extension'
+      }),
+    });
 
-      // Get shop domain from checkout context
-      const shopDomain = window.location.hostname;
-
-      const response = await fetch(url, {
-        method: 'POST', // Changed to POST to send shop domain in body
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          shopDomain,
-          timestamp: new Date().toISOString(),
-          source: 'checkout_extension'
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const responseData = await response.json();
-
-      // Handle both direct array response and wrapped response
-      let data: DeliveryDate[];
-      if (responseData.success && Array.isArray(responseData.data)) {
-        data = responseData.data;
-      } else if (Array.isArray(responseData)) {
-        data = responseData;
-      } else {
-        throw new Error('Invalid response format: expected array of delivery dates');
-      }
-
-      console.log(`✅ Successfully fetched ${data.length} delivery dates`);
-      return data;
-
-    } catch (error: any) {
-      console.error(`❌ Attempt ${attempt} failed:`, error.message);
-
-      if (error.name === 'AbortError') {
-        console.error('Request timed out');
-      }
-
-      // If this is the last attempt, throw error (Workers will handle fallback)
-      if (attempt === (config.retries || DEFAULT_CONFIG.retries!)) {
-        console.error('All attempts failed, throwing error');
-        throw error;
-      }
-
-      // Wait before retrying (exponential backoff)
-      const waitTime = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
-      console.log(`Waiting ${waitTime}ms before retry...`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-  }
 
-  // This should never be reached, but throw error if it does
-  throw new Error('Unexpected execution path in fetchDeliveryDates');
+    const data = await response.json();
+
+    if (data.success && Array.isArray(data.data)) {
+      console.log(`✅ Successfully fetched ${data.data.length} delivery dates`);
+      return data.data;
+    } else {
+      throw new Error('Invalid response format');
+    }
+
+  } catch (error: any) {
+    console.error(`❌ Failed to fetch delivery dates: ${error.message}`);
+
+    // Fallback to mock data on error
+    console.log('🔄 Falling back to mock delivery dates');
+    return generateMockDeliveryDates();
+  }
 }
 
 export async function saveOrderMetafields(

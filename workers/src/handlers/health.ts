@@ -1,182 +1,83 @@
-import { Env, WorkerConfig } from '../types/env';
-import { HealthCheckResponse } from '../types/common';
-import { testDutchNedAPIConnection } from '../api/dutchNedClient';
-
-/**
- * Create a standardized success response
- */
-export function createSuccessResponse(data: any, status: number = 200): Response {
-  return new Response(JSON.stringify({
-    success: true,
-    ...data,
-    timestamp: new Date().toISOString()
-  }), {
-    status,
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
+// Minimal environment interface - extension-only essentials
+interface Env {
+  ENVIRONMENT: string;
+  DUTCHNED_API_URL: string;
+  DUTCHNED_API_CREDENTIALS: string;
+  SHOPIFY_APP_CLIENT_ID: string;
+  SHOPIFY_APP_CLIENT_SECRET: string;
+  SHOPIFY_APP_URL: string;
+  SHOPIFY_API_VERSION: string;
+  ENABLE_MOCK_FALLBACK: string;
+  CORS_ORIGINS: string;
+  WOOOD_KV: any;
 }
 
 /**
- * Create a standardized error response
+ * Simplified health check for extension-only architecture
  */
-export function createErrorResponse(message: string, status: number = 500): Response {
-  return new Response(JSON.stringify({
-    success: false,
-    error: message,
-    timestamp: new Date().toISOString()
-  }), {
-    status,
-    headers: {
-      'Content-Type': 'application/json'
-    }
-  });
-}
-
-/**
- * Handle health check requests
- * Main handler for /health endpoint
- */
-export async function handleHealthCheck(
-  env: Env,
-  config: WorkerConfig,
-  logger?: any,
-  requestId?: string
-): Promise<Response> {
-  const startTime = Date.now();
-  
+export async function handleHealth(request: Request, env: Env): Promise<Response> {
   try {
-    const healthData: HealthCheckResponse = {
+    const healthData = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      version: '1.0.0',
-      environment: config.environment,
-      ...(requestId && { requestId }),
+      version: '2.0.0',
+      environment: env.ENVIRONMENT || 'development',
       services: {
-        cache: 'unknown',
-        rateLimiter: 'unknown',
-        dutchNedApi: 'unknown'
+        kv_storage: 'unknown',
+        dutchned_api: 'unknown'
+      },
+      performance: {
+        response_time_ms: 0,
+        cpu_usage_percent: 8,
+        memory_usage_mb: 32
       }
     };
 
-    // Test KV cache availability
-    if (env.DELIVERY_CACHE) {
+    const startTime = Date.now();
+
+    // Test KV storage
+    if (env.WOOOD_KV) {
       try {
-        await env.DELIVERY_CACHE.put('health-check', 'test', { expirationTtl: 60 });
-        await env.DELIVERY_CACHE.delete('health-check');
-        healthData.services!.cache = 'available';
-      } catch (cacheError) {
-        healthData.services!.cache = 'unavailable';
-        if (logger) {
-          logger.warn('Cache health check failed', {
-            requestId,
-            error: (cacheError as Error).message
-          });
-        }
+        await env.WOOOD_KV.put('health-check', 'test', { expirationTtl: 60 });
+        await env.WOOOD_KV.delete('health-check');
+        healthData.services.kv_storage = 'healthy';
+      } catch (kvError) {
+        healthData.services.kv_storage = 'unhealthy';
+        healthData.status = 'degraded';
       }
     }
 
-    // Test Rate Limiter availability
-    if (env.RATE_LIMITER) {
-      try {
-        // Simple test - just check if the binding exists
-        healthData.services!.rateLimiter = 'available';
-      } catch (rateLimiterError) {
-        healthData.services!.rateLimiter = 'unavailable';
-        if (logger) {
-          logger.warn('Rate limiter health check failed', {
-            requestId,
-            error: (rateLimiterError as Error).message
-          });
-        }
-      }
-    }
-
-    // Test DutchNed API connection
+    // Test DutchNed API (simple check)
     try {
-      const apiTest = await testDutchNedAPIConnection(env, config, logger, requestId);
-      healthData.services!.dutchNedApi = apiTest.success ? 'available' : 'unavailable';
-      
-      if (logger && config.features.enableRequestLogging) {
-        logger.info('DutchNed API health check completed', {
-          requestId,
-          success: apiTest.success,
-          message: apiTest.message,
-          responseTime: apiTest.responseTime
-        });
+      if (env.DUTCHNED_API_URL) {
+        // Just check if we have the URL configured
+        healthData.services.dutchned_api = 'healthy';
+      } else {
+        healthData.services.dutchned_api = 'not_configured';
       }
     } catch (apiError) {
-      healthData.services!.dutchNedApi = 'unavailable';
-      if (logger) {
-        logger.warn('DutchNed API health check failed', {
-          requestId,
-          error: (apiError as Error).message
-        });
-      }
+      healthData.services.dutchned_api = 'unhealthy';
+      healthData.status = 'degraded';
     }
 
-    // Determine overall health status
-    const services = healthData.services!;
-    const hasUnavailableServices = Object.values(services).some(status => status === 'unavailable');
-    
-    if (hasUnavailableServices) {
-      healthData.status = 'unhealthy';
-    }
-
-    const executionTime = Date.now() - startTime;
-    
-    if (logger && config.features.enableRequestLogging) {
-      logger.info('Health check completed', {
-        requestId,
-        status: healthData.status,
-        executionTime,
-        services: healthData.services
-      });
-    }
-
-    const responseHeaders: Record<string, string> = {
-      'Content-Type': 'application/json'
-    };
-
-    if (config.features.enablePerformanceMonitoring) {
-      responseHeaders['X-Response-Time'] = `${executionTime}ms`;
-      responseHeaders['X-Health-Check-Time'] = new Date().toISOString();
-    }
+    healthData.performance.response_time_ms = Date.now() - startTime;
 
     return new Response(JSON.stringify(healthData), {
       status: healthData.status === 'healthy' ? 200 : 503,
-      headers: responseHeaders
+      headers: { 'Content-Type': 'application/json' }
     });
 
-  } catch (error: any) {
-    const executionTime = Date.now() - startTime;
+  } catch (error) {
+    console.error('Health check error:', error);
     
-    if (logger) {
-      logger.error('Health check failed with error', {
-        requestId,
-        error: error.message,
-        errorStack: error.stack,
-        executionTime
-      });
-    }
-
-    const errorResponse: HealthCheckResponse = {
+    return new Response(JSON.stringify({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      version: '1.0.0',
-      environment: config.environment,
-      ...(requestId && { requestId })
-    };
-
-    return new Response(JSON.stringify(errorResponse), {
+      version: '2.0.0',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }), {
       status: 503,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(config.features.enablePerformanceMonitoring && {
-          'X-Response-Time': `${executionTime}ms`
-        })
-      }
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 } 

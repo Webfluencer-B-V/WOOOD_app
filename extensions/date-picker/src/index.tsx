@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   reactExtension,
   useApplyAttributeChange,
@@ -15,13 +15,12 @@ import {
   useDeliveryGroups,
   useSettings,
   useCartLines,
-  useMetafield,
+  useAppMetafields,
   useApi,
 } from "@shopify/ui-extensions-react/checkout";
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useDeliveryDates, DeliveryDate } from "./hooks/useDeliveryDates";
-import { ErrorBoundary, useErrorHandler } from "./components/ErrorBoundary";
-import { config } from "./config/environment";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -53,12 +52,14 @@ export default reactExtension(
  * @returns Date object representing the Monday of that week
  */
 function weekNumberToDate(year: number, week: number): Date {
-  // Find January 4th of the year (which is always in week 1)
+  // ISO 8601 week calculation
+  // Week 1 is the first week with at least 4 days in the new year
   const jan4 = new Date(year, 0, 4);
 
-  // Find the Monday of week 1
+  // Find the Monday of week 1 (ISO week 1)
   const week1Monday = new Date(jan4);
-  week1Monday.setDate(jan4.getDate() - jan4.getDay() + 1);
+  const dayOfWeek = jan4.getDay() || 7; // Make Sunday = 7
+  week1Monday.setDate(jan4.getDate() - dayOfWeek + 1);
 
   // Calculate the target week's Monday
   const targetWeekMonday = new Date(week1Monday);
@@ -94,227 +95,239 @@ function parseErpLevertijd(erpLevertijd: string | null): Date | null {
 }
 
 /**
- * Custom hook to extract ERP delivery times from all products in cart
- * Uses backend API to fetch metafield data since checkout extensions have limited access
+ * Extract shipping method number from string (e.g., "30 - EXPEDITIE STANDAARD" -> 30)
  */
-function useCartProductsDeliveryTime(cartLines: any[], enableFiltering: boolean, apiBaseUrl: string, shopDomain: string): Date | null {
-  const [minimumDate, setMinimumDate] = useState<Date | null>(null);
+function extractShippingMethodNumber(shippingMethod: string): number {
+  const match = shippingMethod.match(/^(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
 
-  // Memoize product IDs to prevent unnecessary re-renders
-  const productIds = useMemo(() => {
-    if (!cartLines || cartLines.length === 0) return [];
+/**
+ * Check if date is within the next 2 weeks
+ */
+function isWithinTwoWeeks(date: Date): boolean {
+  const twoWeeksFromNow = new Date();
+  twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
+  return date <= twoWeeksFromNow;
+}
 
-    return cartLines
-      .map(line => line.merchandise?.product?.id)
-      .filter(id => id) // Remove null/undefined
-      .map(id => id.replace('gid://shopify/Product/', '')); // Extract numeric ID
+// Define proper types for the metadata result
+interface MetadataResult {
+  minimumDeliveryDate: Date | null;
+  highestShippingMethod: string | null;
+  debugInfo: {
+    cartLines: number;
+    productsWithErpData: number;
+    productsWithShippingData: number;
+    latestMinimumDate: string | null;
+    highestShippingMethod: string | null;
+    rawErpLevertijd: string | null;
+    processed: boolean;
+  };
+}
+
+/**
+ * Optimized hook to process cart metadata once per cart change
+ */
+function useCartMetadataOptimized(): MetadataResult {
+  const cartLines = useCartLines();
+  const lastProcessedRef = useRef<string>('');
+  const lastResultRef = useRef<MetadataResult | null>(null);
+
+  // Get metafields with stable queries
+  const erpMetafields = useAppMetafields({
+    type: "product",
+    namespace: "erp",
+    key: "levertijd"
+  });
+
+  const shippingMetafields = useAppMetafields({
+    type: "product",
+    namespace: "custom",
+    key: "ShippingMethod2"
+  });
+
+  // Create stable cart identifier to prevent unnecessary recalculations
+  const cartIdentifier = useMemo(() => {
+    if (!cartLines) return 'empty';
+    return cartLines.map(line => `${line.merchandise?.product?.id || 'unknown'}-${line.quantity}`).join('|');
   }, [cartLines]);
 
-  // Memoize the product IDs string for comparison
-  const productIdsKey = useMemo(() => productIds.join(','), [productIds]);
+  // Create stable metafield identifier
+  const metafieldIdentifier = useMemo(() => {
+    const erpCount = erpMetafields?.length || 0;
+    const shippingCount = shippingMetafields?.length || 0;
+    const erpData = erpMetafields?.map(m => `${m.target.id}:${m.metafield?.value}`).join('|') || '';
+    const shippingData = shippingMetafields?.map(m => `${m.target.id}:${m.metafield?.value}`).join('|') || '';
+    return `erp-${erpCount}-${erpData}|shipping-${shippingCount}-${shippingData}`;
+  }, [erpMetafields, shippingMetafields]);
 
-  useEffect(() => {
-    console.log('🔍 Cart products delivery time check triggered', {
-      enableFiltering,
-      cartLinesLength: cartLines?.length || 0,
-      productIdsCount: productIds.length
-    });
+  // Combine identifiers to detect real changes
+  const combinedIdentifier = `${cartIdentifier}|${metafieldIdentifier}`;
 
-    if (!enableFiltering || productIds.length === 0) {
-      console.log('⚠️ No filtering or no product IDs');
-      setMinimumDate(null);
-      return;
+  // Process metafields only when cart or metafields actually change
+  const metadataResult = useMemo((): MetadataResult => {
+    // Check if we've already processed this exact combination
+    if (combinedIdentifier === lastProcessedRef.current && lastResultRef.current) {
+      return lastResultRef.current;
     }
 
-    console.log('🛒 Fetching ERP delivery times for products:', productIds);
+    lastProcessedRef.current = combinedIdentifier;
+    // console.log('🔄 Processing cart metadata (triggered by cart/metafield change)');
 
-    // Call backend API to get ERP delivery times
-    fetchErpDeliveryTimes(productIds, apiBaseUrl, shopDomain)
-      .then(deliveryTimes => {
-        let latestMinimumDate: Date | null = null;
+    if (!cartLines || cartLines.length === 0) {
+      return {
+        minimumDeliveryDate: null,
+        highestShippingMethod: null,
+        debugInfo: {
+          cartLines: 0,
+          productsWithErpData: 0,
+          productsWithShippingData: 0,
+          latestMinimumDate: null,
+          highestShippingMethod: null,
+          rawErpLevertijd: null,
+          processed: false
+        }
+      };
+    }
 
-        console.log('📦 Received ERP delivery times:', deliveryTimes);
+    let latestMinimumDate: Date | null = null;
+    let highestShippingMethodNumber = 0;
+    let highestShippingMethodValue: string | null = null;
+    let productsWithErpData = 0;
+    let productsWithShippingData = 0;
+    let rawErpLevertijd: string | null = null;
 
-        Object.entries(deliveryTimes).forEach(([productId, erpValue]) => {
-          if (erpValue) {
-            console.log(`✅ Product ${productId} has ERP delivery time: ${erpValue}`);
-            const parsedDate = parseErpLevertijd(erpValue as string);
-            if (parsedDate) {
-              if (!latestMinimumDate || parsedDate > latestMinimumDate) {
-                latestMinimumDate = parsedDate;
-                console.log(`🚀 Updated minimum date to: ${parsedDate.toISOString().split('T')[0]}`);
-              }
+    cartLines.forEach((line, index) => {
+      const product = line.merchandise?.product;
+      if (!product) return;
+      const productId = product.id;
+
+      // Find ERP metafield for this specific product
+      const erpMetafield = erpMetafields?.find(({target}) => {
+        return `gid://shopify/Product/${target.id}` === productId;
+      });
+
+      // Always process ERP data when available (no enableFiltering check)
+      if (erpMetafield?.metafield?.value) {
+        const erpValue = String(erpMetafield.metafield.value);
+        productsWithErpData++;
+
+        const parsedDate = parseErpLevertijd(erpValue);
+        if (parsedDate && (!latestMinimumDate || parsedDate > latestMinimumDate)) {
+          latestMinimumDate = parsedDate;
+          rawErpLevertijd = erpValue;
+          console.log(`🚀 Product minimum levertijd date to: ${parsedDate.toISOString().split('T')[0]} from ERP: ${erpValue}`);
+        }
+      }
+
+      const shippingMetafield = shippingMetafields?.find(({target}) => {
+        return `gid://shopify/Product/${target.id}` === productId;
+      });
+
+      if (shippingMetafield?.metafield?.value) {
+        const shippingValue = String(shippingMetafield.metafield.value);
+        const methodNumber = extractShippingMethodNumber(shippingValue);
+
+        console.log(`🚚 Product ${productId} has shipping method: ${shippingValue} (number: ${methodNumber})`);
+        productsWithShippingData++;
+
+        if (methodNumber >= highestShippingMethodNumber) {
+          highestShippingMethodNumber = methodNumber;
+          highestShippingMethodValue = shippingValue;
             }
           }
         });
 
-        // No fallback - if no ERP data found, filtering will be disabled
-        if (!latestMinimumDate && productIds.length > 0) {
-          console.log('ℹ️ No ERP delivery times found for any products - date filtering disabled');
-        }
+    const result: MetadataResult = {
+      minimumDeliveryDate: latestMinimumDate,
+      highestShippingMethod: highestShippingMethodValue,
+      debugInfo: {
+        cartLines: cartLines.length,
+        productsWithErpData,
+        productsWithShippingData,
+        latestMinimumDate: latestMinimumDate ? (latestMinimumDate as Date).toISOString().split('T')[0] : null,
+        highestShippingMethod: highestShippingMethodValue,
+        rawErpLevertijd: rawErpLevertijd,
+        processed: true
+      }
+    };
 
-        console.log(`📊 Final minimum date: ${latestMinimumDate ? 'set' : 'none'}`);
-        setMinimumDate(latestMinimumDate);
-      })
-      .catch(error => {
-        console.error('❌ Failed to fetch ERP delivery times:', error);
-        console.log('ℹ️ ERP API error - date filtering disabled');
-        setMinimumDate(null);
-      });
-  }, [productIdsKey, enableFiltering, apiBaseUrl, shopDomain]); // Use memoized productIdsKey instead of productIds
+    // Save result for future cache hits
+    lastResultRef.current = result;
 
-  return minimumDate;
+    // console.log('✅ Cart processing complete:', result);
+    return result;
+
+  }, [combinedIdentifier, cartLines, erpMetafields, shippingMetafields]);
+
+  return metadataResult;
 }
 
 /**
- * Custom hook to extract shipping methods from all products in cart
- * Gets the highest shipping method number and returns the original value for order notes
+ * Separate hook for saving attributes to prevent dependency cycles
  */
-function useCartProductsShippingMethod(cartLines: any[], apiBaseUrl: string, shopDomain: string): { highestNumber: number; originalValue: string | null } {
-  const [shippingMethodData, setShippingMethodData] = useState<{ highestNumber: number; originalValue: string | null }>({
-    highestNumber: 0,
-    originalValue: null
-  });
-
-  // Memoize product IDs to prevent unnecessary re-renders
-  const productIds = useMemo(() => {
-    if (!cartLines || cartLines.length === 0) return [];
-
-    return cartLines
-      .map(line => line.merchandise?.product?.id)
-      .filter(id => id) // Remove null/undefined
-      .map(id => id.replace('gid://shopify/Product/', '')); // Extract numeric ID
-  }, [cartLines]);
-
-  // Memoize the product IDs string for comparison
-  const productIdsKey = useMemo(() => productIds.join(','), [productIds]);
+function useSaveMetadataToAttributes(metadataResult: MetadataResult) {
+  const applyAttributeChange = useApplyAttributeChange();
+  const lastSavedRef = useRef<string>('');
 
   useEffect(() => {
-    console.log('🚚 Checking shipping methods for cart products', {
-      cartLinesLength: cartLines?.length || 0,
-      productIdsCount: productIds.length
+    if (!metadataResult.debugInfo.processed) return;
+
+    // Create a unique signature for this metadata to prevent duplicate saves
+    const metadataSignature = JSON.stringify({
+      minDate: metadataResult.debugInfo.latestMinimumDate,
+      shippingMethod: metadataResult.highestShippingMethod,
+      erpCount: metadataResult.debugInfo.productsWithErpData
     });
 
-    if (productIds.length === 0) {
-      console.log('⚠️ No product IDs for shipping method check');
-      setShippingMethodData({ highestNumber: 0, originalValue: null });
+    // Only save if metadata actually changed
+    if (metadataSignature === lastSavedRef.current) {
+      console.log('📊 Skipping metadata save - no changes detected');
       return;
     }
 
-    console.log('🚚 Fetching shipping methods for products:', productIds);
+    lastSavedRef.current = metadataSignature;
 
-    // Call backend API to get shipping method data
-    fetchShippingMethods(productIds, apiBaseUrl, shopDomain)
-      .then(shippingMethods => {
-        let highestNumber = 0;
-        let highestOriginalValue: string | null = null;
+    const saveAttributes = async () => {
+      try {
+        console.log('💾 Saving cart metadata to order attributes...');
 
-        console.log('📦 Received shipping methods:', shippingMethods);
-
-        Object.entries(shippingMethods).forEach(([productId, methodData]) => {
-          if (methodData && methodData.value) {
-            // Extract number from the value string (e.g., "30 - EXPEDITIE STANDAARD" -> 30)
-            let extractedNumber = methodData.number || 0;
-
-            // If number is 0, try to extract from the value string
-            if (extractedNumber === 0 && methodData.value) {
-              const numberMatch = methodData.value.match(/^(\d+)/);
-              if (numberMatch) {
-                extractedNumber = parseInt(numberMatch[1], 10);
-              }
-            }
-
-            if (extractedNumber >= highestNumber) { // Changed > to >= to include 0
-              highestNumber = extractedNumber;
-              highestOriginalValue = methodData.value;
-              console.log(`🚚 Product ${productId} has shipping method: ${methodData.value} (number: ${extractedNumber})`);
-            }
+        const attributes = [
+          {
+            key: 'erp_minimum_delivery_date',
+            value: metadataResult.debugInfo.latestMinimumDate || 'none'
+          },
+          {
+            key: 'cart_shipping_method',
+            value: metadataResult.highestShippingMethod || 'none'
+          },
+          {
+            key: 'cart_products_with_erp_data',
+            value: metadataResult.debugInfo.productsWithErpData.toString()
           }
-        });
+        ];
 
-        if (highestNumber > 0) {
-          console.log(`🏆 Highest shipping method number: ${highestNumber} (${highestOriginalValue})`);
-        } else {
-          console.log('ℹ️ No shipping method data found for any products');
+        for (const attr of attributes) {
+          const result = await applyAttributeChange({
+            type: 'updateAttribute',
+            key: attr.key,
+            value: attr.value,
+          });
+
+          if (result.type === 'error') {
+            console.warn(`⚠️ Failed to save ${attr.key} to attributes`);
+          }
         }
 
-        setShippingMethodData({ highestNumber, originalValue: highestOriginalValue });
-      })
-      .catch(error => {
-        console.error('❌ Failed to fetch shipping methods:', error);
-        setShippingMethodData({ highestNumber: 0, originalValue: null });
-      });
-  }, [productIdsKey, apiBaseUrl, shopDomain]);
+        console.log('✅ Saved cart metadata to order attributes');
+      } catch (err) {
+        console.error('❌ Error saving cart metadata to attributes:', err);
+      }
+    };
 
-  return shippingMethodData;
-}
-
-/**
- * Fetch shipping methods from backend API
- */
-async function fetchShippingMethods(productIds: string[], apiBaseUrl: string, shopDomain: string): Promise<Record<string, { value: string; number: number } | null>> {
-  const url = `${apiBaseUrl}/api/products/shipping-methods`;
-
-  console.log('🌐 Calling shipping methods API:', { url, productIds, shopDomain });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      productIds,
-      timestamp: new Date().toISOString(),
-      source: 'checkout_extension',
-      shopDomain
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  const result = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.message || 'Failed to fetch shipping methods');
-  }
-
-  return result.data || {};
-}
-
-/**
- * Fetch ERP delivery times from backend API
- */
-async function fetchErpDeliveryTimes(productIds: string[], apiBaseUrl: string, shopDomain: string): Promise<Record<string, string | null>> {
-  const url = `${apiBaseUrl}/api/products/erp-delivery-times`;
-
-  console.log('🌐 Calling backend API:', { url, productIds, shopDomain });
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      productIds,
-      timestamp: new Date().toISOString(),
-      source: 'checkout_extension',
-      shopDomain // Use dynamic shop domain from OAuth context
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  }
-
-  const result = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.message || 'Failed to fetch ERP delivery times');
-  }
-
-  return result.data || {};
+    saveAttributes();
+  }, [metadataResult, applyAttributeChange]);
 }
 
 function DeliveryDatePicker() {
@@ -325,59 +338,78 @@ function DeliveryDatePicker() {
   const shippingAddress = useShippingAddress();
   const deliveryGroups = useDeliveryGroups();
   const settings = useSettings();
-  const cartLines = useCartLines();
   const t = useTranslate();
   const { shop } = useApi();
+  const applyAttributeChange = useApplyAttributeChange();
 
-  // Get API base URL from centralized configuration
-  const apiBaseUrl = config.apiBaseUrl;
+  // API base URL - for delivery dates (essential external call)
+  const apiBaseUrl = 'https://woood-production.leander-4e0.workers.dev';
 
-  // Use centralized configuration with extension settings override
-  const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : config.enableMockMode;
+  // Extension settings
+  const hideDatePicker = typeof settings.hide_date_picker === 'boolean' ? settings.hide_date_picker : false;
+  const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : false;
   const enableWeekNumberFiltering = typeof settings.enable_week_number_filtering === 'boolean' ? settings.enable_week_number_filtering : true;
+
+  // Detect if we're in checkout preview mode
+  const isCheckoutPreview = typeof window !== 'undefined' && window.location.href.includes('preview');
 
   // Show the date picker only for Netherlands
   const countryCode = shippingAddress?.countryCode;
   const showDatePicker = countryCode === 'NL';
 
-  // Use custom hook to get minimum delivery date from cart products
-  const minimumDeliveryDate = useCartProductsDeliveryTime(cartLines, enableWeekNumberFiltering, apiBaseUrl, shop.myshopifyDomain);
+  // Always process cart metadata (needed for order attributes even when picker is hidden)
+  const metadataResult = useCartMetadataOptimized();
+  const { minimumDeliveryDate, highestShippingMethod, debugInfo } = metadataResult;
 
-  // Use custom hook to get shipping method data from cart products
-  const shippingMethodData = useCartProductsShippingMethod(cartLines, apiBaseUrl, shop.myshopifyDomain);
+  // Save metadata to attributes (separate from processing to prevent cycles)
+  useSaveMetadataToAttributes(metadataResult);
 
-  // Use checkout attributes for structured data storage
-  const applyAttributeChange = useApplyAttributeChange();
+  // Hide date picker completely if setting is enabled
+  if (hideDatePicker) {
+    // In preview mode, show a message explaining why it's hidden
+    if (isCheckoutPreview) {
+      return (
+        <View border="base" cornerRadius="base" padding="base">
+          <BlockStack spacing="base">
+            <Heading level={2}>{t('title')}</Heading>
+            <Banner status="info">
+              <Text size="small">
+                🚫 Date picker is hidden via extension settings
+              </Text>
+            </Banner>
+          </BlockStack>
+        </View>
+      );
+    }
+    // In actual checkout, return an empty div to avoid React errors
+    return <View />;
+  }
 
-  // Use React Query hook for delivery dates
+  // Check if minimum date is within 2 weeks (hide date picker if so)
+  const hidePickerDueToEarlyDelivery = useMemo(() => {
+    if (!minimumDeliveryDate) return false;
+    return isWithinTwoWeeks(minimumDeliveryDate);
+  }, [minimumDeliveryDate]);
+
+  // External API call for delivery dates (essential)
   const {
     deliveryDates,
-    metadata,
-    isLoading,
-    isError,
+    loading,
     error: fetchError,
-    isFetching,
     refetch,
-  } = useDeliveryDates(apiBaseUrl, {
-    enabled: showDatePicker,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
-  });
+  } = useDeliveryDates(apiBaseUrl, enableMockMode, shop.myshopifyDomain);
 
-  // Filter available dates based on minimum delivery date
-  // Memoize the filtered dates to prevent unnecessary re-filtering
+  // Filter available dates based on product metafield data and limit to first 14
   const filteredDates = useMemo(() => {
     if (!deliveryDates || deliveryDates.length === 0) {
       return [];
     }
 
+    let filtered;
     if (!enableWeekNumberFiltering || !minimumDeliveryDate) {
-      // If filtering is disabled or no minimum date, show all dates
-      return deliveryDates;
-    }
-
-    // Filter dates to only show those on or after the minimum delivery date
-    const filtered = deliveryDates.filter((dateItem: DeliveryDate) => {
+      filtered = deliveryDates;
+    } else {
+      filtered = deliveryDates.filter((dateItem: DeliveryDate) => {
       try {
         const deliveryDate = new Date(dateItem.date);
         return deliveryDate >= minimumDeliveryDate;
@@ -386,22 +418,24 @@ function DeliveryDatePicker() {
         return false;
       }
     });
+    }
 
-    console.log(`🔍 Filtered ${deliveryDates.length} dates to ${filtered.length} dates based on minimum delivery date`);
-    return filtered;
+    // Limit to first 14 dates
+    const limitedDates = filtered.slice(0, 14);
+
+    console.log(`🔍 Filtered ${deliveryDates.length} dates to ${filtered.length} dates, showing first ${limitedDates.length} dates`);
+    return limitedDates;
   }, [deliveryDates, minimumDeliveryDate, enableWeekNumberFiltering]);
 
   // Detect selected shipping method from delivery groups
   useEffect(() => {
     if (deliveryGroups && deliveryGroups.length > 0) {
       for (const group of deliveryGroups) {
-        // Get the selected delivery option handle
         const selectedOption = group.selectedDeliveryOption;
         if (selectedOption) {
           const shippingMethodName = selectedOption.handle || 'Unknown';
           if (shippingMethodName !== selectedShippingMethod) {
           setSelectedShippingMethod(shippingMethodName);
-            // Note: We'll save the shipping method in a separate useEffect to avoid infinite loops
           }
           break;
         }
@@ -411,99 +445,66 @@ function DeliveryDatePicker() {
 
   // Handle errors from React Query
   useEffect(() => {
-    if (isError) {
+    if (fetchError) {
       console.error('Error fetching delivery dates:', fetchError);
       setErrorKey('error_loading');
     } else {
         setErrorKey(null);
     }
-  }, [isError, fetchError]);
+  }, [fetchError]);
 
+  // Save selected delivery date separately
       const handleDateSelect = useCallback(async (dateString: string) => {
     setSelectedDate(dateString);
 
     try {
-      // Save individual note attributes
-      const attributes = [
-        { key: 'delivery_date', value: dateString },
-        { key: 'shipping_method', value: shippingMethodData.originalValue || 'Not specified' },
-        { key: 'shipping_method_number', value: (shippingMethodData.highestNumber || 0).toString() }
-      ];
-
-      // Apply each attribute separately
-      for (const attr of attributes) {
         const result = await applyAttributeChange({
           type: 'updateAttribute',
-          key: attr.key,
-          value: attr.value,
+        key: 'selected_delivery_date',
+        value: dateString,
         });
 
         if (result.type === 'error') {
-          throw new Error(`Failed to save ${attr.key} to attributes`);
-        }
+        throw new Error('Failed to save selected delivery date');
       }
 
-      console.log('✅ Successfully saved delivery data to checkout attributes:', {
-        delivery_date: dateString,
-        shipping_method: shippingMethodData.originalValue || 'Not specified',
-        shipping_method_number: shippingMethodData.highestNumber || 0
-      });
-
+      console.log('✅ Saved selected delivery date:', dateString);
     } catch (err) {
-      console.error('❌ Error saving delivery data:', err);
+      console.error('❌ Error saving selected delivery date:', err);
       setErrorKey('error_saving');
     }
-  }, [selectedShippingMethod, shippingMethodData, applyAttributeChange]);
-
-    const handleShippingMethodSave = useCallback(async (shippingMethod: string) => {
-    try {
-      // Update individual attributes with shipping method info - CLEANED UP TO 3 ESSENTIAL ONLY
-      const attributes = [
-        { key: 'delivery_date', value: selectedDate || 'Not selected' },
-        { key: 'shipping_method', value: shippingMethodData.originalValue || 'Not specified' },
-        { key: 'shipping_method_number', value: (shippingMethodData.highestNumber || 0).toString() }
-      ];
-
-      // Apply each attribute separately
-      for (const attr of attributes) {
-        const result = await applyAttributeChange({
-          type: 'updateAttribute',
-          key: attr.key,
-          value: attr.value,
-        });
-
-        if (result.type === 'error') {
-          throw new Error(`Failed to save ${attr.key} to attributes`);
-        }
-      }
-
-      console.log('✅ Successfully saved shipping method to attributes:', {
-        delivery_date: selectedDate || 'Not selected',
-        shipping_method: shippingMethodData.originalValue || 'Not specified',
-        shipping_method_number: shippingMethodData.highestNumber || 0
-      });
-
-    } catch (err) {
-      console.error('❌ Error saving shipping method:', err);
-      setErrorKey('error_saving_shipping');
-    }
-  }, [selectedDate, shippingMethodData, applyAttributeChange]);
-
-  // Save shipping method when it changes (separate effect to avoid infinite loops)
-  // Remove handleShippingMethodSave from dependencies to prevent infinite loops
-  useEffect(() => {
-    if (selectedShippingMethod && selectedShippingMethod !== 'Unknown') {
-      handleShippingMethodSave(selectedShippingMethod);
-    }
-  }, [selectedShippingMethod]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [applyAttributeChange]);
 
   const handleRetry = useCallback(() => {
     setErrorKey(null);
     refetch();
   }, [refetch]);
 
+  // Don't show date picker if not in Netherlands
   if (!showDatePicker) {
     return null;
+  }
+
+  // Don't show date picker if minimum delivery date is within 2 weeks
+  if (hidePickerDueToEarlyDelivery) {
+    // Only show the banner in checkout preview mode
+    if (isCheckoutPreview) {
+      return (
+        <View border="base" cornerRadius="base" padding="base">
+          <BlockStack spacing="base">
+            <Heading level={2}>{t('title')}</Heading>
+            <Banner status="info">
+              <Text size="small">
+                📅 Delivery date picker is hidden because products can be delivered within 2 weeks (by {minimumDeliveryDate?.toLocaleDateString('nl-NL')})
+              </Text>
+            </Banner>
+          </BlockStack>
+        </View>
+      );
+    } else {
+      // In actual checkout, just return null (completely hidden)
+      return null;
+    }
   }
 
   return (
@@ -511,40 +512,20 @@ function DeliveryDatePicker() {
       <BlockStack spacing="base">
         <Heading level={2}>{t('title')}</Heading>
 
-        {/* Show API configuration info in development/testing */}
-        {enableMockMode && (
+        {/* Show configuration info */}
+        {enableMockMode && isCheckoutPreview &&  (
           <Banner status="info">
             <Text size="small">Mock mode enabled - using test data</Text>
           </Banner>
         )}
 
-
-
-        {/* Show week number filtering info when enabled */}
-        {enableWeekNumberFiltering && minimumDeliveryDate && (
-          <Banner status="info">
-            <Text size="small">
-              Dates filtered by delivery time: earliest delivery from {minimumDeliveryDate.toLocaleDateString('nl-NL')}
-            </Text>
-          </Banner>
-        )}
-
-
-
         {/* Show loading state */}
-        {isLoading && (
+        {loading && (
           <BlockStack spacing="tight">
             <SkeletonText />
             <SkeletonText />
             <SkeletonText />
           </BlockStack>
-        )}
-
-        {/* Show fetch indicator */}
-        {isFetching && !isLoading && (
-          <Banner status="info">
-            <Text size="small">Refreshing delivery dates...</Text>
-          </Banner>
         )}
 
         {/* Show error with retry button */}
@@ -560,7 +541,7 @@ function DeliveryDatePicker() {
         )}
 
         {/* Show delivery dates */}
-        {!isLoading && !errorKey && filteredDates.length > 0 && (
+        {!loading && !errorKey && filteredDates.length > 0 && (
           <BlockStack spacing="base">
             <View>
               <ScrollView maxBlockSize={300}>
@@ -586,14 +567,14 @@ function DeliveryDatePicker() {
         )}
 
         {/* Show filtering info when dates are filtered out */}
-        {!isLoading && !errorKey && filteredDates.length === 0 && deliveryDates.length > 0 && enableWeekNumberFiltering && minimumDeliveryDate && (
+        {!loading && !errorKey && filteredDates.length === 0 && deliveryDates.length > 0 && enableWeekNumberFiltering && minimumDeliveryDate && (
           <Banner status="warning">
             <Text>{t('no_dates_after_minimum_delivery', { date: minimumDeliveryDate.toLocaleDateString('nl-NL') })}</Text>
           </Banner>
         )}
 
         {/* Show no dates available */}
-        {!isLoading && !errorKey && deliveryDates.length === 0 && (
+        {!loading && !errorKey && deliveryDates.length === 0 && (
           <Banner status="info">
             <Text>{t('no_dates_available')}</Text>
           </Banner>
