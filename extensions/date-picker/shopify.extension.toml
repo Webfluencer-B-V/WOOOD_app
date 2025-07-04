@@ -49,21 +49,46 @@ key = "ShippingMethod2"
 
 [extensions.settings]
 [[extensions.settings.fields]]
-key = "hide_date_picker"
-type = "boolean"
-name = "Hide Date Picker"
-default = false
-description = "Completely hide the delivery date picker from checkout"
+key = "extension_mode"
+type = "single_line_text_field"
+name = "Extension Mode"
+description = "Choose how the extension behaves (Default: Full)"
+[[extensions.settings.fields.validations]]
+name = "choices"
+value = "[\"Disabled\", \"Shipping Data Only\", \"Date Picker Only\", \"Full\"]"
+
+[[extensions.settings.fields]]
+key = "date_picker_filtering"
+type = "single_line_text_field"
+name = "Date Picker Filtering"
+description = "No Filtering: Show all available dates | ERP Filtered: Only show dates after product minimum delivery times (Default: ERP Filtered)"
+[[extensions.settings.fields.validations]]
+name = "choices"
+value = "[\"No Filtering\", \"ERP Filtered\"]"
+
+[[extensions.settings.fields]]
+key = "hide_picker_within_days"
+type = "number_integer"
+name = "Hide Picker Within Days"
+description = "Hide date picker if products can be delivered within this many days (0 = always show picker) (Default: 14)"
+
+[[extensions.settings.fields]]
+key = "max_dates_to_show"
+type = "number_integer"
+name = "Max Dates to Show"
+description = "Maximum number of delivery dates to display in the picker (Default: 15)"
+
+[[extensions.settings.fields]]
+key = "active_country_codes"
+type = "single_line_text_field"
+name = "Active Country Codes"
+description = "Comma-separated country codes where date picker is active (e.g., NL,BE,DE) (Default: NL)"
 
 [[extensions.settings.fields]]
 key = "enable_mock_mode"
 type = "boolean"
 name = "Enable Mock Dates"
-description = "Enable mock delivery dates for testing (fallback when API is unavailable)"
+default = false
+description = "Enable mock delivery dates for testing (fallback when API is unavailable) (Default: false)"
 
-[[extensions.settings.fields]]
-key = "enable_week_number_filtering"
-type = "boolean"
-name = "Enable Week Number Filtering"
-default = true
-description = "Enable filtering of delivery dates based on product ERP delivery times"
+

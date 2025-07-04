@@ -1,5 +1,3 @@
-import { useSettings } from '@shopify/ui-extensions-react/checkout';
-
 export interface DeliveryDate {
   date: string;
   displayName: string;
@@ -22,7 +20,7 @@ export interface FetchConfig {
 const DEFAULT_CONFIG: FetchConfig = {
   timeout: 15000, // 15 seconds
   retries: 2,
-  apiBaseUrl: 'https://woood-staging.leander-4e0.workers.dev',
+  apiBaseUrl: 'https://woood-production.leander-4e0.workers.dev',
   enableMockMode: false
 };
 
@@ -47,7 +45,7 @@ function getAuthenticationHeaders(): Record<string, string> {
 
 export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG, shopDomain?: string): Promise<DeliveryDate[]> {
   // Use configured API base URL or fallback to default
-  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const apiBaseUrl = DEFAULT_CONFIG.apiBaseUrl;
   const enableMockMode = config.enableMockMode || DEFAULT_CONFIG.enableMockMode;
 
   // If mock mode is enabled, return mock data immediately
@@ -57,7 +55,7 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG, s
   }
 
   try {
-    const url = `${apiBaseUrl}/api/delivery-dates/available`;
+    const url = `${apiBaseUrl}/api/delivery-dates`;
 
     // Get authentication headers for session-based authentication
     const authHeaders = getAuthenticationHeaders();
@@ -66,17 +64,11 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG, s
     const domain = shopDomain || 'unknown-shop';
 
     const response = await fetch(url, {
-      method: 'POST',
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
         ...authHeaders,
       },
-      body: JSON.stringify({
-        shopDomain: domain,
-        timestamp: new Date().toISOString(),
-        source: 'checkout_extension'
-      }),
     });
 
     if (!response.ok) {

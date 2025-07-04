@@ -1,43 +1,26 @@
 {
-    "name": "@woood/delivery-date-picker-workers",
-    "version": "2.0.0",
-    "description": "Cloudflare Workers API for WOOOD Delivery Date Picker - Simplified Extension Architecture",
+    "name": "delivery-date-picker",
+    "version": "1.0.0",
+    "description": "Shopify checkout extension for delivery date selection",
     "main": "src/index.ts",
     "scripts": {
-        "deploy": "wrangler deploy",
-        "deploy:staging": "wrangler deploy --env staging",
-        "deploy:production": "wrangler deploy --env production",
         "dev": "wrangler dev",
-        "dev:staging": "wrangler dev --env staging",
-        "dev:production": "wrangler dev --env production",
-        "tail": "wrangler tail",
-        "tail:staging": "wrangler tail --env staging",
-        "tail:production": "wrangler tail --env production",
-        "lint": "eslint src --ext .ts",
-        "type-check": "tsc --noEmit",
-        "preview": "wrangler dev --local",
-        "cf-typegen": "wrangler types"
+        "build": "tsc",
+        "deploy": "wrangler deploy",
+        "type-check": "tsc --noEmit"
     },
     "devDependencies": {
-        "@cloudflare/workers-types": "^4.20241205.0",
-        "@types/node": "^20.10.6",
-        "@typescript-eslint/eslint-plugin": "^6.21.0",
-        "@typescript-eslint/parser": "^6.21.0",
-        "eslint": "^8.56.0",
-        "typescript": "^5.3.3",
-        "wrangler": "^3.84.0"
+        "@cloudflare/workers-types": "^4.20241218.0",
+        "typescript": "^5.7.2",
+        "wrangler": "^3.94.0"
     },
-    "dependencies": {},
     "keywords": [
         "shopify",
-        "cloudflare-workers",
-        "delivery-dates",
-        "checkout-extension",
-        "api"
+        "delivery",
+        "checkout",
+        "cloudflare",
+        "workers"
     ],
-    "author": "WOOOD",
-    "license": "MIT",
-    "engines": {
-        "node": ">=18.0.0"
-    }
+    "author": "",
+    "license": "MIT"
 }

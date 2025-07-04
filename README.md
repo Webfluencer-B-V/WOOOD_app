@@ -1,4 +1,4 @@
-# WOOOD Delivery Date Picker
+# Delivery Date Picker
 
 > **🏆 PRODUCTION READY** - Enterprise-grade Shopify checkout extension enabling customers to select delivery dates during checkout, powered by Cloudflare Workers for global performance.
 
@@ -8,21 +8,11 @@
 
 ## 📖 Documentation
 
-### 🏗️ Architecture & Design
-- **[System Overview](docs/architecture/overview.md)** - Extension + Workers architecture
-- **[Components](docs/architecture/components.md)** - Checkout extensions and Workers API
-- **[Data Flow](docs/architecture/data-flow.md)** - Checkout → Workers → Webhooks → Metafields
-- **[Security Model](docs/architecture/security-model.md)** - OAuth and webhook security
-
-### 🚀 Deployment & Operations
-- **[Cloudflare Workers](docs/deployment/cloudflare-workers.md)** - Workers deployment
-- **[Shopify Extensions](docs/deployment/shopify-extensions.md)** - Extensions deployment
-
-### 🔧 API Reference
-- **[API Endpoints](docs/api/endpoints.md)** - Extension API documentation
-- **[Authentication](docs/api/authentication.md)** - OAuth token-based authentication
-- **[Webhooks](docs/api/webhooks.md)** - Order processing webhooks
-- **[Error Codes](docs/api/error-codes.md)** - Error handling reference
+### 🏗️ Core Documentation
+- **[Complete Setup Guide](docs/SETUP.md)** - Installation, configuration, testing, and deployment
+- **[System Architecture](docs/ARCHITECTURE.md)** - Complete system design, components, and data flow
+- **[API Reference](docs/API.md)** - Complete API documentation with endpoints, authentication, and webhooks
+- **[Development History](docs/CHANGELOG.md)** - Project changelog and sprint history
 
 ## ✅ Current Production Status
 
@@ -32,7 +22,7 @@
 - ✅ **Workers API**: All endpoints returning correct data with <50ms response times
 - ✅ **OAuth Authentication**: Simple token-based authentication system
 - ✅ **Webhook Processing**: Automated order processing (note_attributes → metafields)
-- ✅ **Production Deployment**: `woood-production.leander-4e0.workers.dev`
+- ✅ **Production Deployment**: `delivery-date-picker.workers.dev`
 
 ### Recent Architecture Simplification
 - ✅ **Extension-Only Model**: Removed complex admin UI for streamlined deployment
@@ -76,15 +66,15 @@
 
 Core extension endpoints operational:
 
-- `GET /api/delivery-dates/available` - Real-time delivery date availability
-- `POST /api/products/shipping-methods` - Product shipping method data
-- `POST /api/webhooks/orders/paid` - Automated order processing
+- `GET /api/delivery-dates` - Real-time delivery date availability
+- `POST /api/webhooks/orders` - Automated order processing
 - `GET /health` - System health and status monitoring
+- `GET /admin` - Simple admin interface
 
 ## 📦 Installation & Usage
 
 ### For Store Owners
-1. **Install Extension**: Visit installation URL provided by WOOOD
+1. **Install Extension**: Visit installation URL provided by developer
 2. **Enable Extensions**: Activate delivery date picker in checkout settings
 3. **Configure Products**: Add shipping method metafields to products
 4. **Monitor Orders**: View processed delivery dates in order metafields
@@ -98,9 +88,9 @@ Core extension endpoints operational:
 ## 📞 Support
 
 - **Setup & Testing**: See [Complete Setup Guide](docs/SETUP.md)
-- **API Reference**: Check [API Documentation](docs/api/endpoints.md)
-- **Architecture**: Review [System Overview](docs/architecture/overview.md)
+- **API Reference**: Check [API Documentation](docs/API.md)
+- **Architecture**: Review [System Architecture](docs/ARCHITECTURE.md)
 
 ---
 
-**🚀 EXTENSION + WORKERS READY**: Streamlined system optimized for Shopify Plus stores with simple deployment and reliable performance.
+**🚀 EXTENSION + WORKERS READY**: Streamlined system optimized for Shopify stores with simple deployment and reliable performance.

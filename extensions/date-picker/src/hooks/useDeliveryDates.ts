@@ -34,7 +34,7 @@ async function fetchDeliveryDates(apiBaseUrl: string, shopDomain: string): Promi
   data: DeliveryDate[];
   metadata?: ApiResponse['metadata'];
 }> {
-  const url = `${apiBaseUrl}/api/delivery-dates/available`;
+  const url = `${apiBaseUrl}/api/delivery-dates`;
 
   console.log('🌐 Fetching delivery dates from:', url);
 
@@ -45,16 +45,10 @@ async function fetchDeliveryDates(apiBaseUrl: string, shopDomain: string): Promi
 
   try {
     const response = await fetch(url, {
-      method: 'POST', // Changed to POST to send shop domain in body
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        shopDomain,
-        timestamp: new Date().toISOString(),
-        source: 'checkout_extension'
-      }),
       signal: controller.signal
     });
 
