@@ -1,0 +1,7 @@
+name = "store-locator"
+type = "javascript"
+main = "src/index.ts"
+compatibility_date = "2024-07-04"
+
+[triggers]
+crons = ["0 3 * * *"] # Runs every day at 03:00 UTC

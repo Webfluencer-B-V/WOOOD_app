@@ -67,6 +67,13 @@ name = "choices"
 value = "[\"No Filtering\", \"ERP Filtered\"]"
 
 [[extensions.settings.fields]]
+key = "only_show_if_in_stock"
+type = "boolean"
+name = "Only show if in stock"
+default = false
+description = "Only show the date picker if all products in the cart are in stock (Default: false)"
+
+[[extensions.settings.fields]]
 key = "hide_picker_within_days"
 type = "number_integer"
 name = "Hide Picker Within Days"
