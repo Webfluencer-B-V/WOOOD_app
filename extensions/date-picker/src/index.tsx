@@ -344,6 +344,7 @@ function DeliveryDatePicker() {
   const maxDatesToShow = typeof settings.max_dates_to_show === 'number' ? settings.max_dates_to_show : 15;
   const activeCountryCodesString = (settings.active_country_codes as string) || 'NL';
   const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : false;
+  const enableOnlyShowIfInStock = typeof settings.only_show_if_in_stock === 'boolean' ? settings.only_show_if_in_stock : false;
 
   // Derived settings
   const isExtensionDisabled = extensionMode === 'Disabled';
@@ -420,6 +421,69 @@ function DeliveryDatePicker() {
     const daysUntilDelivery = Math.ceil((minimumDeliveryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     return daysUntilDelivery <= hidePickerWithinDays;
   }, [minimumDeliveryDate, hidePickerWithinDays]);
+
+  const cartLines = useCartLines();
+  const [inventory, setInventory] = useState<Record<string, number | null> | null>(null);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
+
+  // Fetch inventory from worker API when cart lines or shop changes
+  useEffect(() => {
+    if (!enableOnlyShowIfInStock || !cartLines || cartLines.length === 0 || !shop?.myshopifyDomain) {
+      setInventory(null);
+      setInventoryLoading(false);
+      setInventoryError(null);
+      return;
+    }
+    const variantIds = cartLines
+      .map(line => line.merchandise?.id)
+      .filter(Boolean);
+    if (variantIds.length === 0) {
+      setInventory(null);
+      setInventoryLoading(false);
+      setInventoryError(null);
+      return;
+    }
+    setInventoryLoading(true);
+    setInventoryError(null);
+    fetch(`${apiBaseUrl}/api/inventory`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shop: shop.myshopifyDomain, variantIds })
+    })
+      .then(async res => {
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
+      })
+      .then(data => {
+        if (data && data.success && data.inventory) {
+          setInventory(data.inventory);
+        } else {
+          setInventoryError('Inventory API error');
+          setInventory(null);
+        }
+      })
+      .catch(err => {
+        setInventoryError(typeof err === 'string' ? err : err.message || 'Unknown error');
+        setInventory(null);
+      })
+      .finally(() => setInventoryLoading(false));
+  }, [enableOnlyShowIfInStock, cartLines, shop?.myshopifyDomain]);
+
+  // Determine if all products are in stock using fetched inventory
+  const allProductsInStock = useMemo(() => {
+    if (!enableOnlyShowIfInStock) return true;
+    if (!cartLines || cartLines.length === 0) return false;
+    if (inventoryLoading) return false; // Don't show picker while loading
+    if (inventoryError) return false;
+    if (!inventory) return false;
+    return cartLines.every(line => {
+      const variantId = line.merchandise?.id;
+      if (!variantId) return false;
+      const qty = inventory[variantId];
+      return typeof qty === 'number' && qty > 0;
+    });
+  }, [cartLines, enableOnlyShowIfInStock, inventory, inventoryLoading, inventoryError]);
 
   // External API call for delivery dates (essential)
   const {
@@ -511,7 +575,21 @@ function DeliveryDatePicker() {
   }, [refetch]);
 
   // Don't show date picker if not in Netherlands
-  if (!showDatePicker) {
+  if (!showDatePicker || !allProductsInStock) {
+    if (isCheckoutPreview && enableOnlyShowIfInStock && !allProductsInStock) {
+      return (
+        <View border="base" cornerRadius="base" padding="base">
+          <BlockStack spacing="base">
+            <Heading level={2}>{t('title')}</Heading>
+            <Banner status="info">
+              <Text size="small">
+                📦 Delivery date picker is hidden because not all products are in stock (see settings)
+              </Text>
+            </Banner>
+          </BlockStack>
+        </View>
+      );
+    }
     return null;
   }
 
@@ -535,6 +613,24 @@ function DeliveryDatePicker() {
       // In actual checkout, just return null (completely hidden)
       return null;
     }
+  }
+
+  // Show loading or error banner in preview mode if inventory is being checked
+  if (enableOnlyShowIfInStock && isCheckoutPreview && (inventoryLoading || inventoryError || !allProductsInStock)) {
+    return (
+      <View border="base" cornerRadius="base" padding="base">
+        <BlockStack spacing="base">
+          <Heading level={2}>{t('title')}</Heading>
+          <Banner status={inventoryLoading ? 'info' : 'critical'}>
+            <Text size="small">
+              {inventoryLoading && 'Checking inventory for all products...'}
+              {inventoryError && `Inventory check failed: ${inventoryError}`}
+              {!inventoryLoading && !inventoryError && !allProductsInStock && 'Date picker hidden: one or more products are out of stock.'}
+            </Text>
+          </Banner>
+        </BlockStack>
+      </View>
+    );
   }
 
   return (
