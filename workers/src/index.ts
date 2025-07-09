@@ -3,6 +3,8 @@
  * Simplified architecture with essential functionality only
  */
 
+import { upsertStoreLocator } from './storeLocatorUpserter';
+
 // Essential environment interface
 interface Env {
   ENVIRONMENT: string;
@@ -98,6 +100,19 @@ export default {
           response = await handleTestWebhooks(request, env);
           break;
 
+        case path === '/api/upsert-store-locator' && request.method === 'POST':
+          try {
+            const result = await upsertStoreLocator(env);
+            response = new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+          } catch (error: any) {
+            response = new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+          }
+          break;
+
+        case path === '/api/inventory' && request.method === 'POST':
+          response = await handleInventoryCheck(request, env);
+          break;
+
         default:
           response = new Response(JSON.stringify({
               success: false,
@@ -121,6 +136,15 @@ export default {
         headers: { 'Content-Type': 'application/json' }
       });
       return addCorsHeaders(errorResponse, corsHeaders);
+    }
+  },
+  // Add cron integration for store locator upserter
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    // ... existing cron logic ...
+    try {
+      await upsertStoreLocator(env);
+    } catch (error) {
+      console.error('Store locator upsert cron error:', error);
     }
   }
 };
@@ -398,6 +422,64 @@ async function handleOrderWebhook(request: Request, env: Env): Promise<Response>
         headers: { 'Content-Type': 'application/json' }
       });
     }
+}
+
+/**
+ * POST /api/inventory
+ * Body: { shop: string, variantIds: string[] }
+ * Returns: { [variantId: string]: number | null }
+ * Checks inventory for given variant IDs using Shopify Admin API.
+ */
+async function handleInventoryCheck(request: Request, env: Env): Promise<Response> {
+  try {
+    const body = await request.json() as { shop: string; variantIds: string[] };
+    const shop = body.shop;
+    const variantIds = body.variantIds;
+    if (!shop || !Array.isArray(variantIds) || variantIds.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: 'Missing shop or variantIds' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (!isValidShopDomain(shop)) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid shop domain' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Get access token from KV
+    let accessToken = '';
+    if (env.WOOOD_KV) {
+      const tokenData = await env.WOOOD_KV.get(`shop_token:${shop}`, 'json');
+      if (tokenData && tokenData.accessToken) {
+        accessToken = tokenData.accessToken;
+      }
+    }
+    if (!accessToken) {
+      return new Response(JSON.stringify({ success: false, error: 'Shop not authenticated' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Build GraphQL query for Admin API
+    const query = `query($ids: [ID!]!) {\n  nodes(ids: $ids) {\n    ... on ProductVariant {\n      id\n      inventoryQuantity: quantityAvailable\n    }\n  }\n}`;
+    const variables = { ids: variantIds };
+    const apiRes = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken
+      },
+      body: JSON.stringify({ query, variables })
+    });
+    if (!apiRes.ok) {
+      const err = await apiRes.text();
+      return new Response(JSON.stringify({ success: false, error: 'Shopify API error', details: err }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+    const data = await apiRes.json() as { data?: { nodes?: Array<{ id: string; inventoryQuantity?: number }> } };
+    const result: Record<string, number | null> = {};
+    if (data && data.data && Array.isArray(data.data.nodes)) {
+      for (const node of data.data.nodes) {
+        if (node && node.id) {
+          result[node.id] = typeof node.inventoryQuantity === 'number' ? node.inventoryQuantity : null;
+        }
+      }
+    }
+    return new Response(JSON.stringify({ success: true, inventory: result }), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
 }
 
 // Simple admin interface
