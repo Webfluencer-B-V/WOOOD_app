@@ -2,7 +2,7 @@
 
 > **🏆 PRODUCTION READY** - Enterprise-grade Shopify checkout extension enabling customers to select delivery dates during checkout, powered by Cloudflare Workers for global performance.
 
-## �� Quick Start
+##  Quick Start
 
 - **[Complete Setup & Testing Guide](docs/SETUP.md)** - Installation, configuration, testing, and deployment in one comprehensive guide
 
@@ -61,6 +61,22 @@
 - ✅ **Secure Token Storage** - Lightweight OAuth with automatic expiration
 - ✅ **HMAC Webhook Security** - Verified signature validation for all webhooks
 - ✅ **Extension Integration** - Native Shopify checkout experience
+
+## 🗺️ Store Locator Upserter Worker
+
+A dedicated Cloudflare Worker (`workers/store-locator/`) that fetches, transforms, and upserts a flat array of dealer objects to the `woood.store_locator` shop metafield from an external API.
+
+**Key Features:**
+- Scheduled (cron) and manual upsert triggers
+- Data transformation and filtering (active/activated dealers, mapped exclusives, sensitive fields removed)
+- Upserts to Shopify shop metafield using Admin API credentials
+- Output is a flat array of dealer objects (not nested)
+- Fully integrated into the app
+
+**Example Use Case:**
+Keep your store locator data in sync for theme/app blocks, with zero manual intervention.
+
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) for full details and transformation rules.
 
 ## 🔗 Live API Endpoints
 

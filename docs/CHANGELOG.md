@@ -232,7 +232,21 @@ workers/
 - Map `nameAlias` to `name` (fallback to `name` if missing)
 - Map exclusivity fields (`Exclusiviteit`, `shopfinderExclusives`, `ShopfinderExclusives`) using the provided mapping logic
 - Remove sensitive fields (e.g., `accountmanager`, `dealerActivationPortal`, `vatNumber`, `shopfinderExclusives`, `accountStatus`)
-- Output JSON structure: `{ store_locator_json: { data: [ ...filteredDealers ] } }`
+- **Output JSON structure:** a flat array of dealer objects, with all fields on the root object (not nested under any wrapper). Example:
+
+```json
+[
+  {
+    "Id": "3DD71A3F-0FC2-4562-98A9-005DBD90A0A4",
+    "address": "STRANDBADSVÄGEN 19C",
+    "addresses": [ ... ],
+    "city": "HELSINGBORG",
+    ...
+    "exclusives": ["WOOOD ESSENTIALS", "WOOOD OUTDOOR", "WOOOD PREMIUM"]
+  },
+  ...
+]
+```
 
 **Endpoints:**
 - `POST /upsert` — Triggers the fetch, transform, and upsert process manually
@@ -244,6 +258,8 @@ Automatically syncs a dealer/store locator JSON blob to a shop metafield for use
 
 **Expected Outcome:**
 Shop metafields always reflect the latest external data, with minimal manual intervention and full auditability.
+
+- **Implementation:** This worker is implemented as a new Cloudflare Worker in `workers/store-locator/` with cron enabled, and is fully integrated into the app.
 
 ---
 
