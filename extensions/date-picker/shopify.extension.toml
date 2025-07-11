@@ -98,4 +98,11 @@ name = "Enable Mock Dates"
 default = false
 description = "Enable mock delivery dates for testing (fallback when API is unavailable) (Default: false)"
 
+[[extensions.settings.fields]]
+key = "preview_mode"
+type = "boolean"
+name = "Preview Mode"
+default = false
+description = "Show preview-only UI (for testing in Checkout Editor)"
+
 

@@ -229,7 +229,7 @@ function useCartMetadataOptimized(): MetadataResult {
         const shippingValue = String(shippingMetafield.metafield.value);
         const methodNumber = extractShippingMethodNumber(shippingValue);
 
-        console.log(`🚚 Product ${productId} has shipping method: ${shippingValue} (number: ${methodNumber})`);
+        // console.log(`🚚 Product ${productId} has shipping method: ${shippingValue} (number: ${methodNumber})`);
         productsWithShippingData++;
 
         if (methodNumber >= highestShippingMethodNumber) {
@@ -283,7 +283,7 @@ function useSaveMetadataToAttributes(metadataResult: MetadataResult, shouldSave:
 
     // Only save if metadata actually changed
     if (metadataSignature === lastSavedRef.current) {
-      console.log('📊 Skipping metadata save - no changes detected');
+      // console.log('📊 Skipping metadata save - no changes detected');
       return;
     }
 
@@ -291,7 +291,7 @@ function useSaveMetadataToAttributes(metadataResult: MetadataResult, shouldSave:
 
     const saveAttributes = async () => {
       try {
-        console.log('💾 Saving cart metadata to order attributes...');
+        // console.log('💾 Saving cart metadata to order attributes...');
 
         const attributes = [
           {
@@ -308,13 +308,13 @@ function useSaveMetadataToAttributes(metadataResult: MetadataResult, shouldSave:
           });
 
           if (result.type === 'error') {
-            console.warn(`⚠️ Failed to save ${attr.key} to attributes`);
+            // console.warn(`⚠️ Failed to save ${attr.key} to attributes`);
           }
         }
 
-        console.log('✅ Saved cart metadata to order attributes');
+        // console.log('✅ Saved cart metadata to order attributes');
       } catch (err) {
-        console.error('❌ Error saving cart metadata to attributes:', err);
+        // console.error('❌ Error saving cart metadata to attributes:', err);
       }
     };
 
@@ -344,16 +344,14 @@ function DeliveryDatePicker() {
   const maxDatesToShow = typeof settings.max_dates_to_show === 'number' ? settings.max_dates_to_show : 15;
   const activeCountryCodesString = (settings.active_country_codes as string) || 'NL';
   const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : false;
-  const enableOnlyShowIfInStock = typeof settings.only_show_if_in_stock === 'boolean' ? settings.only_show_if_in_stock : false;
+  const enableOnlyShowIfInStock = typeof settings.only_show_if_in_stock === 'boolean' ? settings.only_show_if_in_stock : true;
+  const isCheckoutPreview = typeof settings.preview_mode === 'boolean' ? settings.preview_mode : false;
 
   // Derived settings
   const isExtensionDisabled = extensionMode === 'Disabled';
   const onlyShippingData = extensionMode === 'Shipping Data Only';
   const shouldShowDatePicker = extensionMode === 'Date Picker Only' || extensionMode === 'Full';
   const enableWeekNumberFiltering = datePickerFiltering === 'ERP Filtered';
-
-  // Detect if we're in checkout preview mode
-  const isCheckoutPreview = typeof window !== 'undefined' && window.location.href.includes('preview');
 
     // Parse active country codes and determine if date picker should show
   const activeCountryCodes = activeCountryCodesString
@@ -419,6 +417,9 @@ function DeliveryDatePicker() {
     if (!minimumDeliveryDate || hidePickerWithinDays === 0) return false;
     const today = new Date();
     const daysUntilDelivery = Math.ceil((minimumDeliveryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const minDateStr = minimumDeliveryDate.toISOString().split('T')[0];
+    const todayStr = today.toISOString().split('T')[0];
+    console.log('[Hide Picker Within Days] minimumDeliveryDate:', minDateStr, 'today:', todayStr, 'daysUntilDelivery:', daysUntilDelivery, 'hidePickerWithinDays:', hidePickerWithinDays);
     return daysUntilDelivery <= hidePickerWithinDays;
   }, [minimumDeliveryDate, hidePickerWithinDays]);
 
@@ -429,6 +430,12 @@ function DeliveryDatePicker() {
 
   // Fetch inventory from worker API when cart lines or shop changes
   useEffect(() => {
+    // console.log('[Inventory Check] enableOnlyShowIfInStock:', enableOnlyShowIfInStock);
+    if (cartLines) {
+      // cartLines.forEach((line, idx) => {
+      //   console.log(`[Inventory Check] Cart line ${idx}: variantId=${line.merchandise?.id}, quantity=${line.quantity}`);
+      // });
+    }
     if (!enableOnlyShowIfInStock || !cartLines || cartLines.length === 0 || !shop?.myshopifyDomain) {
       setInventory(null);
       setInventoryLoading(false);
@@ -448,7 +455,10 @@ function DeliveryDatePicker() {
     setInventoryError(null);
     fetch(`${apiBaseUrl}/api/inventory`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': 'Scuffed~v4ns'
+      },
       body: JSON.stringify({ shop: shop.myshopifyDomain, variantIds })
     })
       .then(async res => {
@@ -457,6 +467,7 @@ function DeliveryDatePicker() {
       })
       .then(data => {
         if (data && data.success && data.inventory) {
+          // console.log('[Inventory Check] Inventory API result:', data.inventory);
           setInventory(data.inventory);
         } else {
           setInventoryError('Inventory API error');
@@ -508,7 +519,7 @@ function DeliveryDatePicker() {
         const deliveryDate = new Date(dateItem.date);
         return deliveryDate >= minimumDeliveryDate;
       } catch (error) {
-        console.warn('Invalid delivery date format:', dateItem.date);
+        // console.warn('Invalid delivery date format:', dateItem.date);
         return false;
       }
     });
@@ -540,7 +551,7 @@ function DeliveryDatePicker() {
   // Handle errors from React Query
   useEffect(() => {
     if (fetchError) {
-      console.error('Error fetching delivery dates:', fetchError);
+      // console.error('Error fetching delivery dates:', fetchError);
       setErrorKey('error_loading');
     } else {
         setErrorKey(null);
@@ -564,7 +575,7 @@ function DeliveryDatePicker() {
 
       console.log('✅ Saved delivery date:', dateString);
     } catch (err) {
-      console.error('❌ Error saving delivery date:', err);
+      // console.error('❌ Error saving delivery date:', err);
       setErrorKey('error_saving');
     }
   }, [applyAttributeChange]);
@@ -626,6 +637,22 @@ function DeliveryDatePicker() {
               {inventoryLoading && 'Checking inventory for all products...'}
               {inventoryError && `Inventory check failed: ${inventoryError}`}
               {!inventoryLoading && !inventoryError && !allProductsInStock && 'Date picker hidden: one or more products are out of stock.'}
+            </Text>
+          </Banner>
+        </BlockStack>
+      </View>
+    );
+  }
+
+  // After computing allProductsInStock, add this in the preview UI (where appropriate):
+  if (isCheckoutPreview && enableOnlyShowIfInStock) {
+    return (
+      <View border="base" cornerRadius="base" padding="base">
+        <BlockStack spacing="base">
+          <Heading level={2}>{t('title')}</Heading>
+          <Banner status={allProductsInStock ? 'success' : 'critical'}>
+            <Text size="small">
+              {allProductsInStock ? 'All products in stock' : 'Some products are out of stock'}
             </Text>
           </Banner>
         </BlockStack>

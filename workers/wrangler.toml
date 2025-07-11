@@ -36,3 +36,10 @@ CORS_ORIGINS = "https://*.myshopify.com,https://checkout.shopify.com"
 [[env.staging.kv_namespaces]]
 binding = "WOOOD_KV"
 id = "placeholder-kv-namespace-id"
+
+# Cron triggers for scheduled tasks
+[env.staging.triggers]
+crons = ["0 4 * * *"] # Runs every day at 04:00 UTC
+
+[env.production.triggers]
+crons = ["0 4 * * *"] # Runs every day at 04:00 UTC

@@ -205,6 +205,89 @@ workers/
 
 **Expected Outcome:** ✅ **ACHIEVED** - Clean, focused documentation reflecting the streamlined architecture.
 
+### Sprint 21: Experience Center Metafield Integration (COMPLETED - 3 SP) ✅
+
+**Goal:** Add functionality to query external Dutch Furniture Fulfillment API and set `woood.experiencecenter` boolean metafields for products based on their availability in the external system.
+
+**Key Features:**
+- [x] **External API Integration**: Queries `https://portal.dutchfurniturefulfilment.nl/api/productAvailability/query` for product availability data
+- [x] **EAN Code Mapping**: Maps product EAN codes from Shopify metafields to external API data
+- [x] **Metafield Management**: Sets `woood.experiencecenter` boolean metafield based on API availability
+- [x] **Batch Processing**: Handles multiple products in a single API call
+- [x] **Error Handling**: Comprehensive error handling for external API and Shopify API failures
+- [x] **Detailed Reporting**: Returns detailed results for each processed product
+
+**Implementation Details:**
+- **New Endpoint**: `POST /api/set-experience-center`
+- **External API**: Dutch Furniture Fulfillment API with EAN, channel, and itemcode fields
+- **Metafield**: `woood.experiencecenter` (boolean type)
+- **Authentication**: Uses existing shop access tokens from KV storage
+- **Client Integration**: Added `setExperienceCenterMetafields()` function to API client
+
+**API Response Structure:**
+```json
+{
+  "data": [
+    {
+      "ean": "8714713200481",
+      "channel": "EC", 
+      "itemcode": "374076-G"
+    }
+  ]
+}
+```
+
+**Process Flow:**
+1. Validate shop authentication and access token
+2. Query external API for product availability data
+3. Retrieve product metafields to find EAN codes
+4. Map EAN codes to external API availability
+5. Set `woood.experiencecenter` metafield (true if available, false if not)
+6. Return detailed results and summary statistics
+
+**Testing Integration:**
+- Added test component in `MetafieldTester.tsx` with button to trigger metafield updates
+- Integrated with existing cart line processing
+- Added comprehensive logging for debugging and monitoring
+
+**Expected Outcome:** ✅ **ACHIEVED** - Complete integration with external API for experience center metafield management.
+
+### Sprint 22: Scheduled Experience Center Updates (COMPLETED - 2 SP) ✅
+
+**Goal:** Add scheduled (cron) functionality to automatically update experience center metafields for all shops and all products, similar to the store locator upserter.
+
+**Key Features:**
+- [x] **Scheduled Execution**: Daily cron job at 04:00 UTC to update all experience center metafields
+- [x] **Multi-Shop Processing**: Automatically processes all shops stored in KV storage
+- [x] **Full Product Coverage**: Fetches and processes all products from each shop (with pagination)
+- [x] **Batch Processing**: Efficient batch processing of 50 products at a time
+- [x] **Error Isolation**: Individual shop failures don't affect other shops
+- [x] **Manual Trigger**: Added endpoint to manually trigger the scheduled update
+- [x] **Comprehensive Logging**: Detailed logging for monitoring and debugging
+
+**Implementation Details:**
+- **New Function**: `setExperienceCenterMetafields(env)` for scheduled execution
+- **Cron Integration**: Added to existing scheduled function alongside store locator upserter
+- **Cron Schedule**: `0 4 * * *` (daily at 04:00 UTC)
+- **Manual Endpoint**: `POST /api/trigger-experience-center-update`
+- **Batch Size**: 50 products per batch for optimal performance
+- **Pagination**: Handles shops with large product catalogs
+
+**Process Flow:**
+1. Retrieves all shop tokens from KV storage
+2. For each shop, queries external Dutch Furniture Fulfillment API
+3. Fetches all products from the shop using GraphQL pagination
+4. Maps product EAN codes to external API availability data
+5. Sets `woood.experiencecenter` metafield for all products in batches
+6. Returns detailed results and summary statistics
+
+**Configuration:**
+- **Wrangler.toml**: Added cron triggers for staging and production environments
+- **Error Handling**: Graceful handling of API failures and missing tokens
+- **Monitoring**: Comprehensive logging for production monitoring
+
+**Expected Outcome:** ✅ **ACHIEVED** - Automated daily updates of experience center metafields across all shops with zero manual intervention.
+
 ### Sprint 14: Memory & CPU Optimization (COMPLETED - 5 SP) ✅
 **Goal:** Optimize system performance for production deployment.
 

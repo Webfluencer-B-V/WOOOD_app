@@ -237,6 +237,146 @@ User-Agent: Shopify-Captain-Hook
 
 ---
 
+## 🏪 Set Experience Center Metafields
+
+**Endpoint**: `POST /api/set-experience-center`
+
+**Description**: Queries the external Dutch Furniture Fulfillment API and sets the `woood.experiencecenter` boolean metafield for products based on their availability in the external system.
+
+**Authentication**: Requires valid shop access token in KV storage
+
+**Request Body**:
+```json
+{
+  "shop": "your-shop.myshopify.com",
+  "productIds": [
+    "gid://shopify/Product/123",
+    "gid://shopify/Product/456",
+    "gid://shopify/Product/789"
+  ]
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "productId": "gid://shopify/Product/123",
+      "success": true,
+      "ean": "8714713200481",
+      "experienceCenter": true
+    },
+    {
+      "productId": "gid://shopify/Product/456",
+      "success": false,
+      "ean": "8714713221950"
+    }
+  ],
+  "summary": {
+    "total": 2,
+    "successful": 1,
+    "failed": 1
+  }
+}
+```
+
+**Process Flow**:
+1. Validates shop authentication and access token
+2. Queries external API: `https://portal.dutchfurniturefulfilment.nl/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`
+3. Retrieves product metafields to find EAN codes
+4. Maps EAN codes to external API availability data
+5. Sets `woood.experiencecenter` metafield to `true` if product exists in external API, `false` otherwise
+6. Returns detailed results for each product processed
+
+**External API Data Structure**:
+```json
+{
+  "data": [
+    {
+      "ean": "8714713200481",
+      "channel": "EC",
+      "itemcode": "374076-G"
+    },
+    {
+      "ean": "8714713221950", 
+      "channel": "EC",
+      "itemcode": "377529-OP"
+    }
+  ]
+}
+```
+
+**Usage Example**:
+```typescript
+import { setExperienceCenterMetafields } from './services/apiClient';
+
+// Set experience center metafields for products in cart
+const productIds = cartLines.map(line => line.merchandise?.product?.id).filter(Boolean);
+const success = await setExperienceCenterMetafields(productIds);
+
+if (success) {
+  console.log('Experience center metafields updated successfully');
+}
+```
+
+**Error Handling**:
+- `400 Bad Request`: Invalid request body (missing shop or productIds)
+- `401 Unauthorized`: Shop not authenticated or missing access token
+- `500 Internal Server Error`: External API error or Shopify API error
+
+### Scheduled Experience Center Update
+
+**Endpoint**: `POST /api/trigger-experience-center-update`
+
+**Description**: Manually triggers the scheduled experience center metafield update for all shops and all products. This is the same function that runs automatically via cron job.
+
+**Authentication**: None required (internal endpoint)
+
+**Request Body**: None required
+
+**Response**:
+```json
+{
+  "success": true,
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "results": [
+    {
+      "shop": "your-shop.myshopify.com",
+      "success": true,
+      "summary": {
+        "total": 150,
+        "successful": 145,
+        "failed": 5
+      }
+    }
+  ],
+  "summary": {
+    "totalShops": 1,
+    "successfulShops": 1,
+    "failedShops": 0
+  }
+}
+```
+
+**Scheduled Execution**:
+- **Cron Schedule**: Daily at 04:00 UTC (`0 4 * * *`)
+- **Automatic Processing**: All shops and all products
+- **Batch Processing**: Products processed in batches of 50
+- **Error Handling**: Individual shop failures don't affect other shops
+- **Logging**: Comprehensive logging for monitoring and debugging
+
+**Process Flow**:
+1. Retrieves all shop tokens from KV storage
+2. For each shop, queries external API for product availability data
+3. Fetches all products from the shop (with pagination)
+4. Maps product EAN codes to external API availability
+5. Sets `woood.experiencecenter` metafield for all products in batches
+6. Returns detailed results for each shop processed
+
+---
+
 ## 🚫 Removed Endpoints (Sprint 18)
 
 The following endpoints were removed as extensions now use native `useAppMetafields`:
