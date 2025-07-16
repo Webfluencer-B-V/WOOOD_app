@@ -5,19 +5,23 @@
     "scripts": {
         "shopify": "npm exec -- shopify",
         "build": "tsc && npm exec -- shopify app build",
+        "build:tsc": "tsc",
+        "build:standalone": "tsc",
         "dev": "npm exec -- shopify app dev",
         "preview": "npm exec -- shopify app function run",
         "type-check": "tsc --noEmit",
         "clean": "rm -rf dist"
     },
     "dependencies": {
-        "@shopify/ui-extensions": "^2025.4.0",
-        "@shopify/ui-extensions-react": "^2025.4.0",
+        "@shopify/ui-extensions": "^2024.10.0",
+        "@shopify/ui-extensions-react": "^2024.10.0",
+        "@tanstack/react-query": "^5.17.0",
         "react": "^18.2.0",
-        "react-reconciler": "^0.29.0"
+        "react-reconciler": "^0.29.2"
     },
     "devDependencies": {
         "@types/react": "^18.2.0",
+        "@types/react-reconciler": "^0.32.0",
         "typescript": "^5.0.0"
     }
 }

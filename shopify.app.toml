@@ -1,19 +1,23 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "10a8926387f7ea9e09395b64b1f798c2"
-name = "woood"
-handle = "woood"
-application_url = "https://woood--production.gadget.app/api/shopify/install-or-render"
+client_id = "1c7701d2e09d4ede7616f35e13d472ef"
+name = "woood CF"
+handle = "woood-2"
+application_url = "https://woood-production.leander-4e0.workers.dev/"
 embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+dev_store_url = "woood-shop.myshopify.com"
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2025-04"
 
 [auth]
-redirect_urls = ["https://woood--production.gadget.app/api/connections/auth/shopify/callback"]
+redirect_urls = [
+  "https://woood-production.leander-4e0.workers.dev/auth/callback"
+]
 
 [pos]
 embedded = false
-
-[build]
-include_config_on_deploy = true

@@ -58,8 +58,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       stack: error.stack,
       componentStack: errorInfo.componentStack,
       timestamp: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      url: window.location.href
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'checkout-extension',
+      url: typeof window !== 'undefined' ? window.location?.href : 'checkout-extension-context'
     };
 
     console.error('Extension Error Boundary caught an error:', errorData);
@@ -74,8 +74,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   private async sendErrorToService(errorData: any): Promise<void> {
     try {
       // This would be configured to point to your error tracking endpoint
-      const apiBaseUrl = 'http://localhost:3000'; // Default for development
-      
+      const apiBaseUrl = 'https://localhost:3000'; // Default for development
+
       await fetch(`${apiBaseUrl}/api/errors/track`, {
         method: 'POST',
         headers: {
@@ -118,7 +118,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 Something went wrong
               </Text>
               <Text size="small">
-                We encountered an unexpected error while loading the delivery date picker. 
+                We encountered an unexpected error while loading the delivery date picker.
                 Please try refreshing the page or contact support if the problem persists.
               </Text>
               <Text size="small" appearance="subdued">
@@ -126,11 +126,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               </Text>
             </BlockStack>
           </Banner>
-          
+
           <Button onPress={this.handleRetry} kind="secondary">
             Try Again
           </Button>
-          
+
           {this.state.error && (
             <BlockStack spacing="tight">
               <Text size="small" emphasis="bold">
@@ -158,15 +158,15 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 export const useErrorHandler = () => {
   const handleError = React.useCallback((error: Error, errorInfo?: any) => {
     const errorId = Math.random().toString(36).substring(2) + Date.now().toString(36);
-    
+
     const errorData = {
       errorId,
       name: error.name,
       message: error.message,
       stack: error.stack,
       timestamp: new Date().toISOString(),
-      userAgent: navigator.userAgent,
-      url: window.location.href,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'checkout-extension',
+      url: typeof window !== 'undefined' ? window.location?.href : 'checkout-extension-context',
       ...errorInfo
     };
 
@@ -175,9 +175,9 @@ export const useErrorHandler = () => {
     // Send to error tracking service
     // Note: Environment checking and error tracking disabled for extension compatibility
     // In a real implementation, you would configure this properly
-    
+
     return errorId;
   }, []);
 
   return { handleError };
-}; 
+};

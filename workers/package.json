@@ -1,0 +1,40 @@
+{
+    "name": "woood-delivery-api-workers",
+    "version": "1.0.0",
+    "description": "Cloudflare Workers API for WOOOD delivery date picker",
+    "main": "src/index.ts",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "deploy:staging": "wrangler deploy --env staging",
+        "deploy:production": "wrangler deploy --env production",
+        "build": "wrangler build",
+        "tail": "wrangler tail",
+        "type-check": "tsc --noEmit",
+        "test": "echo \"Error: no tests specified\" && exit 1"
+    },
+    "dependencies": {
+        "@shopify/shopify-api": "^11.0.0",
+        "itty-router": "^5.0.17"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20240112.0",
+        "wrangler": "^3.22.0",
+        "typescript": "^5.0.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    },
+    "keywords": [
+        "cloudflare",
+        "workers",
+        "api",
+        "delivery",
+        "shopify",
+        "woood",
+        "oauth",
+        "session-management"
+    ],
+    "author": "WOOOD Development Team",
+    "license": "UNLICENSED"
+}

@@ -19,10 +19,7 @@
     "jsx": "react-jsx",
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
-    "baseUrl": ".",
-    "types": [
-      "@shopify/app-bridge-types"
-    ]
+    "baseUrl": "."
   },
   "exclude": [
     "node_modules",

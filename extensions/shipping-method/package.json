@@ -6,6 +6,7 @@
         "shopify": "npm exec -- shopify",
         "typegen": "npm exec -- shopify app function typegen",
         "build": "npm exec -- shopify app function build",
+        "build:standalone": "echo 'Shopify Function - no standalone build needed'",
         "preview": "npm exec -- shopify app function run",
         "test": "vitest"
     },

@@ -5,6 +5,7 @@
 api_version = "2024-04"
 
 [[extensions]]
+uid = "2292d181-c871-847d-b5fc-c184281c9e70d802bd29"
 type = "function"
 name = "shipping-method"
 handle = "shipping-method"

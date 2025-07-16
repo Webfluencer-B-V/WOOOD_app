@@ -1,0 +1,111 @@
+name = "woood-production"
+main = "src/index.ts"
+compatibility_date = "2024-12-11"
+compatibility_flags = ["nodejs_compat"]
+
+# Development server configuration
+[dev]
+local_protocol = "https"
+upstream_protocol = "https"
+port = 8787
+
+# ============================================================================
+# DEVELOPMENT ENVIRONMENT
+# ============================================================================
+
+[env.development]
+name = "woood-delivery-api-dev"
+
+[env.development.vars]
+ENVIRONMENT = "development"
+API_TIMEOUT = "10000"
+MAX_RETRIES = "3"
+CACHE_DURATION = "300000"
+CORS_ORIGINS = "https://localhost:*,https://shop.app,https://checkout.shopify.com,https://pay.shopify.com,https://*.myshopify.com,https://*.shopify.com,https://*.shopifycdn.com,https://extensions.shopifycdn.com"
+DUTCHNED_API_URL = "https://eekhoorn-connector.dutchned.com/api/delivery-dates/available"
+SHOPIFY_API_VERSION = "2025-04"
+SHOPIFY_APP_CLIENT_ID = "1c7701d2e09d4ede7616f35e13d472ef"
+ENABLE_DEBUG_LOGGING = "true"
+ENABLE_RATE_LIMITING = "false"
+ENABLE_CACHING = "true"
+ENABLE_MOCK_FALLBACK = "true"
+
+[[env.development.kv_namespaces]]
+binding = "DELIVERY_CACHE"
+id = "8423effbd4e34e3bb4b84e383b1eb094"
+preview_id = "a119d3d1b509421a844d6e96fe1a8356"
+
+[[env.development.kv_namespaces]]
+binding = "WOOOD_KV"
+id = "8423effbd4e34e3bb4b84e383b1eb094"
+preview_id = "a119d3d1b509421a844d6e96fe1a8356"
+
+# ============================================================================
+# PRODUCTION ENVIRONMENT
+# ============================================================================
+
+[env.production]
+name = "woood-production"
+
+[env.production.vars]
+ENVIRONMENT = "production"
+API_TIMEOUT = "10000"
+MAX_RETRIES = "3"
+CACHE_DURATION = "300000"
+CORS_ORIGINS = "https://shop.app,https://checkout.shopify.com,https://pay.shopify.com,https://extensions.shopifycdn.com,https://*.myshopify.com,https://*.shopify.com,https://*.shopifycdn.com"
+DUTCHNED_API_URL = "https://eekhoorn-connector.dutchned.com/api/delivery-dates/available"
+SHOPIFY_API_VERSION = "2025-04"
+SHOPIFY_APP_CLIENT_ID = "1c7701d2e09d4ede7616f35e13d472ef"
+SHOPIFY_APP_URL = "https://woood-production.leander-4e0.workers.dev"
+ENABLE_DEBUG_LOGGING = "false"
+ENABLE_RATE_LIMITING = "true"
+ENABLE_CACHING = "true"
+ENABLE_MOCK_FALLBACK = "false"
+ENABLE_WEBHOOK_NOTIFICATIONS = "true"
+ENABLE_SHIPPING_METHOD_PROCESSING = "true"
+ENABLE_REQUEST_LOGGING = "true"
+
+[[env.production.kv_namespaces]]
+binding = "DELIVERY_CACHE"
+id = "8423effbd4e34e3bb4b84e383b1eb094"
+preview_id = "a119d3d1b509421a844d6e96fe1a8356"
+
+[[env.production.kv_namespaces]]
+binding = "WOOOD_KV"
+id = "8423effbd4e34e3bb4b84e383b1eb094"
+preview_id = "a119d3d1b509421a844d6e96fe1a8356"
+
+[env.production.observability]
+enabled = true
+head_sampling_rate = 0.01
+
+# ============================================================================
+# SECRETS CONFIGURATION (managed via Cloudflare CLI)
+# ============================================================================
+
+# Development secrets:
+# wrangler secret put DUTCHNED_API_CREDENTIALS --env development
+# wrangler secret put SHOPIFY_APP_CLIENT_SECRET --env development
+# wrangler secret put SESSION_SECRET --env development
+# wrangler secret put WEBHOOK_SECRET --env development
+# wrangler secret put API_ENCRYPTION_KEY --env development
+
+# Production secrets:
+# wrangler secret put DUTCHNED_API_CREDENTIALS --env production
+# wrangler secret put SHOPIFY_APP_CLIENT_SECRET --env production
+# wrangler secret put SESSION_SECRET --env production
+# wrangler secret put WEBHOOK_SECRET --env production
+# wrangler secret put API_ENCRYPTION_KEY --env production
+
+# ============================================================================
+# ANALYTICS AND MONITORING
+# ============================================================================
+
+# Analytics Engine can be enabled via Cloudflare Dashboard:
+# [[env.production.analytics_engine_datasets]]
+# binding = "WORKER_ANALYTICS"
+# dataset = "woood_delivery_analytics_prod"
+#
+# [[env.development.analytics_engine_datasets]]
+# binding = "WORKER_ANALYTICS"
+# dataset = "woood_delivery_analytics_dev"

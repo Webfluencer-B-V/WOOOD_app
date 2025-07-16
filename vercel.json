@@ -1,9 +1,0 @@
-{
-    "version": 2,
-    "buildCommand": "",
-    "functions": {
-        "api/index.js": {
-            "maxDuration": 30
-        }
-    }
-}

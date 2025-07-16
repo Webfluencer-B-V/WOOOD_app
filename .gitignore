@@ -49,4 +49,4 @@ coverage/
 
 # Temporary folders
 tmp/
-temp/
+temp/workers/.dev.vars
