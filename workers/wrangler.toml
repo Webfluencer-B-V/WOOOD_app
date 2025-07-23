@@ -9,10 +9,26 @@ compatibility_flags = ["nodejs_compat"]
 # SHOPIFY_APP_CLIENT_ID
 # SHOPIFY_APP_CLIENT_SECRET
 # SHOPIFY_APP_URL
+# External API integration environment variables
+# SHOPIFY_ADMIN_API_ACCESS_TOKEN
+# SHOPIFY_STORE_URL
+# DUTCH_FURNITURE_BASE_URL
+# DUTCH_FURNITURE_API_KEY
+
+[observability.logs]
+enabled = true
 
 [[kv_namespaces]]
 binding = "WOOOD_KV"
 id = "17189fd27a034c548fd662aa7ffa8415"
+
+[[kv_namespaces]]
+binding = "STORE_LOCATOR_STATUS"
+id = "e03ccea949a342ed8ad81e4d0e1b2478"
+
+[[kv_namespaces]]
+binding = "EXPERIENCE_CENTER_STATUS"
+id = "fc265ea8b60f4e3aa8b2c3ac3e89eb69"
 
 [build]
 command = "npm run build"
@@ -27,6 +43,14 @@ CORS_ORIGINS = "https://*.myshopify.com,https://checkout.shopify.com"
 binding = "WOOOD_KV"
 id = "17189fd27a034c548fd662aa7ffa8415"
 
+[[env.production.kv_namespaces]]
+binding = "STORE_LOCATOR_STATUS"
+id = "e03ccea949a342ed8ad81e4d0e1b2478"
+
+[[env.production.kv_namespaces]]
+binding = "EXPERIENCE_CENTER_STATUS"
+id = "fc265ea8b60f4e3aa8b2c3ac3e89eb69"
+
 [env.staging]
 name = "woood-staging"
 
@@ -35,11 +59,19 @@ CORS_ORIGINS = "https://*.myshopify.com,https://checkout.shopify.com"
 
 [[env.staging.kv_namespaces]]
 binding = "WOOOD_KV"
-id = "placeholder-kv-namespace-id"
+id = "51fa115a98f44c4d896d3fd99d942d17"
+
+[[env.staging.kv_namespaces]]
+binding = "STORE_LOCATOR_STATUS"
+id = "e03ccea949a342ed8ad81e4d0e1b2478"
+
+[[env.staging.kv_namespaces]]
+binding = "EXPERIENCE_CENTER_STATUS"
+id = "fc265ea8b60f4e3aa8b2c3ac3e89eb69"
 
 # Cron triggers for scheduled tasks
 [env.staging.triggers]
-crons = ["0 4 * * *"] # Runs every day at 04:00 UTC
+crons = ["0 */6 * * *"] # Runs every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
 
 [env.production.triggers]
-crons = ["0 4 * * *"] # Runs every day at 04:00 UTC
+crons = ["0 */6 * * *"] # Runs every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)

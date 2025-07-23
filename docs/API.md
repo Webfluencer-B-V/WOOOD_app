@@ -237,100 +237,13 @@ User-Agent: Shopify-Captain-Hook
 
 ---
 
-## 🏪 Set Experience Center Metafields
+## 🏪 Experience Center Integration
 
-**Endpoint**: `POST /api/set-experience-center`
+### Trigger Experience Center Update
 
-**Description**: Queries the external Dutch Furniture Fulfillment API and sets the `woood.experiencecenter` boolean metafield for products based on their availability in the external system.
+**Endpoint**: `POST /api/experience-center/trigger`
 
-**Authentication**: Requires valid shop access token in KV storage
-
-**Request Body**:
-```json
-{
-  "shop": "your-shop.myshopify.com",
-  "productIds": [
-    "gid://shopify/Product/123",
-    "gid://shopify/Product/456",
-    "gid://shopify/Product/789"
-  ]
-}
-```
-
-**Response**:
-```json
-{
-  "success": true,
-  "results": [
-    {
-      "productId": "gid://shopify/Product/123",
-      "success": true,
-      "ean": "8714713200481",
-      "experienceCenter": true
-    },
-    {
-      "productId": "gid://shopify/Product/456",
-      "success": false,
-      "ean": "8714713221950"
-    }
-  ],
-  "summary": {
-    "total": 2,
-    "successful": 1,
-    "failed": 1
-  }
-}
-```
-
-**Process Flow**:
-1. Validates shop authentication and access token
-2. Queries external API: `https://portal.dutchfurniturefulfilment.nl/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`
-3. Retrieves product metafields to find EAN codes
-4. Maps EAN codes to external API availability data
-5. Sets `woood.experiencecenter` metafield to `true` if product exists in external API, `false` otherwise
-6. Returns detailed results for each product processed
-
-**External API Data Structure**:
-```json
-{
-  "data": [
-    {
-      "ean": "8714713200481",
-      "channel": "EC",
-      "itemcode": "374076-G"
-    },
-    {
-      "ean": "8714713221950", 
-      "channel": "EC",
-      "itemcode": "377529-OP"
-    }
-  ]
-}
-```
-
-**Usage Example**:
-```typescript
-import { setExperienceCenterMetafields } from './services/apiClient';
-
-// Set experience center metafields for products in cart
-const productIds = cartLines.map(line => line.merchandise?.product?.id).filter(Boolean);
-const success = await setExperienceCenterMetafields(productIds);
-
-if (success) {
-  console.log('Experience center metafields updated successfully');
-}
-```
-
-**Error Handling**:
-- `400 Bad Request`: Invalid request body (missing shop or productIds)
-- `401 Unauthorized`: Shop not authenticated or missing access token
-- `500 Internal Server Error`: External API error or Shopify API error
-
-### Scheduled Experience Center Update
-
-**Endpoint**: `POST /api/trigger-experience-center-update`
-
-**Description**: Manually triggers the scheduled experience center metafield update for all shops and all products. This is the same function that runs automatically via cron job.
+**Description**: Manually triggers the experience center metafield update for all shops and all products. This is the same function that runs automatically via cron job.
 
 **Authentication**: None required (internal endpoint)
 
@@ -374,6 +287,218 @@ if (success) {
 4. Maps product EAN codes to external API availability
 5. Sets `woood.experiencecenter` metafield for all products in batches
 6. Returns detailed results for each shop processed
+
+### Experience Center Status
+
+**Endpoint**: `GET /api/experience-center/status`
+
+**Description**: Returns the status of the last experience center update operation.
+
+**Authentication**: None required
+
+**Response**:
+```json
+{
+  "success": true,
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "results": [
+    {
+      "shop": "your-shop.myshopify.com",
+      "success": true,
+      "summary": {
+        "total": 150,
+        "successful": 145,
+        "failed": 5
+      }
+    }
+  ],
+  "summary": {
+    "totalShops": 1,
+    "successfulShops": 1,
+    "failedShops": 0
+  },
+  "cron": true
+}
+```
+
+**External API Data Structure**:
+```json
+{
+  "data": [
+    {
+      "ean": "8714713200481",
+      "channel": "EC",
+      "itemcode": "374076-G"
+    },
+    {
+      "ean": "8714713221950",
+      "channel": "EC",
+      "itemcode": "377529-OP"
+    }
+  ]
+}
+```
+
+**Process Flow**:
+1. Validates shop authentication and access token
+2. Queries external API: `https://portal.dutchfurniturefulfilment.nl/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`
+3. Retrieves product metafields to find EAN codes
+4. Maps EAN codes to external API availability data
+5. Sets `woood.experiencecenter` metafield to `true` if product exists in external API, `false` otherwise
+6. Returns detailed results for each product processed
+
+**Error Handling**:
+- `400 Bad Request`: Invalid request body (missing shop or productIds)
+- `401 Unauthorized`: Shop not authenticated or missing access token
+- `500 Internal Server Error`: External API error or Shopify API error
+
+---
+
+## 🗺️ Store Locator Integration
+
+### Trigger Store Locator Update
+
+**Endpoint**: `POST /api/store-locator/trigger`
+
+**Description**: Manually triggers the store locator data sync for all shops. This is the same function that runs automatically via cron job.
+
+**Authentication**: None required (internal endpoint)
+
+**Request Body**: None required
+
+**Response**:
+```json
+{
+  "success": true,
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "results": [
+    {
+      "shop": "your-shop.myshopify.com",
+      "success": true,
+      "summary": {
+        "total": 150,
+        "successful": 145,
+        "failed": 5
+      }
+    }
+  ],
+  "summary": {
+    "totalShops": 1,
+    "successfulShops": 1,
+    "failedShops": 0
+  }
+}
+```
+
+**Scheduled Execution**:
+- **Cron Schedule**: Daily at 04:00 UTC (`0 4 * * *`)
+- **Automatic Processing**: Fetches and upserts all dealer data
+- **Error Handling**: Comprehensive error logging and status tracking
+- **Logging**: Detailed logging for monitoring and debugging
+
+**Process Flow**:
+1. Fetches dealer data from external API: `https://portal.dutchfurniturefulfilment.nl/api/datasource/wooodshopfinder`
+2. Filters dealers by account status (`A`) and activation portal (`true` or `'WAAR'`)
+3. Transforms dealer data (removes sensitive fields, maps exclusives)
+4. Upserts transformed data to `woood.store_locator` shop metafield
+5. Returns operation status and dealer count
+
+### Store Locator Status
+
+**Endpoint**: `GET /api/store-locator/status`
+
+**Description**: Returns the status of the last store locator update operation.
+
+**Authentication**: None required
+
+**Response**:
+```json
+{
+  "success": true,
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "results": [
+    {
+      "shop": "your-shop.myshopify.com",
+      "success": true,
+      "summary": {
+        "total": 150,
+        "successful": 145,
+        "failed": 5
+      }
+    }
+  ],
+  "summary": {
+    "totalShops": 1,
+    "successfulShops": 1,
+    "failedShops": 0
+  },
+  "cron": true
+}
+```
+
+**External API Data Structure**:
+```json
+{
+  "data": [
+    {
+      "Id": "6574C945-2C13-4FF9-9C58-5F6FDE4E4F09",
+      "accountStatus": "A",
+      "address": "ACHTHOEVENWEG 6",
+      "addresses": [
+        {
+          "address": "ACHTHOEVENWEG 6",
+          "city": "STAPHORST",
+          "postcode": "7951 SK",
+          "type": "Visit",
+          "country": "Netherlands"
+        }
+      ],
+      "city": "STAPHORST",
+      "code": "165201",
+      "dealerActivationPortal": true,
+      "name": "BOER STAPHORST B.V.",
+      "nameAlias": "Boer Staphorst ",
+      "phone": "(0522) 46 68 00",
+      "physicalshop": true,
+      "postcode": "7951 SK",
+      "shopfinderExclusives": [
+        {
+          "Code": "150",
+          "Description": "WOOOD TABLO"
+        },
+        {
+          "Code": "17",
+          "Description": "ESSENTIALS"
+        }
+      ],
+      "website": "www.boer-staphorst.nl",
+      "webshop": true,
+      "country": "NL"
+    }
+  ]
+}
+```
+
+**Data Transformation Rules**:
+- **Filtering**: Only includes dealers where `accountStatus === 'A'` and `dealerActivationPortal === true` or `'WAAR'`
+- **Field Mapping**: Maps `nameAlias` to `name` (fallback to `name` if missing)
+- **Exclusivity Mapping**: Maps exclusivity descriptions using predefined mapping rules
+- **Field Removal**: Removes sensitive fields (`accountmanager`, `dealerActivationPortal`, `vatNumber`, `shopfinderExclusives`, `accountStatus`)
+- **Output**: Flat array of dealer objects with all fields on root level
+
+**Exclusivity Mapping**:
+```javascript
+const EXCLUSIVITY_MAP = {
+  'woood essentials': 'WOOOD ESSENTIALS',
+  'essentials': 'WOOOD ESSENTIALS',
+  'woood premium': 'WOOOD PREMIUM',
+  'woood exclusive': 'WOOOD PREMIUM',
+  'woood outdoor': 'WOOOD OUTDOOR',
+  'woood tablo': 'WOOOD TABLO',
+  'vtwonen': 'VT WONEN',
+  'vt wonen dealers only': 'VT WONEN',
+};
+```
 
 ---
 
@@ -648,6 +773,31 @@ const erpMetafields = useAppMetafields({
   namespace: "erp",
   key: "levertijd"
 });
+```
+
+---
+
+## 🔗 Live API Endpoints
+
+### Core Extension Endpoints
+- `GET /api/delivery-dates` - Real-time delivery date availability
+- `POST /api/webhooks/orders` - Automated order processing
+- `GET /health` - System health and status monitoring
+- `GET /admin` - Simple admin interface
+
+### External API Integration Endpoints
+- `POST /api/store-locator/trigger` - Trigger store locator data sync for all shops
+- `GET /api/store-locator/status` - Get status of last store locator sync operation
+- `POST /api/experience-center/trigger` - Trigger experience center data sync for all shops
+- `GET /api/experience-center/status` - Get status of last experience center sync operation
+
+### Production URLs
+- **Production**: `https://woood-production.workers.dev`
+- **Staging**: `https://woood-staging.workers.dev`
+
+### External API Endpoints
+- **Store Locator**: `https://portal.dutchfurniturefulfilment.nl/api/datasource/wooodshopfinder`
+- **Experience Center**: `https://portal.dutchfurniturefulfilment.nl/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`
 ```
 
 ### Webhook Processing

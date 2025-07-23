@@ -373,16 +373,22 @@ shopify app deploy     # Production deployment
 - **CPU Optimization**: <10ms execution time
 - **Bundle Optimization**: 17KB compressed size
 
-## 🗺️ Store Locator Upserter Worker
+## 🗺️ Store Locator Integration
 
-The Store Locator Upserter Worker (`workers/store-locator/`) is a dedicated Cloudflare Worker that fetches, transforms, and upserts a flat array of dealer objects to the `woood.store_locator` shop metafield from an external API.
+The Store Locator functionality is integrated into the main Cloudflare Worker (`workers/src/index.ts`) and fetches, transforms, and upserts a flat array of dealer objects to the `woood.store_locator` shop metafield from the external Dutch Furniture Fulfillment API.
 
 **Key Features:**
-- Scheduled (cron) and manual upsert triggers
+- Scheduled (cron) and manual upsert triggers via `/api/store-locator/upsert`
 - Data transformation and filtering (active/activated dealers, mapped exclusives, sensitive fields removed)
 - Upserts to Shopify shop metafield using Admin API credentials
 - Output is a flat array of dealer objects (not nested)
-- Fully integrated into the app
+- Comprehensive logging and error handling
+- Status tracking via `/api/store-locator/status`
+
+**External API Integration:**
+- **Endpoint**: `https://portal.dutchfurniturefulfilment.nl/api/datasource/wooodshopfinder`
+- **Authentication**: Bearer token via `EXTERNAL_API_KEY` environment variable
+- **Data Structure**: Array of dealer objects with account status and activation portal flags
 
 **Example Use Case:**
 Keep your store locator data in sync for theme/app blocks, with zero manual intervention.

@@ -8,7 +8,7 @@ import {
   View,
   Button
 } from '@shopify/ui-extensions-react/checkout';
-import { setExperienceCenterMetafields, triggerExperienceCenterUpdate } from '../services/apiClient';
+import { triggerExperienceCenterUpdate, getExperienceCenterStatus, triggerStoreLocatorUpdate, getStoreLocatorStatus } from '../services/apiClient';
 
 /**
  * Simple test component to verify useMetafield works
@@ -33,33 +33,48 @@ export function MetafieldTester() {
     key: 'experiencecenter'
   });
 
-  const handleSetExperienceCenter = async () => {
-    if (!cartLines || cartLines.length === 0) {
-      console.log('No cart lines to process');
-      return;
-    }
-
-    // Extract product IDs from cart lines
-    const productIds = cartLines
-      .map(line => line.merchandise?.product?.id)
-      .filter(id => id) as string[];
-
-    if (productIds.length === 0) {
-      console.log('No product IDs found in cart');
-      return;
-    }
-
-    console.log('Setting experience center metafields for products:', productIds);
+  const handleGetExperienceCenterStatus = async () => {
+    console.log('Getting experience center sync status...');
     
     try {
-      const success = await setExperienceCenterMetafields(productIds);
-      if (success) {
-        console.log('✅ Experience center metafields set successfully');
+      const status = await getExperienceCenterStatus();
+      if (status) {
+        console.log('✅ Experience center status:', status);
       } else {
-        console.log('❌ Failed to set experience center metafields');
+        console.log('❌ Failed to get experience center status');
       }
     } catch (error) {
-      console.error('Error setting experience center metafields:', error);
+      console.error('Error getting experience center status:', error);
+    }
+  };
+
+  const handleTriggerStoreLocatorUpdate = async () => {
+    console.log('Triggering store locator data sync...');
+    
+    try {
+      const success = await triggerStoreLocatorUpdate();
+      if (success) {
+        console.log('✅ Store locator sync triggered successfully');
+      } else {
+        console.log('❌ Failed to trigger store locator sync');
+      }
+    } catch (error) {
+      console.error('Error triggering store locator sync:', error);
+    }
+  };
+
+  const handleGetStoreLocatorStatus = async () => {
+    console.log('Getting store locator sync status...');
+    
+    try {
+      const status = await getStoreLocatorStatus();
+      if (status) {
+        console.log('✅ Store locator status:', status);
+      } else {
+        console.log('❌ Failed to get store locator status');
+      }
+    } catch (error) {
+      console.error('Error getting store locator status:', error);
     }
   };
 
@@ -113,9 +128,26 @@ export function MetafieldTester() {
         <Banner status="info">
           <BlockStack spacing="tight">
             <Text size="small" emphasis="bold">🏪 Experience Center Test:</Text>
-            <Text size="small">Click the button below to set experience center metafields for all products in cart based on external API data.</Text>
-            <Button onPress={handleSetExperienceCenter}>
-              Set Experience Center Metafields
+            <Text size="small">Click the button below to trigger experience center data sync for all shops and all products.</Text>
+            <Button onPress={handleTriggerScheduledUpdate}>
+              Trigger Experience Center Sync
+            </Button>
+            <Button onPress={handleGetExperienceCenterStatus}>
+              Get Experience Center Status
+            </Button>
+          </BlockStack>
+        </Banner>
+
+        {/* Store Locator Test Section */}
+        <Banner status="info">
+          <BlockStack spacing="tight">
+            <Text size="small" emphasis="bold">🗺️ Store Locator Test:</Text>
+            <Text size="small">Click the button below to trigger store locator data sync for all shops.</Text>
+            <Button onPress={handleTriggerStoreLocatorUpdate}>
+              Trigger Store Locator Sync
+            </Button>
+            <Button onPress={handleGetStoreLocatorStatus}>
+              Get Store Locator Status
             </Button>
           </BlockStack>
         </Banner>

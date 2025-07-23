@@ -137,59 +137,7 @@ export async function saveOrderMetafields(
 }
 
 /**
- * Set experience center metafields for products based on external API data
- * @param productIds Array of Shopify product IDs (gid://shopify/Product/...)
- * @param config API configuration
- * @returns Promise<boolean> Success status
- */
-export async function setExperienceCenterMetafields(
-  productIds: string[],
-  config: FetchConfig = DEFAULT_CONFIG
-): Promise<boolean> {
-  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
-  const url = `${apiBaseUrl}/api/set-experience-center`;
-
-  try {
-    console.log('🏪 Setting experience center metafields for products:', productIds.length);
-
-    // Get authentication headers for session-based authentication
-    const authHeaders = getAuthenticationHeaders();
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify({
-        productIds,
-        timestamp: new Date().toISOString(),
-        source: 'checkout_extension'
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    console.log('✅ Successfully set experience center metafields:', result);
-    
-    if (result.summary) {
-      console.log(`📊 Summary: ${result.summary.successful}/${result.summary.total} products updated`);
-    }
-    
-    return true;
-
-  } catch (error: any) {
-    console.error('❌ Failed to set experience center metafields:', error.message);
-    return false;
-  }
-}
-
-/**
- * Manually trigger the scheduled experience center metafield update
+ * Trigger experience center data sync for all shops
  * This calls the same function that runs automatically via cron job
  * @param config API configuration
  * @returns Promise<boolean> Success status
@@ -198,25 +146,17 @@ export async function triggerExperienceCenterUpdate(
   config: FetchConfig = DEFAULT_CONFIG
 ): Promise<boolean> {
   const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
-  const url = `${apiBaseUrl}/api/trigger-experience-center-update`;
+  const url = `${apiBaseUrl}/api/experience-center/trigger`;
 
   try {
-    console.log('🔄 Triggering scheduled experience center update...');
-
-    // Get authentication headers for session-based authentication
-    const authHeaders = getAuthenticationHeaders();
+    console.log('🔄 Triggering experience center data sync...');
 
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        ...authHeaders,
       },
-      body: JSON.stringify({
-        timestamp: new Date().toISOString(),
-        source: 'checkout_extension_manual_trigger'
-      }),
     });
 
     if (!response.ok) {
@@ -224,7 +164,7 @@ export async function triggerExperienceCenterUpdate(
     }
 
     const result = await response.json();
-    console.log('✅ Successfully triggered experience center update:', result);
+    console.log('✅ Successfully triggered experience center sync:', result);
     
     if (result.summary) {
       console.log(`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`);
@@ -233,8 +173,122 @@ export async function triggerExperienceCenterUpdate(
     return true;
 
   } catch (error: any) {
-    console.error('❌ Failed to trigger experience center update:', error.message);
+    console.error('❌ Failed to trigger experience center sync:', error.message);
     return false;
+  }
+}
+
+/**
+ * Get status of last experience center sync operation
+ * @param config API configuration
+ * @returns Promise<any> Status information
+ */
+export async function getExperienceCenterStatus(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<any> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/experience-center/status`;
+
+  try {
+    console.log('📊 Fetching experience center sync status...');
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully fetched experience center status:', result);
+    
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch experience center status:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Trigger store locator data sync for all shops
+ * This calls the same function that runs automatically via cron job
+ * @param config API configuration
+ * @returns Promise<boolean> Success status
+ */
+export async function triggerStoreLocatorUpdate(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<boolean> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/store-locator/trigger`;
+
+  try {
+    console.log('🔄 Triggering store locator data sync...');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully triggered store locator sync:', result);
+    
+    if (result.summary) {
+      console.log(`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`);
+    }
+    
+    return true;
+
+  } catch (error: any) {
+    console.error('❌ Failed to trigger store locator sync:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Get status of last store locator sync operation
+ * @param config API configuration
+ * @returns Promise<any> Status information
+ */
+export async function getStoreLocatorStatus(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<any> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/store-locator/status`;
+
+  try {
+    console.log('📊 Fetching store locator sync status...');
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully fetched store locator status:', result);
+    
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch store locator status:', error.message);
+    return null;
   }
 }
 

@@ -4,19 +4,19 @@
   "description": "WOOOD Delivery Date Picker - Modern Shopify Checkout Extension with React Query, itty-router, and webhook-based architecture powered by Cloudflare Workers for global performance",
   "private": true,
   "scripts": {
-    "build": "npm run build:workers && npm run build:extensions",
-    "build:workers": "cd workers && npm install && wrangler build",
-    "build:extensions": "cd extensions/date-picker && npm install && npm run build && cd ../shipping-method && npm install && npm run build",
-    "deploy:staging": "npm run build && npm run deploy:workers:staging && npm run deploy:shopify:staging",
+    "build": "yarn build:workers && yarn build:extensions",
+    "build:workers": "cd workers && wrangler build",
+    "build:extensions": "cd extensions/date-picker && yarn build && cd ../shipping-method && yarn build",
+    "deploy:staging": "yarn build && yarn deploy:workers:staging && yarn deploy:shopify:staging",
     "deploy:workers:staging": "cd workers && wrangler deploy --env staging",
     "deploy:shopify:staging": "shopify app deploy --config=shopify.app.staging.toml",
-    "deploy:production": "npm run build && npm run deploy:workers:production && npm run deploy:shopify:production",
+    "deploy:production": "yarn build && yarn deploy:workers:production && yarn deploy:shopify:production",
     "deploy:workers:production": "cd workers && wrangler deploy --env production",
     "deploy:shopify:production": "shopify app deploy",
     "logs:staging": "cd workers && wrangler tail --env staging",
     "logs:production": "cd workers && wrangler tail --env production",
     "clean": "rm -rf node_modules && cd workers && rm -rf node_modules && cd ../extensions/date-picker && rm -rf node_modules && cd ../shipping-method && rm -rf node_modules",
-    "install": "npm install && cd workers && npm install && cd ../extensions/date-picker && npm install && cd ../shipping-method && npm install"
+    "install": "yarn install"
   },
   "workspaces": [
     "workers",
@@ -56,5 +56,9 @@
     "@types/react-dom": "^18.0.11",
     "typescript": "^5.0.0"
   },
-  "packageManager": "yarn@1.22.22"
+  "packageManager": "yarn@1.22.22",
+  "resolutions": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
 }
