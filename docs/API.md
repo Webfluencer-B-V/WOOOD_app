@@ -9,6 +9,59 @@ The Delivery Date Picker API provides essential endpoints for Shopify checkout e
 
 ---
 
+## 🔧 Extension Configuration
+
+### Checkout Extension Settings
+
+The delivery date picker extension provides simplified settings for merchants:
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `extension_mode` | Select | `Full` | Controls extension behavior: Disabled, Shipping Data Only, Date Picker Only, Full |
+| `delivery_method_cutoff` | Number | `30` | Shipping methods >= this number use Dutchned API, < this number use POST mock data |
+| `date_picker_filtering` | Select | `ERP Filtered` | No Filtering: Show all dates \| ERP Filtered: Only show dates after product minimum delivery times |
+| `hide_picker_within_days` | Number | `14` | Hide date picker if products can be delivered within this many days (0 = always show) |
+| `max_dates_to_show` | Number | `15` | Maximum number of delivery dates to display in the picker |
+| `active_country_codes` | Text | `NL` | Comma-separated country codes where date picker is active |
+| `enable_mock_mode` | Boolean | `false` | Enable mock delivery dates for testing |
+| `preview_mode` | Boolean | `false` | Show preview-only UI with debug information |
+
+### Built-in Features (Always Active)
+
+- ✅ **Inventory Check**: Real-time stock verification from Shopify Admin API
+- ✅ **CORS Security**: Proper cross-origin headers for secure API communication  
+- ✅ **Error Handling**: Graceful fallbacks when APIs fail
+- ✅ **Comprehensive Logging**: Detailed console logs for debugging
+
+### Three-Step Decision Flow
+
+The extension follows this decision process:
+
+1. **📦 Stock Check**: Verify all products are in stock via Shopify Admin API
+2. **🚚 Shipping Method Analysis**: Extract number from method name, compare with cutoff
+3. **📅 Date Source Selection**: Choose ERP (no picker), DUTCHNED (API), or POST (mock)
+
+```
+🛒 Cart → 📦 Stock Check → 🚚 Method Check → 📅 Date Source → 📱 Display
+```
+
+### Debug Console Logs
+
+The extension provides comprehensive logging:
+
+```javascript
+🔧 [Settings] Extension Mode: Full, Cutoff: 30, Preview: false
+🔍 [Inventory Check] Starting for 2 variants in shop: woood-shop.myshopify.com
+✅ [Inventory Check] API Response: {success: true, inventory: {...}}
+🚚 [Shipping Method] Selected: "35 - EXPEDITIE STANDAARD" → Number: 35
+🎯 [Delivery Type] Method: 35, Cutoff: 30, Is Dutchned: true
+📋 [Flow Summary] Stock: true, Delivery Type: DUTCHNED
+📅 [Date Source] DUTCHNED delivery - Using 14 API dates
+🔍 [Date Filtering] Final result: 8 DUTCHNED dates available
+```
+
+---
+
 ## 🔐 Authentication
 
 ### OAuth 2.0 Flow
@@ -489,14 +542,14 @@ User-Agent: Shopify-Captain-Hook
 **Exclusivity Mapping**:
 ```javascript
 const EXCLUSIVITY_MAP = {
-  'woood essentials': 'WOOOD ESSENTIALS',
-  'essentials': 'WOOOD ESSENTIALS',
-  'woood premium': 'WOOOD PREMIUM',
-  'woood exclusive': 'WOOOD PREMIUM',
-  'woood outdoor': 'WOOOD OUTDOOR',
-  'woood tablo': 'WOOOD TABLO',
-  'vtwonen': 'VT WONEN',
-  'vt wonen dealers only': 'VT WONEN',
+  'woood essentials': 'WOOOD Essentials',
+  'essentials': 'WOOOD Essentials',
+  'woood premium': 'WOOOD Premium',
+  'woood exclusive': 'WOOOD Premium',
+  'woood outdoor': 'WOOOD Outdoor',
+  'woood tablo': 'WOOOD Tablo',
+  'vtwonen': 'vtwonen',
+  'vt wonen dealers only': 'vtwonen',
 };
 ```
 

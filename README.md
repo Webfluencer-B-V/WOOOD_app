@@ -38,6 +38,90 @@
 4. **🔄 Automated Order Processing** - Complete webhook-driven pipeline (checkout → Workers → metafields)
 5. **🔐 Simple Security** - OAuth 2.0 with lightweight token storage and HMAC webhook validation
 
+## 🔧 Extension Configuration
+
+### Simplified Settings (Merchant Configurable)
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Extension Mode** | `Full` | Controls extension behavior: Disabled (off), Shipping Data Only (metadata only), Date Picker Only (picker only), Full (complete functionality) |
+| **Delivery Method Cutoff** | `30` | Shipping methods >= this number use Dutchned API (live dates), < this number use POST mock data |
+| **Date Picker Filtering** | `ERP Filtered` | No Filtering: Show all available dates \| ERP Filtered: Only show dates after product minimum delivery times |
+| **Hide Picker Within Days** | `14` | Hide date picker if products can be delivered within this many days (0 = always show picker) |
+| **Max Dates to Show** | `15` | Maximum number of delivery dates to display in the picker |
+| **Active Country Codes** | `NL` | Comma-separated country codes where date picker is active (e.g., NL,BE,DE) |
+| **Enable Mock Dates** | `false` | Enable mock delivery dates for testing (fallback when API is unavailable) |
+| **Preview Mode** | `false` | Show preview-only UI with debug information (for testing in Checkout Editor) |
+
+### Built-in Features (Always Active)
+- ✅ **Inventory Check**: Real-time stock verification from Shopify Admin API (always enabled)
+- ✅ **CORS Security**: Proper cross-origin headers for secure API communication
+- ✅ **Error Handling**: Graceful fallbacks when APIs fail (customer-friendly)
+- ✅ **Comprehensive Logging**: Detailed console logs for debugging and flow visibility
+
+## 📊 Three-Step Decision Flow
+
+The extension follows a clear three-step decision process to determine delivery dates:
+
+### Step 1: Stock Check 📦
+- **Fetches real inventory** from Shopify Admin API
+- **If any product is out of stock** → ERP delivery (no date picker)
+- **If all products in stock** → Continue to shipping method check
+
+### Step 2: Shipping Method Analysis 🚚
+- **Extracts number** from shipping method name (e.g., "35 - EXPEDITIE STANDAARD" → 35)
+- **Compares with cutoff** (default: 30)
+- **≥ 30 = DUTCHNED delivery** (live API dates)
+- **< 30 = POST delivery** (mock dates)
+
+### Step 3: Date Source & Filtering 📅
+- **ERP**: No date picker shown, ERP system determines delivery
+- **DUTCHNED**: Live API dates from Dutchned service (max 14 dates)
+- **POST**: Generated mock dates (max 15 dates)
+- **Optional ERP Filtering**: Only show dates ≥ product minimum delivery date
+
+### Complete Flow Diagram
+
+```mermaid
+flowchart TD
+    A[🛒 Cart Items] --> B{📦 Stock Check}
+    B -->|❌ Out of Stock| C[🏭 ERP Delivery]
+    B -->|✅ In Stock| D{🚚 Shipping Method Check}
+
+    D -->|≥ 30| E[🚛 DUTCHNED Delivery]
+    D -->|< 30| F[📮 POST Delivery]
+
+    C --> G[📅 No Date Picker<br/>ERP determines dates]
+    E --> H[📅 API Dates<br/>Live from Dutchned]
+    F --> I[📅 Mock Dates<br/>Generated locally]
+
+    H --> J{🔍 ERP Filtering?}
+    I --> J
+    J -->|Yes| K[Filter dates ≥ minimum ERP date]
+    J -->|No| L[Show all dates]
+    K --> M[📱 Display Date Picker]
+    L --> M
+```
+
+### Debug Console Logs
+
+The extension provides comprehensive logging to track the complete flow:
+
+```javascript
+🔧 [Settings] Extension Mode: Full, Cutoff: 30, Preview: false
+🔍 [Inventory Check] Starting for 2 variants in shop: woood-shop.myshopify.com
+✅ [Inventory Check] API Response: {success: true, inventory: {...}}
+🔍 [Stock Check Passed] Stock check passed, returning true
+🚚 [Shipping Method] Selected: "35 - EXPEDITIE STANDAARD" → Number: 35
+🎯 [Delivery Type] Method: 35, Cutoff: 30, Is Dutchned: true
+📋 [Flow Summary] Stock: true, Highest Method: "35 - EXPEDITIE STANDAARD", Delivery Type: DUTCHNED
+📅 [Date Source] DUTCHNED delivery - Using 14 API dates from Dutchned
+🔍 [Date Filtering] Starting with 14 DUTCHNED dates
+🔍 [Date Filtering] ERP filtering enabled - minimum date: 2025-07-20
+🔍 [Date Filtering] After ERP filtering: 8 dates remain
+🔍 [Date Filtering] Final result: 8 DUTCHNED dates available
+```
+
 ## 🛠️ Technology Stack
 
 - **Backend**: Cloudflare Workers (TypeScript) with itty-router

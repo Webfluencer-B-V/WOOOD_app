@@ -52,57 +52,60 @@ key = "ShippingMethod2"
 key = "extension_mode"
 type = "single_line_text_field"
 name = "Extension Mode"
-description = "Choose how the extension behaves (Default: Full)"
+description = "Controls extension behavior: Disabled (off), Shipping Data Only (metadata only), Date Picker Only (picker only), Full (complete functionality) - Default: Full"
 [[extensions.settings.fields.validations]]
 name = "choices"
 value = "[\"Disabled\", \"Shipping Data Only\", \"Date Picker Only\", \"Full\"]"
 
 [[extensions.settings.fields]]
+key = "delivery_method_cutoff"
+type = "number_integer"
+name = "Delivery Method Cutoff"
+default = 30
+description = "Shipping methods >= this number use Dutchned API (live dates), < this number use POST mock data - Default: 30"
+
+[[extensions.settings.fields]]
 key = "date_picker_filtering"
 type = "single_line_text_field"
 name = "Date Picker Filtering"
-description = "No Filtering: Show all available dates | ERP Filtered: Only show dates after product minimum delivery times (Default: ERP Filtered)"
+description = "No Filtering: Show all available dates | ERP Filtered: Only show dates after product minimum delivery times - Default: ERP Filtered"
 [[extensions.settings.fields.validations]]
 name = "choices"
 value = "[\"No Filtering\", \"ERP Filtered\"]"
 
 [[extensions.settings.fields]]
-key = "only_show_if_in_stock"
-type = "boolean"
-name = "Only show if in stock"
-default = false
-description = "Only show the date picker if all products in the cart are in stock (Default: false)"
-
-[[extensions.settings.fields]]
 key = "hide_picker_within_days"
 type = "number_integer"
 name = "Hide Picker Within Days"
-description = "Hide date picker if products can be delivered within this many days (0 = always show picker) (Default: 14)"
+default = 14
+description = "Hide date picker if products can be delivered within this many days (0 = always show picker) - Default: 14"
 
 [[extensions.settings.fields]]
 key = "max_dates_to_show"
 type = "number_integer"
 name = "Max Dates to Show"
-description = "Maximum number of delivery dates to display in the picker (Default: 15)"
+default = 15
+description = "Maximum number of delivery dates to display in the picker - Default: 15"
 
 [[extensions.settings.fields]]
 key = "active_country_codes"
 type = "single_line_text_field"
 name = "Active Country Codes"
-description = "Comma-separated country codes where date picker is active (e.g., NL,BE,DE) (Default: NL)"
+default = "NL"
+description = "Comma-separated country codes where date picker is active (e.g., NL,BE,DE) - Default: NL"
 
 [[extensions.settings.fields]]
 key = "enable_mock_mode"
 type = "boolean"
 name = "Enable Mock Dates"
 default = false
-description = "Enable mock delivery dates for testing (fallback when API is unavailable) (Default: false)"
+description = "Enable mock delivery dates for testing (fallback when API is unavailable) - Default: false"
 
 [[extensions.settings.fields]]
 key = "preview_mode"
 type = "boolean"
 name = "Preview Mode"
 default = false
-description = "Show preview-only UI (for testing in Checkout Editor)"
+description = "Show preview-only UI with debug information (for testing in Checkout Editor) - Default: false"
 
 

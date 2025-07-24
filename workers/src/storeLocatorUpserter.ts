@@ -1,14 +1,14 @@
 // TODO: Type env properly if needed
 
 const EXCLUSIVITY_MAP: Record<string, string> = {
-  'woood essentials': 'WOOOD ESSENTIALS',
-  'essentials': 'WOOOD ESSENTIALS',
-  'woood premium': 'WOOOD PREMIUM',
-  'woood exclusive': 'WOOOD PREMIUM',
-  'woood outdoor': 'WOOOD OUTDOOR',
-  'woood tablo': 'WOOOD TABLO',
-  'vtwonen': 'VT WONEN',
-  'vt wonen dealers only': 'VT WONEN',
+  'woood essentials': 'WOOOD Essentials',
+  'essentials': 'WOOOD Essentials',
+  'woood premium': 'WOOOD Premium',
+  'woood exclusive': 'WOOOD Premium',
+  'woood outdoor': 'WOOOD Outdoor',
+  'woood tablo': 'WOOOD Tablo',
+  'vtwonen': 'vtwonen',
+  'vt wonen dealers only': 'vtwonen',
 };
 
 function mapExclusives(exclusivityData: any): string[] {

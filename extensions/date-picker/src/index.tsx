@@ -338,14 +338,16 @@ function DeliveryDatePicker() {
   const apiBaseUrl = 'https://woood-production.leander-4e0.workers.dev';
 
   // Extension settings
-  const extensionMode = (settings.extension_mode as string) || 'Full';
-  const datePickerFiltering = (settings.date_picker_filtering as string) || 'ERP Filtered';
-  const hidePickerWithinDays = typeof settings.hide_picker_within_days === 'number' ? settings.hide_picker_within_days : 14;
+  const extensionMode = settings.extension_mode || 'Full';
+  const datePickerFiltering = settings.date_picker_filtering || 'ERP Filtered';
+  const hidePicker = typeof settings.hide_picker_within_days === 'number' ? settings.hide_picker_within_days : 14;
   const maxDatesToShow = typeof settings.max_dates_to_show === 'number' ? settings.max_dates_to_show : 15;
-  const activeCountryCodesString = (settings.active_country_codes as string) || 'NL';
+  const activeCountryCodes = settings.active_country_codes || 'NL';
   const enableMockMode = typeof settings.enable_mock_mode === 'boolean' ? settings.enable_mock_mode : false;
-  const enableOnlyShowIfInStock = typeof settings.only_show_if_in_stock === 'boolean' ? settings.only_show_if_in_stock : true;
   const isCheckoutPreview = typeof settings.preview_mode === 'boolean' ? settings.preview_mode : false;
+  const deliveryMethodCutoff = typeof settings.delivery_method_cutoff === 'number' ? settings.delivery_method_cutoff : 30;
+
+  console.log(`🔧 [Settings] Extension Mode: ${extensionMode}, Cutoff: ${deliveryMethodCutoff}, Preview: ${isCheckoutPreview}`);
 
   // Derived settings
   const isExtensionDisabled = extensionMode === 'Disabled';
@@ -353,14 +355,14 @@ function DeliveryDatePicker() {
   const shouldShowDatePicker = extensionMode === 'Date Picker Only' || extensionMode === 'Full';
   const enableWeekNumberFiltering = datePickerFiltering === 'ERP Filtered';
 
-    // Parse active country codes and determine if date picker should show
-  const activeCountryCodes = activeCountryCodesString
+  // Parse active country codes and determine if date picker should show
+  const activeCountryCodesList = (activeCountryCodes as string)
     .split(',')
-    .map(code => code.trim().toUpperCase())
-    .filter(code => code.length > 0); // Remove empty strings
+    .map((code: string) => code.trim().toUpperCase())
+    .filter((code: string) => code.length > 0); // Remove empty strings
 
   const countryCode = shippingAddress?.countryCode;
-  const showDatePicker = countryCode && activeCountryCodes.includes(countryCode) && shouldShowDatePicker;
+  const showDatePicker = countryCode && activeCountryCodesList.includes(countryCode) && shouldShowDatePicker;
 
   // Always process cart metadata (needed for order attributes even when picker is hidden)
   const metadataResult = useCartMetadataOptimized();
@@ -414,14 +416,14 @@ function DeliveryDatePicker() {
 
   // Check if minimum date is within configured days (hide date picker if so)
   const hidePickerDueToEarlyDelivery = useMemo(() => {
-    if (!minimumDeliveryDate || hidePickerWithinDays === 0) return false;
+    if (!minimumDeliveryDate || hidePicker === 0) return false;
     const today = new Date();
     const daysUntilDelivery = Math.ceil((minimumDeliveryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     const minDateStr = minimumDeliveryDate.toISOString().split('T')[0];
     const todayStr = today.toISOString().split('T')[0];
-    console.log('[Hide Picker Within Days] minimumDeliveryDate:', minDateStr, 'today:', todayStr, 'daysUntilDelivery:', daysUntilDelivery, 'hidePickerWithinDays:', hidePickerWithinDays);
-    return daysUntilDelivery <= hidePickerWithinDays;
-  }, [minimumDeliveryDate, hidePickerWithinDays]);
+    console.log('[Hide Picker Within Days] minimumDeliveryDate:', minDateStr, 'today:', todayStr, 'daysUntilDelivery:', daysUntilDelivery, 'hidePickerWithinDays:', hidePicker);
+    return daysUntilDelivery <= hidePicker;
+  }, [minimumDeliveryDate, hidePicker]);
 
   const cartLines = useCartLines();
   const [inventory, setInventory] = useState<Record<string, number | null> | null>(null);
@@ -430,13 +432,7 @@ function DeliveryDatePicker() {
 
   // Fetch inventory from worker API when cart lines or shop changes
   useEffect(() => {
-    // console.log('[Inventory Check] enableOnlyShowIfInStock:', enableOnlyShowIfInStock);
-    if (cartLines) {
-      // cartLines.forEach((line, idx) => {
-      //   console.log(`[Inventory Check] Cart line ${idx}: variantId=${line.merchandise?.id}, quantity=${line.quantity}`);
-      // });
-    }
-    if (!enableOnlyShowIfInStock || !cartLines || cartLines.length === 0 || !shop?.myshopifyDomain) {
+    if (!cartLines || cartLines.length === 0 || !shop?.myshopifyDomain) {
       setInventory(null);
       setInventoryLoading(false);
       setInventoryError(null);
@@ -451,6 +447,10 @@ function DeliveryDatePicker() {
       setInventoryError(null);
       return;
     }
+
+    console.log(`🔍 [Inventory Check] Starting for ${variantIds.length} variants in shop: ${shop.myshopifyDomain}`);
+    console.log(`🔍 [Inventory Check] Variant IDs:`, variantIds);
+
     setInventoryLoading(true);
     setInventoryError(null);
     fetch(`${apiBaseUrl}/api/inventory`, {
@@ -466,71 +466,224 @@ function DeliveryDatePicker() {
         return res.json();
       })
       .then(data => {
+        console.log(`✅ [Inventory Check] API Response:`, data);
         if (data && data.success && data.inventory) {
-          // console.log('[Inventory Check] Inventory API result:', data.inventory);
           setInventory(data.inventory);
+
+          // Log inventory details for debugging
+          const inventoryDetails = Object.entries(data.inventory).map(([variantId, qty]) => ({
+            variantId,
+            quantity: qty,
+            inStock: qty === null || qty === undefined || (typeof qty === 'number' && qty > 0)
+          }));
+          console.log(`📊 [Inventory Check] Inventory details:`, inventoryDetails);
         } else {
+          console.warn(`⚠️ [Inventory Check] Invalid API response:`, data);
           setInventoryError('Inventory API error');
           setInventory(null);
         }
       })
       .catch(err => {
+        console.error(`❌ [Inventory Check] Error:`, err);
         setInventoryError(typeof err === 'string' ? err : err.message || 'Unknown error');
         setInventory(null);
       })
       .finally(() => setInventoryLoading(false));
-  }, [enableOnlyShowIfInStock, cartLines, shop?.myshopifyDomain]);
+  }, [cartLines, shop?.myshopifyDomain, apiBaseUrl]);
 
   // Determine if all products are in stock using fetched inventory
   const allProductsInStock = useMemo(() => {
-    if (!enableOnlyShowIfInStock) return true;
-    if (!cartLines || cartLines.length === 0) return false;
+    if (!cartLines || cartLines.length === 0) return true; // Empty cart = in stock
     if (inventoryLoading) return false; // Don't show picker while loading
-    if (inventoryError) return false;
-    if (!inventory) return false;
-    return cartLines.every(line => {
-      const variantId = line.merchandise?.id;
-      if (!variantId) return false;
-      const qty = inventory[variantId];
-      return typeof qty === 'number' && qty > 0;
-    });
-  }, [cartLines, enableOnlyShowIfInStock, inventory, inventoryLoading, inventoryError]);
+    if (inventoryError) {
+      console.log(`🔍 [Stock Check] Inventory error, assuming in stock:`, inventoryError);
+      return true; // If inventory check fails, assume in stock (don't block customers)
+    }
+    if (!inventory) {
+      console.log(`🔍 [Stock Check] No inventory data, assuming in stock`);
+      return true; // If no inventory data, assume in stock
+    }
 
-  // External API call for delivery dates (essential)
+    const stockResults = cartLines.map(line => {
+      const variantId = line.merchandise?.id;
+      if (!variantId) {
+        console.log(`🔍 [Stock Check] No variant ID for line, assuming in stock`);
+        return true; // If no variant ID, assume in stock
+      }
+      const qty = inventory[variantId];
+      const inStock = qty === null || qty === undefined || (typeof qty === 'number' && qty > 0);
+      console.log(`🔍 [Stock Check] Variant ${variantId}: qty=${qty}, inStock=${inStock}`);
+      return inStock;
+    });
+
+    const allInStock = stockResults.every(result => result);
+    console.log(`🔍 [Stock Check] Final result: allInStock=${allInStock}, individual results:`, stockResults);
+    return allInStock;
+  }, [cartLines, inventory, inventoryLoading, inventoryError]);
+
+  // STEP 1: Stock Check Logic - More lenient to avoid false negatives
+  const stockCheckPassed = useMemo(() => {
+    console.log(`🔍 [Stock Check Passed] enableOnlyShowIfInStock: ${allProductsInStock}`);
+    if (!allProductsInStock) {
+      console.log(`🔍 [Stock Check Passed] Stock check failed, returning false`);
+      return false; // Stock check failed
+    }
+    console.log(`🔍 [Stock Check Passed] Stock check passed, returning true`);
+    return true; // Stock check passed
+  }, [allProductsInStock]);
+
+  // STEP 2: Dutch Order Check Logic - REMOVED, now always proceed
+  const isDutchOrder = true; // Always proceed regardless of country
+
+  // STEP 3: Delivery Method Check Logic
+  const deliveryMethodNumber = useMemo(() => {
+    // Use highestShippingMethod from cart metadata instead of selectedShippingMethod
+    // This is more reliable as it's calculated from product metafields
+    const methodToUse = highestShippingMethod || selectedShippingMethod;
+    if (!methodToUse) return null;
+    const number = extractShippingMethodNumber(methodToUse);
+    console.log(`🚚 [Shipping Method] Using: "${methodToUse}" (source: ${highestShippingMethod ? 'cart metadata' : 'delivery groups'}) → Number: ${number}`);
+    return number;
+  }, [highestShippingMethod, selectedShippingMethod]);
+
+  const isDutchnedDelivery = useMemo(() => {
+    const result = deliveryMethodNumber !== null && deliveryMethodNumber >= deliveryMethodCutoff;
+    console.log(`🎯 [Delivery Type] Method: ${deliveryMethodNumber}, Cutoff: ${deliveryMethodCutoff}, Is Dutchned: ${result}`);
+    return result;
+  }, [deliveryMethodNumber, deliveryMethodCutoff]);
+
+  // Determine overall delivery type for logging
+  const deliveryType = useMemo(() => {
+    if (stockCheckPassed === false) return 'ERP';
+    if (isDutchnedDelivery) return 'DUTCHNED';
+    return 'POST';
+  }, [stockCheckPassed, isDutchnedDelivery]);
+
+  console.log(`📋 [Flow Summary] Stock: ${stockCheckPassed}, Highest Method: "${highestShippingMethod}", Delivery Type: ${deliveryType}`);
+
+  // Generate localized mock delivery dates for POST delivery
+  const generateLocalizedMockDates = useCallback((): DeliveryDate[] => {
+    const dates: DeliveryDate[] = [];
+    const today = new Date();
+
+    // Generate mock dates for the next 20 days, excluding weekends
+    for (let i = 1; i <= 20; i++) {
+      const futureDate = new Date(today);
+      futureDate.setDate(today.getDate() + i);
+
+      // Skip weekends (Saturday = 6, Sunday = 0)
+      const dayOfWeek = futureDate.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        continue;
+      }
+
+      const dateString = futureDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+
+      // Use localized weekday and month names from translations
+      const weekdayName = t(`weekday_${dayOfWeek}`);
+      const monthName = t(`month_${futureDate.getMonth()}`);
+      const dayNumber = futureDate.getDate();
+
+      const displayName = `${weekdayName}, ${monthName} ${dayNumber}`;
+
+      dates.push({
+        date: dateString,
+        displayName
+      });
+
+      // Stop when we have enough dates
+      if (dates.length >= maxDatesToShow) {
+        break;
+      }
+    }
+
+    return dates;
+  }, [maxDatesToShow, t]);
+
+  // External API call for delivery dates (only for Dutchned)
   const {
-    deliveryDates,
-    loading,
+    deliveryDates: apiDeliveryDates,
+    loading: apiLoading,
     error: fetchError,
     refetch,
-  } = useDeliveryDates(apiBaseUrl, enableMockMode, shop.myshopifyDomain);
+  } = useDeliveryDates(apiBaseUrl, false, shop.myshopifyDomain);
 
-  // Filter available dates based on product metafield data and limit to first 14
+  // Determine which dates to use based on delivery type
+  const deliveryDates = useMemo(() => {
+    let dates: Array<{ date: string; displayName: string }> = [];
+
+    if (deliveryType === 'POST') {
+      // Use mock data for POST delivery
+      dates = generateLocalizedMockDates();
+      console.log(`📅 [Date Source] POST delivery - Using ${dates.length} mock dates`);
+    } else if (deliveryType === 'DUTCHNED') {
+      // Use API data for Dutchned delivery
+      dates = apiDeliveryDates || [];
+      console.log(`📅 [Date Source] DUTCHNED delivery - Using ${dates.length} API dates from Dutchned`);
+    } else {
+      // ERP delivery - no dates
+      dates = [];
+      console.log(`📅 [Date Source] ERP delivery - No dates available`);
+    }
+
+    return dates;
+  }, [deliveryType, apiDeliveryDates, generateLocalizedMockDates]);
+
+  // Loading state based on delivery type
+  const loading = useMemo(() => {
+    if (deliveryType === 'POST') {
+      return false; // Mock data is generated instantly
+    } else if (deliveryType === 'DUTCHNED') {
+      return apiLoading; // Use API loading state
+    } else {
+      return false; // ERP delivery - no loading
+    }
+  }, [deliveryType, apiLoading]);
+
+  // Filter available dates based on delivery type
   const filteredDates = useMemo(() => {
+    console.log(`🔍 [Date Filtering] Starting with ${deliveryDates?.length || 0} ${deliveryType} dates`);
+
     if (!deliveryDates || deliveryDates.length === 0) {
+      console.log(`🔍 [Date Filtering] No dates available to filter`);
       return [];
     }
 
     let filtered;
     if (!enableWeekNumberFiltering || !minimumDeliveryDate) {
       filtered = deliveryDates;
+      console.log(`🔍 [Date Filtering] No ERP filtering applied - showing all ${filtered.length} dates`);
     } else {
+      const minDateStr = minimumDeliveryDate.toISOString().split('T')[0];
+      console.log(`🔍 [Date Filtering] ERP filtering enabled - minimum date: ${minDateStr}`);
+
       filtered = deliveryDates.filter((dateItem: DeliveryDate) => {
-      try {
-        const deliveryDate = new Date(dateItem.date);
-        return deliveryDate >= minimumDeliveryDate;
-      } catch (error) {
-        // console.warn('Invalid delivery date format:', dateItem.date);
-        return false;
-      }
-    });
+        try {
+          const deliveryDate = new Date(dateItem.date);
+          const isAfterMin = deliveryDate >= minimumDeliveryDate;
+          console.log(`🔍 [Date Filtering] ${dateItem.date} >= ${minDateStr}: ${isAfterMin}`);
+          return isAfterMin;
+        } catch (error) {
+          console.log(`🔍 [Date Filtering] Invalid date: ${dateItem.date}`);
+          return false;
+        }
+      });
+      console.log(`🔍 [Date Filtering] After ERP filtering: ${filtered.length} dates remain`);
     }
 
-    // Limit to configured maximum number of dates
-    const limitedDates = filtered.slice(0, maxDatesToShow);
+    // Apply delivery type specific limits
+    const originalLength = filtered.length;
+    if (deliveryType === 'DUTCHNED') {
+      filtered = filtered.slice(0, 14);
+      console.log(`🔍 [Date Filtering] DUTCHNED limit applied: ${originalLength} → ${filtered.length} dates (max 14)`);
+    } else {
+      filtered = filtered.slice(0, maxDatesToShow);
+      console.log(`🔍 [Date Filtering] POST limit applied: ${originalLength} → ${filtered.length} dates (max ${maxDatesToShow})`);
+    }
 
-    console.log(`🔍 Filtered ${deliveryDates.length} dates to ${filtered.length} dates, showing first ${limitedDates.length} dates (max: ${maxDatesToShow})`);
-    return limitedDates;
-  }, [deliveryDates, minimumDeliveryDate, enableWeekNumberFiltering, maxDatesToShow]);
+    console.log(`🔍 [Date Filtering] Final result: ${filtered.length} ${deliveryType} dates available`);
+    return filtered;
+  }, [deliveryDates, minimumDeliveryDate, enableWeekNumberFiltering, maxDatesToShow, deliveryType, deliveryMethodCutoff]);
 
   // Detect selected shipping method from delivery groups
   useEffect(() => {
@@ -548,53 +701,53 @@ function DeliveryDatePicker() {
     }
   }, [deliveryGroups, selectedShippingMethod]);
 
-  // Handle errors from React Query
+  // Handle errors from React Query (only for Dutchned)
   useEffect(() => {
-    if (fetchError) {
-      // console.error('Error fetching delivery dates:', fetchError);
+    if (deliveryType === 'DUTCHNED' && fetchError) {
       setErrorKey('error_loading');
     } else {
-        setErrorKey(null);
+      setErrorKey(null);
     }
-  }, [fetchError]);
+  }, [fetchError, deliveryType]);
 
   // Save selected delivery date separately
-      const handleDateSelect = useCallback(async (dateString: string) => {
+  const handleDateSelect = useCallback(async (dateString: string) => {
     setSelectedDate(dateString);
 
     try {
-        const result = await applyAttributeChange({
-          type: 'updateAttribute',
+      const result = await applyAttributeChange({
+        type: 'updateAttribute',
         key: 'delivery_date',
         value: dateString,
-        });
+      });
 
-        if (result.type === 'error') {
+      if (result.type === 'error') {
         throw new Error('Failed to save delivery date');
       }
 
       console.log('✅ Saved delivery date:', dateString);
     } catch (err) {
-      // console.error('❌ Error saving delivery date:', err);
       setErrorKey('error_saving');
     }
   }, [applyAttributeChange]);
 
   const handleRetry = useCallback(() => {
     setErrorKey(null);
-    refetch();
-  }, [refetch]);
+    if (deliveryType === 'DUTCHNED') {
+      refetch();
+    }
+  }, [refetch, deliveryType]);
 
-  // Don't show date picker if not in Netherlands
-  if (!showDatePicker || !allProductsInStock) {
-    if (isCheckoutPreview && enableOnlyShowIfInStock && !allProductsInStock) {
+  // Don't show date picker if not enabled for this country (removed NL requirement)
+  if (!shouldShowDatePicker) {
+    if (isCheckoutPreview) {
       return (
         <View border="base" cornerRadius="base" padding="base">
           <BlockStack spacing="base">
             <Heading level={2}>{t('title')}</Heading>
             <Banner status="info">
               <Text size="small">
-                📦 Delivery date picker is hidden because not all products are in stock (see settings)
+                🌍 Delivery date picker is available for countries: {activeCountryCodes}
               </Text>
             </Banner>
           </BlockStack>
@@ -604,9 +757,30 @@ function DeliveryDatePicker() {
     return null;
   }
 
-  // Don't show date picker if minimum delivery date is within 2 weeks
-  if (hidePickerDueToEarlyDelivery) {
-    // Only show the banner in checkout preview mode
+  // Show ERP delivery message when stock check fails
+  if (stockCheckPassed === false) {
+    // Don't show stock check failures to customers - only in preview mode for debugging
+    if (isCheckoutPreview) {
+      return (
+        <View border="base" cornerRadius="base" padding="base">
+          <BlockStack spacing="base">
+            <Heading level={2}>{t('title')}</Heading>
+            <Banner status="warning">
+              <Text size="small">
+                📦 {t('stock_check_out_of_stock')} (Preview only - hidden from customers)
+              </Text>
+            </Banner>
+          </BlockStack>
+        </View>
+      );
+    }
+    // In actual checkout, don't show anything - let the flow continue
+    return null;
+  }
+
+  // Show loading state for stock check
+  if (stockCheckPassed === null) {
+    // Only show loading in preview mode - customers shouldn't see stock check loading
     if (isCheckoutPreview) {
       return (
         <View border="base" cornerRadius="base" padding="base">
@@ -614,50 +788,35 @@ function DeliveryDatePicker() {
             <Heading level={2}>{t('title')}</Heading>
             <Banner status="info">
               <Text size="small">
-                📅 Delivery date picker is hidden because products can be delivered within {hidePickerWithinDays} days (by {minimumDeliveryDate?.toLocaleDateString('nl-NL')})
+                🔍 {t('stock_check_loading')} (Preview only - hidden from customers)
+              </Text>
+            </Banner>
+          </BlockStack>
+        </View>
+      );
+    }
+    // In actual checkout, don't show loading state
+    return null;
+  }
+
+  // Don't show date picker if minimum delivery date is within configured days
+  if (hidePickerDueToEarlyDelivery) {
+    if (isCheckoutPreview) {
+      return (
+        <View border="base" cornerRadius="base" padding="base">
+          <BlockStack spacing="base">
+            <Heading level={2}>{t('title')}</Heading>
+            <Banner status="info">
+              <Text size="small">
+                📅 Delivery date picker is hidden because products can be delivered within {hidePicker} days (by {minimumDeliveryDate?.toLocaleDateString('nl-NL')})
               </Text>
             </Banner>
           </BlockStack>
         </View>
       );
     } else {
-      // In actual checkout, just return null (completely hidden)
       return null;
     }
-  }
-
-  // Show loading or error banner in preview mode if inventory is being checked
-  if (enableOnlyShowIfInStock && isCheckoutPreview && (inventoryLoading || inventoryError || !allProductsInStock)) {
-    return (
-      <View border="base" cornerRadius="base" padding="base">
-        <BlockStack spacing="base">
-          <Heading level={2}>{t('title')}</Heading>
-          <Banner status={inventoryLoading ? 'info' : 'critical'}>
-            <Text size="small">
-              {inventoryLoading && 'Checking inventory for all products...'}
-              {inventoryError && `Inventory check failed: ${inventoryError}`}
-              {!inventoryLoading && !inventoryError && !allProductsInStock && 'Date picker hidden: one or more products are out of stock.'}
-            </Text>
-          </Banner>
-        </BlockStack>
-      </View>
-    );
-  }
-
-  // After computing allProductsInStock, add this in the preview UI (where appropriate):
-  if (isCheckoutPreview && enableOnlyShowIfInStock) {
-    return (
-      <View border="base" cornerRadius="base" padding="base">
-        <BlockStack spacing="base">
-          <Heading level={2}>{t('title')}</Heading>
-          <Banner status={allProductsInStock ? 'success' : 'critical'}>
-            <Text size="small">
-              {allProductsInStock ? 'All products in stock' : 'Some products are out of stock'}
-            </Text>
-          </Banner>
-        </BlockStack>
-      </View>
-    );
   }
 
   return (
@@ -666,9 +825,27 @@ function DeliveryDatePicker() {
         <Heading level={2}>{t('title')}</Heading>
 
         {/* Show configuration info */}
-        {enableMockMode && isCheckoutPreview &&  (
+        {enableMockMode && isCheckoutPreview && (
           <Banner status="info">
             <Text size="small">Mock mode enabled - using test data</Text>
+          </Banner>
+        )}
+
+        {/* Show delivery type info */}
+        {isCheckoutPreview && (
+          <Banner status="info">
+            <Text size="small">
+              {deliveryType === 'DUTCHNED' && `${t('dutchned_delivery')} (>= ${deliveryMethodCutoff})`}
+              {deliveryType === 'POST' && `${t('post_delivery')} (< ${deliveryMethodCutoff})`}
+              {deliveryType === 'ERP' && t('erp_delivery_info')}
+            </Text>
+          </Banner>
+        )}
+
+        {/* Show POST delivery info */}
+        {deliveryType === 'POST' && (
+          <Banner status="info">
+            <Text size="small">{t('post_delivery_info')}</Text>
           </Banner>
         )}
 
@@ -685,7 +862,7 @@ function DeliveryDatePicker() {
         {errorKey && (
           <Banner status="critical">
             <BlockStack spacing="tight">
-            <Text>{t(errorKey)}</Text>
+              <Text>{t(errorKey)}</Text>
               <Button kind="secondary" onPress={handleRetry}>
                 {t('retry')}
               </Button>
@@ -693,8 +870,8 @@ function DeliveryDatePicker() {
           </Banner>
         )}
 
-        {/* Show delivery dates */}
-        {!loading && !errorKey && filteredDates.length > 0 && (
+        {/* Show delivery dates for Dutchned and POST delivery */}
+        {!loading && !errorKey && filteredDates.length > 0 && (deliveryType === 'DUTCHNED' || deliveryType === 'POST') && (
           <BlockStack spacing="base">
             <View>
               <ScrollView maxBlockSize={300}>

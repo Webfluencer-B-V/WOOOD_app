@@ -7,14 +7,14 @@ import { upsertStoreLocator } from './storeLocatorUpserter';
 
 // Store locator utility functions
 const EXCLUSIVITY_MAP: Record<string, string> = {
-  'woood essentials': 'WOOOD ESSENTIALS',
-  'essentials': 'WOOOD ESSENTIALS',
-  'woood premium': 'WOOOD PREMIUM',
-  'woood exclusive': 'WOOOD PREMIUM',
-  'woood outdoor': 'WOOOD OUTDOOR',
-  'woood tablo': 'WOOOD TABLO',
-  'vtwonen': 'VT WONEN',
-  'vt wonen dealers only': 'VT WONEN',
+  'woood essentials': 'WOOOD Essentials',
+  'essentials': 'WOOOD Essentials',
+  'woood premium': 'WOOOD Premium',
+  'woood exclusive': 'WOOOD Premium',
+  'woood outdoor': 'WOOOD Outdoor',
+  'woood tablo': 'WOOOD Tablo',
+  'vtwonen': 'vtwonen',
+  'vt wonen dealers only': 'vtwonen',
 };
 
 // Status keys for KV storage
@@ -238,7 +238,7 @@ export default {
     const corsHeaders = {
       'Access-Control-Allow-Origin': getAllowedOrigin(request, env.CORS_ORIGINS?.split(',') || []),
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Shopify-Hmac-Sha256, X-Shopify-Topic, X-Shopify-Shop-Domain',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Shopify-Hmac-Sha256, X-Shopify-Topic, X-Shopify-Shop-Domain, x-api-key',
       'Access-Control-Allow-Credentials': 'true',
       'X-Content-Type-Options': 'nosniff'
     };
@@ -308,6 +308,10 @@ export default {
 
         case path === '/api/experience-center/status' && request.method === 'GET':
           response = await handleExperienceCenterStatus(request, env);
+          break;
+
+        case path === '/api/experience-center/bulk-test' && request.method === 'POST':
+          response = await handleExperienceCenterBulkTest(request, env);
           break;
 
         case path === '/api/debug/env' && request.method === 'GET':
@@ -427,23 +431,8 @@ export default {
     try {
       console.log('🏪 Starting experience center update for all shops...');
 
-      // Check if there's partial state from a previous execution
-      const partialState = await env.EXPERIENCE_CENTER_STATUS?.get('processing_state');
-      if (partialState) {
-        const state = JSON.parse(partialState);
-        if (state.partial) {
-          console.log(`🔄 Resuming partial processing from shop ${state.currentShopIndex + 1}/${state.shops.length}`);
-          const result = await processExperienceCenterUpdateResume(env, state);
-          if (env.EXPERIENCE_CENTER_STATUS) {
-            await env.EXPERIENCE_CENTER_STATUS.put(EXPERIENCE_CENTER_STATUS_KEY, JSON.stringify(result));
-          }
-          console.log(`✅ Experience center update resumed and completed: ${result.summary?.successfulProducts || 0} successful, ${result.summary?.failedProducts || 0} failed`);
-          return;
-        }
-      }
-
-      // Start fresh processing with incremental approach
-      const result = await processExperienceCenterUpdateIncremental(env);
+      // Start fresh processing with bulk operations - the main and only flow
+      const result = await processExperienceCenterUpdateAllShops(env);
       if (env.EXPERIENCE_CENTER_STATUS) {
         await env.EXPERIENCE_CENTER_STATUS.put(EXPERIENCE_CENTER_STATUS_KEY, JSON.stringify(result));
       }
@@ -1031,7 +1020,7 @@ async function handleStoreLocatorStatus(request: Request, env: Env): Promise<Res
   return new Response(JSON.stringify({ success: false, message: 'No status available' }), { headers: { 'Content-Type': 'application/json' } });
 }
 
-// Experience center functions
+// Experience center functions - OPTIMIZED WITH BULK OPERATIONS
 async function fetchExperienceCenterData(env: Env): Promise<{data: any[], total: number}> {
   const { DUTCH_FURNITURE_BASE_URL, DUTCH_FURNITURE_API_KEY } = env;
   if (!DUTCH_FURNITURE_BASE_URL || !DUTCH_FURNITURE_API_KEY) {
@@ -1063,37 +1052,23 @@ async function fetchExperienceCenterData(env: Env): Promise<{data: any[], total:
   };
 }
 
-async function processProductsInBatches(env: Env, shop: string, availableEans: Set<string>, onProgress?: (processed: number, total: number) => void): Promise<{successful: number, failed: number, errors: string[]}> {
+// NEW: Bulk Operations implementation for Experience Center
+async function processExperienceCenterWithBulkOperations(env: Env, shop: string, availableEans: Set<string>): Promise<{successful: number, failed: number, errors: string[], eanMatches: number, totalProducts: number}> {
   const accessToken = await getShopAccessToken(env, shop);
   if (!accessToken) {
     throw new Error(`No access token found for shop: ${shop}`);
   }
 
-  let totalSuccessful = 0;
-  let totalFailed = 0;
-  const allErrors: string[] = [];
-  let requestCount = 0;
-  const maxRequests = 30; // Very conservative limit to avoid subrequest issues
+  console.log(`🚀 Starting bulk operations for ${shop} with ${availableEans.size} available EANs`);
 
-  // Process products in very small batches with pagination
-  let hasNextPage = true;
-  let cursor: string | null = null;
-  let totalProcessed = 0;
-  const maxProducts = 10000; // High limit to process all products
-  const productsPerQuery = 5; // Very small batch size to avoid subrequest limits
-
-  while (hasNextPage && totalProcessed < maxProducts && requestCount < maxRequests) {
-    const query = `
-      query($cursor: String) {
-        products(first: ${productsPerQuery}, after: $cursor) {
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
+  // Step 1: Create bulk operation to fetch all products and variants
+  const bulkQuery = `
+    {
+      products {
           edges {
             node {
               id
-              variants(first: 10) {
+            variants {
                 edges {
                   node {
                     id
@@ -1107,141 +1082,257 @@ async function processProductsInBatches(env: Env, shop: string, availableEans: S
       }
     `;
 
-      try {
-      requestCount++;
-      const response = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+  const createBulkOperationMutation = `
+    mutation {
+      bulkOperationRunQuery(
+        query: """
+        ${bulkQuery}
+        """
+      ) {
+        bulkOperation {
+          id
+          status
+        }
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  console.log(`📤 Creating bulk operation for ${shop}...`);
+  const createResponse = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Shopify-Access-Token': accessToken,
         },
-        body: JSON.stringify({ query, variables: { cursor } }),
-      });
+    body: JSON.stringify({ query: createBulkOperationMutation }),
+  });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch products: ${response.status} ${response.statusText}`);
-      }
+  if (!createResponse.ok) {
+    throw new Error(`Failed to create bulk operation: ${createResponse.status} ${createResponse.statusText}`);
+  }
 
-      const result = await response.json() as any;
-      const productsData = result.data?.products;
+  const createResult = await createResponse.json() as any;
+  const userErrors = createResult.data?.bulkOperationRunQuery?.userErrors || [];
 
-      if (!productsData) {
-        throw new Error(`Invalid response from Shopify API: ${JSON.stringify(result)}`);
-      }
+  if (userErrors.length > 0) {
+    throw new Error(`Bulk operation creation failed: ${JSON.stringify(userErrors)}`);
+  }
 
-      const products = productsData.edges.map((edge: any) => edge.node);
-      const metafieldsToUpdate: Array<{productId: string, experienceCenter: boolean}> = [];
+  const bulkOperationId = createResult.data?.bulkOperationRunQuery?.bulkOperation?.id;
+  if (!bulkOperationId) {
+    throw new Error('No bulk operation ID returned');
+  }
 
-      // Process this batch of products
-      for (const product of products) {
-        try {
-          // Find barcode from variants
-          let barcode: string | null = null;
-          if (product.variants?.edges?.length > 0) {
-            const variantWithBarcode = product.variants.edges.find((edge: any) => edge.node.barcode);
-            if (variantWithBarcode) {
-              barcode = variantWithBarcode.node.barcode;
-            }
+  console.log(`✅ Bulk operation created: ${bulkOperationId}`);
+
+  // Step 2: Poll for completion
+  const maxWaitTime = 10 * 60 * 1000; // 10 minutes max wait
+  const pollInterval = 5000; // 5 seconds
+  const startTime = Date.now();
+  let operationStatus = 'CREATED';
+  let downloadUrl: string | null = null;
+
+  while (operationStatus !== 'COMPLETED' && operationStatus !== 'FAILED' && operationStatus !== 'CANCELED') {
+    if (Date.now() - startTime > maxWaitTime) {
+      throw new Error('Bulk operation timeout - exceeded 10 minutes');
+    }
+
+    await delay(pollInterval);
+
+    const statusQuery = `
+      query {
+        node(id: "${bulkOperationId}") {
+          ... on BulkOperation {
+            id
+            status
+            errorCode
+            objectCount
+            fileSize
+            url
+            partialDataUrl
           }
-
-          if (!barcode) {
-            console.log(`⚠️ No barcode found for product ${product.id}`);
-            continue;
-          }
-
-          const experienceCenter = availableEans.has(barcode);
-          console.log(`🔍 Product ${product.id} barcode: ${barcode}, experience center: ${experienceCenter}`);
-
-          metafieldsToUpdate.push({
-            productId: product.id,
-            experienceCenter,
-          });
-        } catch (error: any) {
-          console.error(`❌ Error preparing product ${product.id} for ${shop}:`, error.message);
-          totalFailed++;
-          allErrors.push(`Product ${product.id}: ${error.message}`);
         }
       }
+    `;
 
-            // Update metafields in bulk if we have any
-      if (metafieldsToUpdate.length > 0) {
-        try {
-          // Process metafields one at a time for truly sequential processing
-          let batchSuccessful = 0;
-          let batchFailed = 0;
-          const batchErrors: string[] = [];
+    const statusResponse = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+      body: JSON.stringify({ query: statusQuery }),
+    });
 
-          for (const metafield of metafieldsToUpdate) {
-            try {
-              const result = await setProductExperienceCenterMetafieldsBulk(env, shop, [metafield]);
-              batchSuccessful += result.successful;
-              batchFailed += result.failed;
-              batchErrors.push(...result.errors);
+    if (!statusResponse.ok) {
+      throw new Error(`Failed to check bulk operation status: ${statusResponse.status} ${statusResponse.statusText}`);
+    }
 
-              // Delay between each metafield update
-              await delay(8000); // 8 second delay between each metafield update to avoid subrequest limits
-            } catch (error: any) {
-              console.error(`❌ Error processing metafield for ${shop}:`, error.message);
-              batchFailed += 1;
-              batchErrors.push(`Metafield error: ${error.message}`);
-            }
-          }
+    const statusResult = await statusResponse.json() as any;
+    const bulkOperation = statusResult.data?.node;
 
-          totalSuccessful += batchSuccessful;
-          totalFailed += batchFailed;
-          allErrors.push(...batchErrors);
+    if (!bulkOperation) {
+      throw new Error('Could not retrieve bulk operation status');
+    }
 
-          console.log(`✅ Successfully processed ${batchSuccessful} products for ${shop} (batch ${Math.floor(totalProcessed / productsPerQuery) + 1})`);
-        } catch (error: any) {
-          console.error(`❌ Error processing batch for ${shop}:`, error.message);
-          totalFailed += metafieldsToUpdate.length;
-          allErrors.push(`Batch error: ${error.message}`);
-        }
-      }
+    operationStatus = bulkOperation.status;
+    downloadUrl = bulkOperation.url;
 
-      totalProcessed += products.length;
-      if (onProgress) {
-        onProgress(totalProcessed, maxProducts);
-      }
+    console.log(`📊 Bulk operation status: ${operationStatus}, objects: ${bulkOperation.objectCount || 0}`);
 
-      // Log progress every 100 products
-      if (totalProcessed % 100 === 0) {
-        console.log(`📊 Progress for ${shop}: ${totalProcessed}/${maxProducts} products processed (${Math.round(totalProcessed/maxProducts*100)}%)`);
-      }
+    if (operationStatus === 'FAILED') {
+      throw new Error(`Bulk operation failed: ${bulkOperation.errorCode || 'Unknown error'}`);
+    }
 
-      hasNextPage = productsData.pageInfo.hasNextPage;
-      cursor = productsData.pageInfo.endCursor;
-
-            // Add longer delay between batches for truly sequential processing
-      if (hasNextPage && totalProcessed < maxProducts && requestCount < maxRequests) {
-        await delay(15000); // 15 sec delay between batches to avoid subrequest limits
-      }
-
-      // Log request count for monitoring
-      if (requestCount % 5 === 0) {
-        console.log(`📊 Request count for ${shop}: ${requestCount}/${maxRequests}`);
-      }
-
-    } catch (error: any) {
-      console.error(`❌ Error fetching products for ${shop}:`, error.message);
-      allErrors.push(`Fetch error: ${error.message}`);
-      break; // Stop processing on error
+    if (operationStatus === 'CANCELED') {
+      throw new Error('Bulk operation was canceled');
     }
   }
 
-  console.log(`🎯 Final results for ${shop}: ${totalSuccessful} successful, ${totalFailed} failed, ${totalProcessed} total processed`);
+  if (!downloadUrl) {
+    throw new Error('No download URL available for completed bulk operation');
+  }
+
+  console.log(`✅ Bulk operation completed, downloading data from: ${downloadUrl}`);
+
+  // Step 3: Download and parse JSONL data
+  const downloadResponse = await fetch(downloadUrl);
+  if (!downloadResponse.ok) {
+    throw new Error(`Failed to download bulk operation data: ${downloadResponse.status} ${downloadResponse.statusText}`);
+  }
+
+  const jsonlData = await downloadResponse.text();
+  const lines = jsonlData.trim().split('\n');
+
+  console.log(`📦 Downloaded ${lines.length} lines of JSONL data`);
+
+  // Step 4: Parse JSONL and build product map
+  const products = new Map<string, { id: string, variants: Array<{ id: string, barcode: string | null }> }>();
+  const variants = new Map<string, { id: string, barcode: string | null, productId: string }>();
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    try {
+      const obj = JSON.parse(line);
+
+      if (obj.id?.includes('/Product/')) {
+        // This is a product
+        products.set(obj.id, {
+          id: obj.id,
+          variants: []
+        });
+      } else if (obj.id?.includes('/ProductVariant/') && obj.__parentId) {
+        // This is a variant
+        const variant = {
+          id: obj.id,
+          barcode: obj.barcode || null,
+          productId: obj.__parentId
+        };
+        variants.set(obj.id, variant);
+
+        // Add to product's variants array
+        const product = products.get(obj.__parentId);
+        if (product) {
+          product.variants.push(variant);
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to parse JSONL line: ${line}`);
+    }
+  }
+
+  console.log(`📊 Parsed ${products.size} products and ${variants.size} variants`);
+
+  // Step 5: Process products and prepare metafield updates
+  const metafieldsToUpdate: Array<{productId: string, experienceCenter: boolean}> = [];
+  let processedProducts = 0;
+  let skippedProducts = 0;
+  let eanMatches = 0;
+
+  for (const [productId, product] of products) {
+    try {
+      // Find barcode from variants
+      let barcode: string | null = null;
+      for (const variant of product.variants) {
+        if (variant.barcode) {
+          barcode = variant.barcode;
+          break;
+        }
+      }
+
+      if (!barcode) {
+        skippedProducts++;
+        continue;
+      }
+
+      const experienceCenter = availableEans.has(barcode);
+      if (experienceCenter) {
+        eanMatches++;
+      }
+
+      metafieldsToUpdate.push({
+        productId,
+        experienceCenter,
+      });
+
+      processedProducts++;
+    } catch (error: any) {
+      console.error(`❌ Error processing product ${productId}:`, error.message);
+    }
+  }
+
+  console.log(`📊 Prepared ${metafieldsToUpdate.length} metafield updates (${processedProducts} processed, ${skippedProducts} skipped, ${eanMatches} EAN matches)`);
+
+  // Step 6: Update metafields in efficient batches
+  const batchSize = 25; // Shopify limit: maximum 25 metafields per request
+  let totalSuccessful = 0;
+  let totalFailed = 0;
+  const allErrors: string[] = [];
+
+  for (let i = 0; i < metafieldsToUpdate.length; i += batchSize) {
+    const batch = metafieldsToUpdate.slice(i, i + batchSize);
+
+    try {
+      console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(metafieldsToUpdate.length / batchSize)} (${batch.length} products)`);
+
+      const result = await setProductExperienceCenterMetafieldsBulk(env, shop, batch);
+      totalSuccessful += result.successful;
+      totalFailed += result.failed;
+      allErrors.push(...result.errors);
+
+      // Small delay between batches
+      if (i + batchSize < metafieldsToUpdate.length) {
+        await delay(1000); // 1 second delay between batches
+      }
+    } catch (error: any) {
+      console.error(`❌ Error processing batch:`, error.message);
+      totalFailed += batch.length;
+      allErrors.push(`Batch error: ${error.message}`);
+    }
+  }
+
+  console.log(`🎯 Bulk operations completed for ${shop}: ${totalSuccessful} successful, ${totalFailed} failed, ${eanMatches} EAN matches out of ${availableEans.size} available`);
 
   return {
     successful: totalSuccessful,
     failed: totalFailed,
-    errors: allErrors.slice(0, 20), // Increased error message limit for debugging
+    errors: allErrors.slice(0, 20),
+    eanMatches,
+    totalProducts: processedProducts,
   };
 }
 
+
+
 async function setProductExperienceCenterMetafieldsBulk(env: Env, shop: string, metafields: Array<{productId: string, experienceCenter: boolean}>): Promise<{successful: number, failed: number, errors: string[]}> {
-  // For subrequest-optimized processing, use smaller batches
-  if (metafields.length > 5) {
-    throw new Error(`Batch size too large: ${metafields.length}. Maximum allowed: 5 for subrequest-optimized processing`);
+  // Shopify limit: maximum 25 metafields per request
+  if (metafields.length > 25) {
+    throw new Error(`Batch size too large: ${metafields.length}. Maximum allowed: 25 for Shopify metafields API`);
   }
   const accessToken = await getShopAccessToken(env, shop);
   if (!accessToken) {
@@ -1280,19 +1371,18 @@ async function setProductExperienceCenterMetafieldsBulk(env: Env, shop: string, 
 
   const result = await response.json() as any;
   const userErrors = result.data?.metafieldsSet?.userErrors || [];
+  const successfulMetafields = result.data?.metafieldsSet?.metafields || [];
 
-  if (userErrors.length > 0) {
-    return {
-      successful: metafields.length - userErrors.length,
-      failed: userErrors.length,
-      errors: userErrors.map((error: any) => `${error.field}: ${error.message}`),
-    };
-  }
+  // Only count as successful if the metafield was actually created/updated
+  const successful = successfulMetafields.length;
+  const failed = metafields.length - successful;
+
+  const errors = userErrors.map((error: any) => `${error.field}: ${error.message}`);
 
   return {
-    successful: metafields.length,
-    failed: 0,
-    errors: [],
+    successful,
+    failed,
+    errors,
   };
 }
 
@@ -1386,14 +1476,14 @@ async function processExperienceCenterUpdateAllShops(env: Env): Promise<any> {
     try {
       console.log(`🏪 Processing shop ${i + 1}/${installedShops.length}: ${shop} (${Math.round(elapsedTime/1000)}s elapsed)`);
 
-      // Process products in batches with progress tracking
-      const result = await processProductsInBatches(env, shop, availableEans, (processed, total) => {
-        console.log(`📦 Processed ${processed} products for ${shop}${total > 0 ? `/${total}` : ''}`);
-      });
+      // Process products using bulk operations for maximum efficiency
+      const result = await processExperienceCenterWithBulkOperations(env, shop, availableEans);
 
       const successful = result.successful;
       const failed = result.failed;
       const errors = result.errors;
+      const eanMatches = result.eanMatches;
+      const totalProducts = result.totalProducts;
 
       results.push({
         shop,
@@ -1403,12 +1493,15 @@ async function processExperienceCenterUpdateAllShops(env: Env): Promise<any> {
           successful,
           failed,
           errors: errors.slice(0, 10), // Limit error messages
+          eanMatches,
+          totalProducts,
+          availableEans: availableEans.size,
         },
       });
 
       totalSuccessful += successful;
       totalFailed += failed;
-      console.log(`✅ Experience center update completed for ${shop}: ${successful} successful, ${failed} failed`);
+      console.log(`✅ Experience center update completed for ${shop}: ${successful} successful, ${failed} failed, ${eanMatches} EAN matches`);
 
       // Add longer delay between shops for truly sequential processing
       if (i < installedShops.length - 1) {
@@ -1451,370 +1544,19 @@ async function processExperienceCenterUpdateAllShops(env: Env): Promise<any> {
   };
 }
 
-async function processExperienceCenterUpdateResume(env: Env, partialState: any): Promise<any> {
-  console.log('🔄 Resuming experience center update from partial state...');
 
-  const {
-    availableEans: availableEansArray,
-    shops,
-    currentShopIndex,
-    results,
-    totalSuccessful: initialSuccessful,
-    totalFailed: initialFailed,
-    startTime: originalStartTime
-  } = partialState;
 
-  let totalSuccessful = initialSuccessful;
-  let totalFailed = initialFailed;
 
-  const availableEans = new Set(availableEansArray as string[]);
-  const startTime = Date.now();
-  const maxExecutionTime = 25 * 60 * 1000; // 25 minutes
 
-  console.log(`🔄 Resuming from shop ${currentShopIndex + 1}/${shops.length} with ${availableEans.size} available EANs`);
 
-  // Continue processing from where we left off
-  for (let i = currentShopIndex; i < shops.length; i++) {
-    const shop = shops[i]!;
-    const elapsedTime = Date.now() - startTime;
 
-    // Check if we're approaching the time limit
-    if (elapsedTime > maxExecutionTime) {
-      console.log(`⏰ Time limit approaching (${Math.round(elapsedTime/1000)}s elapsed), stopping processing`);
-
-      // Save updated partial progress to KV
-      const updatedPartialState = {
-        availableEans: Array.from(availableEans),
-        shops,
-        currentShopIndex: i,
-        results,
-        totalSuccessful,
-        totalFailed,
-        startTime: new Date(originalStartTime).toISOString(),
-        partial: true,
-      };
-      await env.EXPERIENCE_CENTER_STATUS?.put('processing_state', JSON.stringify(updatedPartialState));
-
-      return {
-        success: true,
-        timestamp: new Date().toISOString(),
-        message: `Partial completion due to time limit. Processed ${i}/${shops.length} shops (resumed from ${currentShopIndex}).`,
-        partial: true,
-        resumed: true,
-        progress: {
-          current: i,
-          total: shops.length,
-          percentage: Math.round((i / shops.length) * 100),
-        },
-        summary: {
-          totalShops: shops.length,
-          successfulShops: results.filter((r: any) => r.success).length,
-          failedShops: results.filter((r: any) => !r.success).length,
-          totalProducts: totalSuccessful + totalFailed,
-          successfulProducts: totalSuccessful,
-          failedProducts: totalFailed,
-        },
-        cron: true,
-      };
-    }
-
-    try {
-      console.log(`🏪 Processing shop ${i + 1}/${shops.length}: ${shop} (${Math.round(elapsedTime/1000)}s elapsed, resumed)`);
-
-      // Process products in batches with progress tracking
-      const result = await processProductsInBatches(env, shop, availableEans, (processed, total) => {
-        console.log(`📦 Processed ${processed} products for ${shop}${total > 0 ? `/${total}` : ''}`);
-      });
-
-      const successful = result.successful;
-      const failed = result.failed;
-      const errors = result.errors;
-
-      results.push({
-        shop,
-        success: true,
-        summary: {
-          total: successful + failed,
-          successful,
-          failed,
-          errors: errors.slice(0, 10),
-        },
-      });
-
-      totalSuccessful += successful;
-      totalFailed += failed;
-      console.log(`✅ Experience center update completed for ${shop}: ${successful} successful, ${failed} failed`);
-
-      // Add delay between shops to avoid overwhelming the system
-      if (i < shops.length - 1) {
-        console.log(`⏳ Waiting 10 seconds before processing next shop...`);
-        await delay(10000);
-      }
-
-    } catch (error: any) {
-      console.error(`❌ Failed to process shop ${shop}:`, error.message);
-      results.push({
-        shop,
-        success: false,
-        error: error.message,
-      });
-    }
-  }
-
-  // Clean up partial state since we completed all remaining shops
-  await env.EXPERIENCE_CENTER_STATUS?.delete('processing_state');
-
-  const successfulShops = results.filter((r: any) => r.success).length;
-  const totalTime = Math.round((Date.now() - startTime) / 1000);
-
-  console.log(`🎯 All remaining shops processed in ${totalTime}s: ${successfulShops}/${shops.length} successful`);
-
-  return {
-    success: successfulShops > 0,
-    timestamp: new Date().toISOString(),
-    message: `Completed all remaining shops in ${totalTime}s (resumed from shop ${currentShopIndex + 1})`,
-    resumed: true,
-    results,
-    summary: {
-      totalShops: shops.length,
-      successfulShops,
-      failedShops: shops.length - successfulShops,
-      totalProducts: totalSuccessful + totalFailed,
-      successfulProducts: totalSuccessful,
-      failedProducts: totalFailed,
-    },
-    cron: true,
-  };
-}
-
-async function processExperienceCenterUpdateIncremental(env: Env): Promise<any> {
-  console.log('🏪 Starting incremental experience center update...');
-
-  // Get current processing state from KV
-  const currentState = await env.EXPERIENCE_CENTER_STATUS?.get('processing_state');
-  let processingState = currentState ? JSON.parse(currentState) : null;
-
-  // If no state exists, initialize it
-  if (!processingState) {
-    const experienceCenterData = await fetchExperienceCenterData(env);
-    const availableEans = new Set(experienceCenterData.data.map((item: any) => item.ean));
-    const installedShops = await getInstalledShops(env);
-
-    if (installedShops.length === 0) {
-      return {
-        success: false,
-        timestamp: new Date().toISOString(),
-        error: 'No installed shops found',
-        results: [],
-        summary: { totalShops: 0, successfulShops: 0, failedShops: 0 },
-      };
-    }
-
-    processingState = {
-      availableEans: Array.from(availableEans),
-      shops: installedShops,
-      currentShopIndex: 0,
-      results: [],
-      totalSuccessful: 0,
-      totalFailed: 0,
-      startTime: new Date().toISOString(),
-    };
-  }
-
-  // Process one shop at a time
-  const shop = processingState.shops[processingState.currentShopIndex];
-  if (!shop) {
-    // All shops processed, clean up state and return final result
-    await env.EXPERIENCE_CENTER_STATUS?.delete('processing_state');
-    return {
-      success: true,
-      timestamp: new Date().toISOString(),
-      results: processingState.results,
-      summary: {
-        totalShops: processingState.shops.length,
-        successfulShops: processingState.results.filter((r: any) => r.success).length,
-        failedShops: processingState.results.filter((r: any) => !r.success).length,
-        totalProducts: processingState.totalSuccessful + processingState.totalFailed,
-        successfulProducts: processingState.totalSuccessful,
-        failedProducts: processingState.totalFailed,
-      },
-      cron: true,
-    };
-  }
-
-  try {
-    console.log(`🏪 Processing shop ${processingState.currentShopIndex + 1}/${processingState.shops.length}: ${shop}`);
-
-    const availableEans = new Set(processingState.availableEans as string[]);
-    const result = await processProductsInBatches(env, shop, availableEans);
-
-    const successful = result.successful;
-    const failed = result.failed;
-    const errors = result.errors;
-
-    processingState.results.push({
-      shop,
-      success: true,
-      summary: {
-        total: successful + failed,
-        successful,
-        failed,
-        errors: errors.slice(0, 10),
-      },
-    });
-
-    processingState.totalSuccessful += successful;
-    processingState.totalFailed += failed;
-    processingState.currentShopIndex++;
-
-    console.log(`✅ Experience center update completed for ${shop}: ${successful} successful, ${failed} failed`);
-
-  } catch (error: any) {
-    console.error(`❌ Failed to process shop ${shop}:`, error.message);
-    processingState.results.push({
-      shop,
-      success: false,
-      error: error.message,
-    });
-    processingState.currentShopIndex++;
-  }
-
-  // Save updated state
-  await env.EXPERIENCE_CENTER_STATUS?.put('processing_state', JSON.stringify(processingState));
-
-  return {
-    success: true,
-    timestamp: new Date().toISOString(),
-    message: `Processed ${processingState.currentShopIndex}/${processingState.shops.length} shops`,
-    currentShop: shop,
-    progress: {
-      current: processingState.currentShopIndex,
-      total: processingState.shops.length,
-      percentage: Math.round((processingState.currentShopIndex / processingState.shops.length) * 100),
-    },
-    summary: {
-      totalShops: processingState.shops.length,
-      successfulShops: processingState.results.filter((r: any) => r.success).length,
-      failedShops: processingState.results.filter((r: any) => !r.success).length,
-      totalProducts: processingState.totalSuccessful + processingState.totalFailed,
-      successfulProducts: processingState.totalSuccessful,
-      failedProducts: processingState.totalFailed,
-    },
-    cron: true,
-  };
-}
-
-async function processExperienceCenterUpdate(env: Env): Promise<any> {
-  console.log('🏪 Starting experience center update...');
-
-  // Fetch experience center data from external API
-  const experienceCenterData = await fetchExperienceCenterData(env);
-  console.log(`📊 Fetched ${experienceCenterData.total} Experience Center products from WOOOD API`);
-
-  // Create a set of EAN codes that are available in experience centers
-  const availableEans = new Set(experienceCenterData.data.map((item: any) => item.ean));
-
-  // Get all installed shops
-  const installedShops = await getInstalledShops(env);
-  if (installedShops.length === 0) {
-    console.log('⚠️ No installed shops found');
-    return {
-      success: false,
-      timestamp: new Date().toISOString(),
-      error: 'No installed shops found',
-      results: [],
-      summary: {
-        totalShops: 0,
-        successfulShops: 0,
-        failedShops: 0,
-      },
-    };
-  }
-
-  const results = [];
-  let totalSuccessful = 0;
-  let totalFailed = 0;
-
-  // Process shops sequentially to avoid subrequest limits
-  for (let i = 0; i < installedShops.length; i++) {
-    const shop = installedShops[i]!;
-    try {
-      console.log(`🏪 Processing shop ${i + 1}/${installedShops.length}: ${shop}`);
-
-      // Process products in batches with progress tracking
-      const result = await processProductsInBatches(env, shop, availableEans, (processed, total) => {
-        console.log(`📦 Processed ${processed} products for ${shop}${total > 0 ? `/${total}` : ''}`);
-      });
-
-      const successful = result.successful;
-      const failed = result.failed;
-      const errors = result.errors;
-
-      results.push({
-        shop,
-        success: true,
-        summary: {
-          total: successful + failed,
-          successful,
-          failed,
-          errors: errors.slice(0, 10), // Limit error messages
-        },
-      });
-
-      totalSuccessful += successful;
-      totalFailed += failed;
-      console.log(`✅ Experience center update completed for ${shop}: ${successful} successful, ${failed} failed`);
-
-      // Add delay between shops to avoid overwhelming the system
-      if (i < installedShops.length - 1) {
-        console.log(`⏳ Waiting 15 seconds before processing next shop...`);
-        await delay(15000);
-      }
-
-    } catch (error: any) {
-      console.error(`❌ Failed to process shop ${shop}:`, error.message);
-      results.push({
-        shop,
-        success: false,
-        error: error.message,
-      });
-    }
-  }
-
-  const successfulShops = results.filter(r => r.success).length;
-  const result = {
-    success: successfulShops > 0,
-    timestamp: new Date().toISOString(),
-    results,
-    summary: {
-      totalShops: installedShops.length,
-      successfulShops,
-      failedShops: installedShops.length - successfulShops,
-      totalProducts: totalSuccessful + totalFailed,
-      successfulProducts: totalSuccessful,
-      failedProducts: totalFailed,
-    },
-  };
-
-  console.log(`✅ Experience center update completed: ${successfulShops}/${installedShops.length} shops successful`);
-  return result;
-}
-
-// Experience center trigger handler
+// Experience center trigger handler - Bulk Operations Only
 async function handleExperienceCenterTrigger(request: Request, env: Env): Promise<Response> {
   try {
-    // Check if incremental processing is requested
-    const body = await request.json().catch(() => ({})) as any;
-    const useIncremental = body.incremental === true;
+    console.log('🚀 Starting Experience Center bulk operations for all shops');
 
-    let result;
-    if (useIncremental) {
-      console.log('🔄 Using incremental processing mode');
-      result = await processExperienceCenterUpdateIncremental(env);
-    } else {
-      console.log('⚡ Using full processing mode');
-      result = await processExperienceCenterUpdate(env);
-    }
+    // Always use bulk operations - the main and only flow
+    const result = await processExperienceCenterUpdateAllShops(env);
 
     // Store status in KV
     if (env.EXPERIENCE_CENTER_STATUS) {
@@ -1903,6 +1645,60 @@ async function handleExperienceCenterStatus(request: Request, env: Env): Promise
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
+  }
+}
+
+// NEW: Bulk operations test handler
+async function handleExperienceCenterBulkTest(request: Request, env: Env): Promise<Response> {
+  try {
+    const body = await request.json().catch(() => ({})) as any;
+    const shop = body.shop || env.SHOPIFY_STORE_URL?.replace('https://', '').replace('http://', '');
+
+    if (!shop) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'No shop specified',
+        timestamp: new Date().toISOString(),
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    console.log(`🧪 Testing bulk operations for shop: ${shop}`);
+
+    // Fetch experience center data
+    const experienceCenterData = await fetchExperienceCenterData(env);
+    const availableEans = new Set(experienceCenterData.data.map((item: any) => item.ean));
+
+    console.log(`📊 Testing with ${availableEans.size} available EANs`);
+
+    // Test bulk operations on single shop
+    const result = await processExperienceCenterWithBulkOperations(env, shop, availableEans);
+
+    const response = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      shop,
+      testType: 'bulk_operations',
+      result,
+      summary: {
+        availableEans: availableEans.size,
+        successfulProducts: result.successful,
+        failedProducts: result.failed,
+        eanMatches: result.eanMatches,
+        totalProducts: result.totalProducts,
+        errors: result.errors.slice(0, 5), // Limit error messages for test
+      },
+    };
+
+    return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error: any) {
+    console.error('❌ Bulk operations test failed:', error);
+
+    return new Response(JSON.stringify({
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      testType: 'bulk_operations',
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 
