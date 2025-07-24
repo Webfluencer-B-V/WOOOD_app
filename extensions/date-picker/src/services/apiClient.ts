@@ -1,5 +1,3 @@
-import { useSettings } from '@shopify/ui-extensions-react/checkout';
-
 export interface DeliveryDate {
   date: string;
   displayName: string;
@@ -19,22 +17,11 @@ export interface FetchConfig {
   enableMockMode?: boolean;
 }
 
-import { config } from '../config/environment';
-
-// Get API base URL from centralized configuration
-const getApiBaseUrl = (): string => {
-  return config.apiBaseUrl;
-};
-
-const getEnableMockMode = (): boolean => {
-  return config.enableMockMode;
-};
-
 const DEFAULT_CONFIG: FetchConfig = {
   timeout: 15000, // 15 seconds
   retries: 2,
-  apiBaseUrl: getApiBaseUrl(),
-  enableMockMode: getEnableMockMode()
+  apiBaseUrl: 'https://woood-production.leander-4e0.workers.dev',
+  enableMockMode: false
 };
 
 /**
@@ -56,9 +43,9 @@ function getAuthenticationHeaders(): Record<string, string> {
   return headers;
 }
 
-export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): Promise<DeliveryDate[]> {
+export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG, shopDomain?: string): Promise<DeliveryDate[]> {
   // Use configured API base URL or fallback to default
-  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const apiBaseUrl = DEFAULT_CONFIG.apiBaseUrl;
   const enableMockMode = config.enableMockMode || DEFAULT_CONFIG.enableMockMode;
 
   // If mock mode is enabled, return mock data immediately
@@ -67,81 +54,43 @@ export async function fetchDeliveryDates(config: FetchConfig = DEFAULT_CONFIG): 
     return generateMockDeliveryDates();
   }
 
-  const url = `${apiBaseUrl}/api/delivery-dates/available`;
+  try {
+    const url = `${apiBaseUrl}/api/delivery-dates`;
 
-  for (let attempt = 1; attempt <= (config.retries || DEFAULT_CONFIG.retries!); attempt++) {
-    try {
-      console.log(`🌐 Fetching delivery dates (attempt ${attempt}): ${url}`);
+    // Get authentication headers for session-based authentication
+    const authHeaders = getAuthenticationHeaders();
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-      }, config.timeout || DEFAULT_CONFIG.timeout!);
+    // Use provided shop domain or fallback
+    const domain = shopDomain || 'unknown-shop';
 
-      // Get authentication headers for session-based authentication
-      const authHeaders = getAuthenticationHeaders();
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        ...authHeaders,
+      },
+    });
 
-      // Get shop domain from checkout context
-      const shopDomain = window.location.hostname;
-
-      const response = await fetch(url, {
-        method: 'POST', // Changed to POST to send shop domain in body
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          shopDomain,
-          timestamp: new Date().toISOString(),
-          source: 'checkout_extension'
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const responseData = await response.json();
-
-      // Handle both direct array response and wrapped response
-      let data: DeliveryDate[];
-      if (responseData.success && Array.isArray(responseData.data)) {
-        data = responseData.data;
-      } else if (Array.isArray(responseData)) {
-        data = responseData;
-      } else {
-        throw new Error('Invalid response format: expected array of delivery dates');
-      }
-
-      console.log(`✅ Successfully fetched ${data.length} delivery dates`);
-      return data;
-
-    } catch (error: any) {
-      console.error(`❌ Attempt ${attempt} failed:`, error.message);
-
-      if (error.name === 'AbortError') {
-        console.error('Request timed out');
-      }
-
-      // If this is the last attempt, throw error (Workers will handle fallback)
-      if (attempt === (config.retries || DEFAULT_CONFIG.retries!)) {
-        console.error('All attempts failed, throwing error');
-        throw error;
-      }
-
-      // Wait before retrying (exponential backoff)
-      const waitTime = Math.pow(2, attempt - 1) * 1000; // 1s, 2s, 4s
-      console.log(`Waiting ${waitTime}ms before retry...`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-  }
 
-  // This should never be reached, but throw error if it does
-  throw new Error('Unexpected execution path in fetchDeliveryDates');
+    const data = await response.json();
+
+    if (data.success && Array.isArray(data.data)) {
+      console.log(`✅ Successfully fetched ${data.data.length} delivery dates`);
+      return data.data;
+    } else {
+      throw new Error('Invalid response format');
+    }
+
+  } catch (error: any) {
+    console.error(`❌ Failed to fetch delivery dates: ${error.message}`);
+
+    // Fallback to mock data on error
+    console.log('🔄 Falling back to mock delivery dates');
+    return generateMockDeliveryDates();
+  }
 }
 
 export async function saveOrderMetafields(
@@ -184,6 +133,162 @@ export async function saveOrderMetafields(
   } catch (error: any) {
     console.error('❌ Failed to save order metafields:', error.message);
     return false;
+  }
+}
+
+/**
+ * Trigger experience center data sync for all shops
+ * This calls the same function that runs automatically via cron job
+ * @param config API configuration
+ * @returns Promise<boolean> Success status
+ */
+export async function triggerExperienceCenterUpdate(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<boolean> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/experience-center/trigger`;
+
+  try {
+    console.log('🔄 Triggering experience center data sync...');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully triggered experience center sync:', result);
+    
+    if (result.summary) {
+      console.log(`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`);
+    }
+    
+    return true;
+
+  } catch (error: any) {
+    console.error('❌ Failed to trigger experience center sync:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Get status of last experience center sync operation
+ * @param config API configuration
+ * @returns Promise<any> Status information
+ */
+export async function getExperienceCenterStatus(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<any> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/experience-center/status`;
+
+  try {
+    console.log('📊 Fetching experience center sync status...');
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully fetched experience center status:', result);
+    
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch experience center status:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Trigger store locator data sync for all shops
+ * This calls the same function that runs automatically via cron job
+ * @param config API configuration
+ * @returns Promise<boolean> Success status
+ */
+export async function triggerStoreLocatorUpdate(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<boolean> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/store-locator/trigger`;
+
+  try {
+    console.log('🔄 Triggering store locator data sync...');
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully triggered store locator sync:', result);
+    
+    if (result.summary) {
+      console.log(`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`);
+    }
+    
+    return true;
+
+  } catch (error: any) {
+    console.error('❌ Failed to trigger store locator sync:', error.message);
+    return false;
+  }
+}
+
+/**
+ * Get status of last store locator sync operation
+ * @param config API configuration
+ * @returns Promise<any> Status information
+ */
+export async function getStoreLocatorStatus(
+  config: FetchConfig = DEFAULT_CONFIG
+): Promise<any> {
+  const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
+  const url = `${apiBaseUrl}/api/store-locator/status`;
+
+  try {
+    console.log('📊 Fetching store locator sync status...');
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log('✅ Successfully fetched store locator status:', result);
+    
+    return result;
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch store locator status:', error.message);
+    return null;
   }
 }
 

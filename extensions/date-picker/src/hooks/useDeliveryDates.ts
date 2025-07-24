@@ -30,12 +30,12 @@ const QUERY_KEY = ['delivery-dates'] as const;
 /**
  * Fetch delivery dates from the API with proper error handling and timeout
  */
-async function fetchDeliveryDates(apiBaseUrl: string): Promise<{
+async function fetchDeliveryDates(apiBaseUrl: string, shopDomain: string): Promise<{
   data: DeliveryDate[];
   metadata?: ApiResponse['metadata'];
 }> {
-  const url = `${apiBaseUrl}/api/delivery-dates/available`;
-  
+  const url = `${apiBaseUrl}/api/delivery-dates`;
+
   console.log('🌐 Fetching delivery dates from:', url);
 
   const controller = new AbortController();
@@ -44,20 +44,11 @@ async function fetchDeliveryDates(apiBaseUrl: string): Promise<{
   }, 15000); // 15 second timeout
 
   try {
-    // Get shop domain from checkout context
-    const shopDomain = window.location.hostname;
-    
     const response = await fetch(url, {
-      method: 'POST', // Changed to POST to send shop domain in body
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        shopDomain,
-        timestamp: new Date().toISOString(),
-        source: 'checkout_extension'
-      }),
       signal: controller.signal
     });
 
@@ -81,16 +72,16 @@ async function fetchDeliveryDates(apiBaseUrl: string): Promise<{
       throw new Error('Invalid response format: expected array of delivery dates');
     }
 
-    console.log(`✅ Successfully fetched ${data.length} delivery dates`);
+    // console.log(`✅ Fetched ${data.length} delivery dates`);
     return { data, metadata };
 
   } catch (error: any) {
     clearTimeout(timeoutId);
-    
+
     if (error.name === 'AbortError') {
       throw new Error('Request timed out after 15 seconds');
     }
-    
+
     console.error('❌ Failed to fetch delivery dates:', error.message);
     throw error;
   }
@@ -100,17 +91,23 @@ async function fetchDeliveryDates(apiBaseUrl: string): Promise<{
  * React Query hook for fetching delivery dates with caching and retry logic
  */
 export function useDeliveryDates(
-  apiBaseUrl: string, 
-  options: UseDeliveryDatesOptions = {}
-) {
+  apiBaseUrl: string,
+  enableMockMode: boolean,
+  shopDomain: string
+): {
+  deliveryDates: DeliveryDate[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+} {
   const queryResult = useQuery({
-    queryKey: [...QUERY_KEY, apiBaseUrl],
-    queryFn: () => fetchDeliveryDates(apiBaseUrl),
-    enabled: options.enabled !== false,
-    staleTime: options.staleTime || 5 * 60 * 1000, // 5 minutes
-    gcTime: options.cacheTime || 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
-    retry: options.retry || 3,
-    retryDelay: options.retryDelay || ((attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000)),
+    queryKey: [...QUERY_KEY, apiBaseUrl, shopDomain],
+    queryFn: () => fetchDeliveryDates(apiBaseUrl, shopDomain),
+    enabled: true,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     select: (response) => ({
       deliveryDates: response.data,
       metadata: response.metadata
@@ -119,11 +116,8 @@ export function useDeliveryDates(
 
   return {
     deliveryDates: queryResult.data?.deliveryDates || [],
-    metadata: queryResult.data?.metadata,
-    isLoading: queryResult.isLoading,
-    isError: queryResult.isError,
-    error: queryResult.error,
-    isFetching: queryResult.isFetching,
+    loading: queryResult.isLoading,
+    error: queryResult.error as string | null,
     refetch: queryResult.refetch,
   };
 }
@@ -141,7 +135,7 @@ export function useDeliveryDatesCache() {
   const prefetchDeliveryDates = (apiBaseUrl: string) => {
     queryClient.prefetchQuery({
       queryKey: [...QUERY_KEY, apiBaseUrl],
-      queryFn: () => fetchDeliveryDates(apiBaseUrl),
+      queryFn: () => fetchDeliveryDates(apiBaseUrl, ''),
       staleTime: 5 * 60 * 1000,
     });
   };
@@ -155,4 +149,4 @@ export function useDeliveryDatesCache() {
     prefetchDeliveryDates,
     getCachedDeliveryDates,
   };
-} 
+}
