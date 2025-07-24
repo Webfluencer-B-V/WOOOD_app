@@ -64,11 +64,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     console.error('Extension Error Boundary caught an error:', errorData);
 
-    // In production, you might want to send this to an error tracking service
-    // Note: Environment checking removed for extension compatibility
-    // this.sendErrorToService(errorData).catch(err => {
-    //   console.warn('Failed to send error to tracking service:', err);
-    // });
   }
 
   private async sendErrorToService(errorData: any): Promise<void> {
@@ -104,12 +99,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
-      // Custom fallback UI
+      const isCheckoutPreview = typeof window !== 'undefined' && window.location.href.includes('preview');
+
+      if (!isCheckoutPreview) {
+        return <BlockStack spacing="none" />;
+      }
+
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      // Default error UI
       return (
         <BlockStack spacing="base">
           <Banner status="critical">
@@ -171,10 +170,6 @@ export const useErrorHandler = () => {
     };
 
     console.error('Manual error handling:', errorData);
-
-    // Send to error tracking service
-    // Note: Environment checking and error tracking disabled for extension compatibility
-    // In a real implementation, you would configure this properly
 
     return errorId;
   }, []);

@@ -1,1269 +1,879 @@
-// Enhanced Workers implementation with complete webhook processing
-// Integrates order webhook processing to convert note_attributes to metafields
+/**
+ * Delivery Date Picker - Cloudflare Workers API
+ * Simplified architecture with essential functionality only
+ */
 
-import { parseEnvironment, Env, WorkerConfig } from './types/env';
-import { createLogger, WorkersLogger } from './utils/logger';
-import {
-  handleOrderCreated as processOrderCreated,
-  handleOrderPaid as processOrderPaid,
-  handleOrderUpdated as processOrderUpdated
-} from './handlers/orderWebhooks';
-import {
-  handleWebhookRegistration,
-  handleWebhookStatus,
-  ShopifyOrder
-} from './handlers/webhooks';
-import { handleOAuthStart, handleOAuthCallback, handleAppInstallation } from './handlers/auth';
-import { handleAdminInterface } from './handlers/admin';
-import { handleGetFeatureFlags, handleUpdateFeatureFlag, handleBulkUpdateFeatureFlags } from './handlers/featureFlags';
-import { handleSystemHealth, handleActivityLog } from './handlers/adminMonitoring';
-import { SimpleTokenService } from './services/simpleTokenService';
+import { upsertStoreLocator } from './storeLocatorUpserter';
 
-// Sprint 15: Production Security Hardening imports
-import { SecretValidationService } from './services/secretValidationService';
-import { enforceAPIAuthentication, AuthenticationError, createAuthErrorResponse } from './middleware/authenticationMiddleware';
-import { InputValidationService } from './services/inputValidationService';
-import { SecurityHeadersService } from './services/securityHeadersService';
+// Store locator utility functions
+const EXCLUSIVITY_MAP: Record<string, string> = {
+  'woood essentials': 'WOOOD Essentials',
+  'essentials': 'WOOOD Essentials',
+  'woood premium': 'WOOOD Premium',
+  'woood exclusive': 'WOOOD Premium',
+  'woood outdoor': 'WOOOD Outdoor',
+  'woood tablo': 'WOOOD Tablo',
+  'vtwonen': 'vtwonen',
+  'vt wonen dealers only': 'vtwonen',
+};
+
+// Status keys for KV storage
+const STORE_LOCATOR_STATUS_KEY = 'store_locator_last_sync';
+const EXPERIENCE_CENTER_STATUS_KEY = 'experience_center_last_sync';
+
+// Helper function to get access token for a shop
+async function getShopAccessToken(env: Env, shop: string): Promise<string | null> {
+  if (!env.WOOOD_KV) return null;
+
+  const tokenRecord = await env.WOOOD_KV.get(`shop_token:${shop}`, 'json') as any;
+  return tokenRecord?.accessToken || null;
+}
+
+// Helper function to get all installed shops
+async function getInstalledShops(env: Env): Promise<string[]> {
+  if (!env.WOOOD_KV) return [];
+
+  // List all keys that start with 'shop_token:'
+  const keys = await env.WOOOD_KV.list({ prefix: 'shop_token:' });
+  return keys.keys.map((key: any) => key.name.replace('shop_token:', ''));
+}
+
+// Helper function to clean up old shop tokens
+async function cleanupOldTokens(env: Env): Promise<void> {
+  if (!env.WOOOD_KV) return;
+
+  const keys = await env.WOOOD_KV.list({ prefix: 'shop_token:' });
+  for (const key of keys.keys) {
+    const shop = key.name.replace('shop_token:', '');
+    try {
+      // Test if the token is still valid by trying to fetch shop info
+      const tokenRecord = await env.WOOOD_KV.get(key.name, 'json') as any;
+      if (tokenRecord?.accessToken) {
+        const response = await fetch(`https://${shop}/admin/api/2023-10/shop.json`, {
+          headers: {
+            'X-Shopify-Access-Token': tokenRecord.accessToken,
+          },
+        });
+        if (!response.ok) {
+          console.log(`🗑️ Removing invalid token for ${shop}`);
+          await env.WOOOD_KV.delete(key.name);
+        }
+      }
+    } catch (error) {
+      console.log(`🗑️ Removing invalid token for ${shop}: ${error}`);
+      await env.WOOOD_KV.delete(key.name);
+    }
+  }
+}
+
+function mapExclusives(exclusivityData: any): string[] {
+  if (!exclusivityData) return [];
+  let descriptions: string[] = [];
+  if (Array.isArray(exclusivityData)) {
+    descriptions = exclusivityData
+      .map((item) => {
+        const desc = item.Description || item.description;
+        return typeof desc === 'string' ? desc.trim().toLowerCase() : null;
+      })
+      .filter((d): d is string => d !== null);
+  } else if (typeof exclusivityData === 'string') {
+    descriptions = exclusivityData.split(',').map((val) => val.trim().toLowerCase());
+  }
+  const mapped = descriptions
+    .map((desc) => EXCLUSIVITY_MAP[desc])
+    .filter((val): val is string => Boolean(val));
+  return [...new Set(mapped)];
+}
+
+// Fetch and transform dealer data
+async function fetchAndTransformDealers(env: Env): Promise<any[]> {
+  const { DUTCH_FURNITURE_BASE_URL, DUTCH_FURNITURE_API_KEY } = env;
+  let data: any[] = [];
+  if (!DUTCH_FURNITURE_BASE_URL || !DUTCH_FURNITURE_API_KEY) throw new Error('Missing DUTCH_FURNITURE_BASE_URL or DUTCH_FURNITURE_API_KEY');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${DUTCH_FURNITURE_API_KEY}`,
+  };
+  const storeLocatorUrl = `${DUTCH_FURNITURE_BASE_URL}/api/datasource/wooodshopfinder`;
+  const response = await fetch(storeLocatorUrl, { headers });
+  if (!response.ok) throw new Error(`Failed to fetch data: ${response.status} ${response.statusText}`);
+  data = await response.json();
+  if (!Array.isArray(data)) throw new Error('External API did not return an array');
+  // Filter and map
+  return data
+    .filter((dealer) => {
+      const accountStatus = dealer.accountStatus || dealer.AccountStatus;
+      const activationPortal = dealer.dealerActivationPortal || dealer.DealerActivationPortal;
+      const isActivated = activationPortal === true || activationPortal === 'WAAR';
+      return accountStatus === 'A' && isActivated;
+    })
+    .map((dealer) => {
+      const {
+        accountmanager,
+        dealerActivationPortal,
+        vatNumber,
+        shopfinderExclusives,
+        accountStatus,
+        ...rest
+      } = dealer;
+      const exclusivityRaw = dealer.Exclusiviteit || dealer.shopfinderExclusives || dealer.ShopfinderExclusives;
+      const exclusives = mapExclusives(exclusivityRaw);
+      const name = dealer.nameAlias || dealer.NameAlias || dealer.name || dealer.Name;
+      return {
+        ...rest,
+        name,
+        exclusives,
+      };
+    });
+}
+
+// Upsert to Shopify shop metafield
+async function upsertShopMetafield(env: Env, dealers: any[], shop: string): Promise<any> {
+  // 1. Get access token for the shop
+  const accessToken = await getShopAccessToken(env, shop);
+  if (!accessToken) {
+    throw new Error(`No access token found for shop: ${shop}`);
+  }
+
+  // 2. Get shop ID
+  const shopQuery = `query { shop { id } }`;
+  const shopResponse = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': accessToken,
+    },
+    body: JSON.stringify({ query: shopQuery }),
+  });
+  const shopResult = await shopResponse.json() as { data?: { shop?: { id?: string } } };
+  const shopId = shopResult?.data?.shop?.id;
+  if (!shopId) throw new Error('Could not fetch shop ID');
+  // 2. Upsert metafield
+  const mutation = `
+    mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields { key namespace value type ownerType }
+        userErrors { field message }
+      }
+    }
+  `;
+  const variables = {
+    metafields: [
+      {
+        ownerId: shopId,
+        namespace: 'woood',
+        key: 'store_locator',
+        value: JSON.stringify(dealers),
+        type: 'json',
+      },
+    ],
+  };
+  const response = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': accessToken,
+    },
+    body: JSON.stringify({ query: mutation, variables }),
+  });
+  return response.json();
+}
+
+// Essential environment interface
+interface Env {
+  ENVIRONMENT: string;
+  DUTCHNED_API_URL: string;
+  DUTCHNED_API_CREDENTIALS: string;
+  SHOPIFY_APP_CLIENT_ID: string;
+  SHOPIFY_APP_CLIENT_SECRET: string;
+  SHOPIFY_APP_URL: string;
+  ENABLE_MOCK_FALLBACK: string;
+  CORS_ORIGINS: string;
+  WOOOD_KV: any;
+  // External API integration environment variables
+  SHOPIFY_ADMIN_API_ACCESS_TOKEN: string;
+  SHOPIFY_STORE_URL: string;
+  DUTCH_FURNITURE_BASE_URL: string;
+  DUTCH_FURNITURE_API_KEY: string;
+  STORE_LOCATOR_STATUS?: KVNamespace;
+  EXPERIENCE_CENTER_STATUS?: KVNamespace;
+}
+
+// Essential types
+interface DeliveryDate {
+  date: string;
+  displayName: string;
+}
+
+interface OAuthTokenResponse {
+  access_token: string;
+  scope: string;
+  expires_in?: number;
+}
+
+interface NoteAttribute {
+  name: string;
+  value: string;
+}
+
+interface ShopifyOrder {
+  id: number;
+  name: string;
+  note_attributes?: NoteAttribute[];
+}
+
+interface OrderMetafield {
+  namespace: string;
+  key: string;
+  value: string;
+  type: string;
+}
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const config = parseEnvironment(env);
-    const logger = createLogger(env, config);
-    const requestId = crypto.randomUUID();
+    const path = url.pathname;
 
-    // Sprint 15: Production Security Hardening
-    try {
-      // Validate required secrets on startup (deployment secrets only)
-      SecretValidationService.validateRequiredSecrets(env, false);
-
-      // Check production readiness
-      const readinessCheck = SecretValidationService.validateProductionReadiness(env);
-      if (!readinessCheck.ready && env.ENVIRONMENT === 'production') {
-        logger.error('Production deployment blocked due to security issues', {
-          requestId,
-          criticalIssues: readinessCheck.criticalIssues,
-          warnings: readinessCheck.warnings
-        });
-
-        return SecurityHeadersService.createSecureResponse(
-          JSON.stringify({
-            error: 'Service Unavailable',
-            message: 'Security configuration incomplete',
-            requestId
-          }),
-          { status: 503 },
-          'api',
-          env
-        );
-      }
-
-      // Validate request security
-      const securityCheck = SecurityHeadersService.validateRequestSecurity(request);
-      if (securityCheck.blocked) {
-        logger.warn('Request blocked due to security threats', {
-          requestId,
-          threats: securityCheck.threats,
-          url: url.pathname,
-          userAgent: request.headers.get('User-Agent') ?? undefined
-        });
-
-        return SecurityHeadersService.createSecureResponse(
-          JSON.stringify({
-            error: 'Request Blocked',
-            message: 'Security violation detected',
-            requestId
-          }),
-          { status: 403 },
-          'api',
-          env
-        );
-      }
-
-      if (!securityCheck.valid) {
-        logger.info('Security warnings detected', {
-          requestId,
-          threats: securityCheck.threats
-        });
-      }
-
-    } catch (secretError) {
-      logger.error('Secret validation failed', {
-        requestId,
-        error: secretError instanceof Error ? secretError.message : 'Unknown error'
-      });
-
-      return SecurityHeadersService.createSecureResponse(
-        JSON.stringify({
-          error: 'Service Unavailable',
-          message: 'Configuration error',
-          requestId
-        }),
-        { status: 503 },
-        'api',
-        env
-      );
-    }
-
-    // Enhanced CORS headers with proper origin handling and iframe embedding support
+    // Basic CORS headers
     const corsHeaders = {
-      'Access-Control-Allow-Origin': getAllowedOrigin(request, config.cors.origins),
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Shopify-Hmac-Sha256, X-Shopify-Topic, X-Shopify-Shop-Domain, X-Session-ID',
+      'Access-Control-Allow-Origin': getAllowedOrigin(request, env.CORS_ORIGINS?.split(',') || []),
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Shopify-Hmac-Sha256, X-Shopify-Topic, X-Shopify-Shop-Domain, x-api-key',
       'Access-Control-Allow-Credentials': 'true',
-      'Access-Control-Max-Age': '86400',
-      'X-Frame-Options': 'ALLOWALL', // Allow embedding in Shopify admin
-      'Content-Security-Policy': "frame-ancestors 'self' https://*.myshopify.com https://admin.shopify.com",
       'X-Content-Type-Options': 'nosniff'
     };
 
-    // Handle OPTIONS requests
+    // Handle preflight requests
     if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders
-      });
+      return new Response(null, { status: 204, headers: corsHeaders });
     }
-
-    // Log incoming request
-    const startTime = Date.now();
-    logger.logRequest(request.method, url.pathname, 0, 0, {
-      userAgent: request.headers.get('User-Agent') || 'unknown',
-      origin: request.headers.get('Origin') || 'unknown'
-    });
 
     try {
-      // === CRITICAL FIX: OAUTH ENDPOINTS ===
-
-      // App installation page (root and /install)
-      if (url.pathname === '/' || url.pathname === '/install') {
-        logger.info('App installation request', { requestId, pathname: url.pathname });
-        const response = await handleAppInstallation(request, env, config, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // OAuth initiation endpoint
-      if (url.pathname === '/auth/start') {
-        logger.info('OAuth start request', { requestId });
-        const response = await handleOAuthStart(request, env, config, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // OAuth callback endpoint
-      if (url.pathname === '/auth/callback') {
-        logger.info('OAuth callback request', { requestId });
-        const response = await handleOAuthCallback(request, env, config, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Admin interface endpoint
-      if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
-        logger.info('Admin interface request', { requestId, pathname: url.pathname });
-        const response = await handleAdminInterface(request, env, config, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Feature flags API endpoints
-      if (url.pathname === '/api/admin/feature-flags' && request.method === 'GET') {
-        const authResult = await authenticateRequest(request, env, logger, requestId);
-        if (!authResult.success || !authResult.shop) {
-          return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
-        }
-        const response = await handleGetFeatureFlags(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      if (url.pathname === '/api/admin/feature-flags' && request.method === 'POST') {
-        const authResult = await authenticateRequest(request, env, logger, requestId);
-        if (!authResult.success || !authResult.shop) {
-          return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
-        }
-        const response = await handleUpdateFeatureFlag(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      if (url.pathname === '/api/admin/feature-flags/bulk' && request.method === 'POST') {
-        const authResult = await authenticateRequest(request, env, logger, requestId);
-        if (!authResult.success || !authResult.shop) {
-          return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
-        }
-        const response = await handleBulkUpdateFeatureFlags(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // System monitoring API endpoints
-      if (url.pathname === '/api/admin/system-health' && request.method === 'GET') {
-        const authResult = await authenticateRequest(request, env, logger, requestId);
-        if (!authResult.success || !authResult.shop) {
-          return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
-        }
-        const response = await handleSystemHealth(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, config, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      if (url.pathname === '/api/admin/activity-log' && request.method === 'GET') {
-        const authResult = await authenticateRequest(request, env, logger, requestId);
-        if (!authResult.success || !authResult.shop) {
-          return addCorsHeaders(new Response(JSON.stringify({ success: false, error: 'Authentication required' }), { status: 401 }), corsHeaders);
-        }
-        const response = await handleActivityLog(request, env, { shop: authResult.shop, accessToken: authResult.accessToken }, logger, requestId);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // === EXISTING ENDPOINTS (UNCHANGED) ===
-
-      // Enhanced health check with configuration info
-      if (url.pathname === '/health') {
-        const healthData = {
-          status: 'healthy',
-          timestamp: new Date().toISOString(),
-          version: '1.11.1',
-          environment: config.environment,
-          features: {
-            oauthIntegration: true, // ✅ FIXED: OAuth now integrated
-            dutchNedApi: config.features.enableDutchNedApi,
-            webhookProcessing: config.features.enableWebhookNotifications,
-            shippingMethodProcessing: config.features.enableShippingMethodProcessing,
-            caching: config.features.enableCaching,
-            logging: config.features.enableRequestLogging
-          },
-          ...(config.features.enableVerboseResponses && {
-            uptime: Date.now(),
-            endpoints: [
-              '/health',
-              '/ (app installation)',
-              '/install (app installation)',
-              '/auth/start (OAuth initiation)',
-              '/auth/callback (OAuth completion)',
-              '/api/delivery-dates/available',
-              '/api/products/shipping-methods',
-              '/api/products/erp-delivery-times',
-              '/api/webhooks/orders/created',
-              '/api/webhooks/orders/paid',
-              '/api/webhooks/orders/updated',
-              '/api/webhooks/register',
-              '/api/webhooks/status'
-            ]
-          })
-        };
-
-        const response = new Response(JSON.stringify(healthData, null, 2), {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            ...corsHeaders
-          }
-        });
-
-        logger.logRequest(request.method, url.pathname, 200, Date.now() - startTime);
-        return response;
-      }
-
-      // === WEBHOOK MANAGEMENT ENDPOINTS ===
-
-      // Webhook testing endpoint for debugging
-      if (url.pathname === '/debug/webhook-test' && request.method === 'POST') {
-        try {
-          const body = await request.json() as any;
-          const { shopDomain, orderId, topic } = body;
-
-          if (!shopDomain || !orderId) {
-            return new Response(JSON.stringify({
-              success: false,
-              error: 'shopDomain and orderId are required'
-            }), {
-              status: 400,
-              headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-          }
-
-          logger.info('Testing webhook processing for order', { shopDomain, orderId, topic: topic || 'orders/create' });
-
-          // Simulate webhook processing
-          const mockOrder: ShopifyOrder = {
-            id: orderId,
-            order_number: 1001,
-            email: 'test@example.com',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            name: '#1001',
-            note: '',
-            financial_status: 'paid',
-            fulfillment_status: 'unfulfilled',
-            tags: '',
-            gateway: 'shopify_payments',
-            test: false,
-            total_price: '100.00',
-            note_attributes: [
-              { name: 'delivery_date', value: '2024-12-20' },
-              { name: 'shipping_method', value: '30 - EXPEDITIE STANDAARD' }
-            ],
-            customer: {
-              id: 123,
-              email: 'test@example.com',
-              first_name: 'Test',
-              last_name: 'Customer'
-            },
-            line_items: [],
-            shipping_address: {
-              first_name: 'Test',
-              last_name: 'Customer',
-              address1: 'Test Street 1',
-              address2: '',
-              city: 'Test City',
-              province: 'Test Province',
-              country: 'Netherlands',
-              zip: '1234AB',
-              phone: '+31123456789'
-            }
-          };
-
-          const result = await processOrderCreated(mockOrder, shopDomain, env, logger);
-
-          return new Response(JSON.stringify({
-            success: true,
-            message: 'Webhook test completed',
-            result,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-
-        } catch (error: any) {
-          logger.error('Webhook test failed', { error: error.message });
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Webhook test failed',
-            details: error.message
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Register webhooks with Shopify
-      if (url.pathname === '/api/webhooks/register' && request.method === 'POST') {
-        logger.info('Webhook registration request received');
-        const response = await handleWebhookRegistration(request, env, logger);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Check webhook registration status
-      if (url.pathname === '/api/webhooks/status') {
-        logger.info('Webhook status check requested');
-        const response = await handleWebhookStatus(request, env, logger);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Check webhook registration status for specific shop
-      if (url.pathname === '/api/webhooks/status' && url.searchParams.get('shop')) {
-        const shop = url.searchParams.get('shop')!;
-        logger.info('Webhook status check for specific shop', { shop });
-
-        try {
-          const webhookStatuses = [];
-
-          // Check status of all registered webhooks
-          const webhookTopics = ['orders/paid', 'app/uninstalled'];
-
-          for (const topic of webhookTopics) {
-            const webhookConfigData = await env.DELIVERY_CACHE.get(`webhook:${shop}:${topic}`);
-
-            if (webhookConfigData) {
-              const config = JSON.parse(webhookConfigData);
-              webhookStatuses.push({
-                topic,
-                status: config.status,
-                webhookId: config.webhookId,
-                registeredAt: config.registeredAt,
-                address: config.address
-              });
-            } else {
-              webhookStatuses.push({
-                topic,
-                status: 'not_registered'
-              });
-            }
-          }
-
-          return new Response(JSON.stringify({
-            success: true,
-            shop,
-            webhooks: webhookStatuses,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-
-        } catch (error: any) {
-          logger.error('Failed to get webhook status', { error: error.message });
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Failed to get webhook status',
-            details: error.message
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Manual webhook registration endpoint
-      if (url.pathname === '/api/webhooks/register-manual' && request.method === 'POST') {
-        logger.info('Manual webhook registration request received');
-
-        try {
-          const body = await request.json() as { shop: string; accessToken: string };
-
-          if (!body.shop || !body.accessToken) {
-            return new Response(JSON.stringify({
-              success: false,
-              error: 'Missing required fields: shop and accessToken'
-            }), {
-              status: 400,
-              headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-          }
-
-          // Import the webhook registration function
-          const { registerMandatoryWebhooks } = await import('./handlers/auth');
-
-          // Register webhooks
-          await registerMandatoryWebhooks(body.shop, body.accessToken, config, env, logger, crypto.randomUUID());
-
-          return new Response(JSON.stringify({
-            success: true,
-            message: 'Webhooks registered successfully',
-            shop: body.shop,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-
-        } catch (error: any) {
-          logger.error('Manual webhook registration failed', { error: error.message });
-          return new Response(JSON.stringify({
-            success: false,
-            error: 'Webhook registration failed',
-            details: error.message
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // === ORDER WEBHOOK PROCESSING ENDPOINTS ===
-
-      // Process order created webhook - CORE FUNCTIONALITY
-      if (url.pathname === '/api/webhooks/orders/created' && request.method === 'POST') {
-        logger.info('Order created webhook received', {
-          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
-          topic: request.headers.get('X-Shopify-Topic')
-        });
-
-        const response = await processOrderWebhook(
-          request,
-          env,
-          logger,
-          'orders/create',
-          processOrderCreated
-        );
-
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Process order paid webhook
-      if (url.pathname === '/api/webhooks/orders/paid' && request.method === 'POST') {
-        logger.info('Order paid webhook received', {
-          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
-          topic: request.headers.get('X-Shopify-Topic')
-        });
-
-        const response = await processOrderWebhook(
-          request,
-          env,
-          logger,
-          'orders/paid',
-          processOrderPaid
-        );
-
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Process order updated webhook
-      if (url.pathname === '/api/webhooks/orders/updated' && request.method === 'POST') {
-        logger.info('Order updated webhook received', {
-          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
-          topic: request.headers.get('X-Shopify-Topic')
-        });
-
-        const response = await processOrderWebhook(
-          request,
-          env,
-          logger,
-          'orders/updated',
-          processOrderUpdated
-        );
-
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Process app uninstalled webhook (current endpoint)
-      if (url.pathname === '/api/webhooks/app/uninstalled' && request.method === 'POST') {
-        logger.info('App uninstalled webhook received', {
-          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
-          topic: request.headers.get('X-Shopify-Topic')
-        });
-
-        try {
-          const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
-          if (shopDomain) {
-            // Clear all sessions for the shop when app is uninstalled
-            const clearedSessions = await clearShopSessions(shopDomain, env);
-            logger.info('App uninstalled - cleared shop sessions', {
-              shopDomain,
-              clearedSessions
-            });
-          }
-
-          const response = new Response(JSON.stringify({
-            success: true,
-            message: 'App uninstalled webhook processed',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-          return addCorsHeaders(response, corsHeaders);
-        } catch (error: any) {
-          logger.error('App uninstalled webhook error', { error: error.message });
-          const response = new Response(JSON.stringify({
-            success: false,
-            error: 'Failed to process app uninstalled webhook',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-          return addCorsHeaders(response, corsHeaders);
-        }
-      }
-
-      // BACKWARD COMPATIBILITY: Process app uninstalled webhook (legacy endpoint without /api prefix)
-      if (url.pathname === '/webhooks/app/uninstalled' && request.method === 'POST') {
-        logger.info('🔄 Legacy app uninstalled webhook received (redirecting to new endpoint)', {
-          shopDomain: request.headers.get('X-Shopify-Shop-Domain'),
-          topic: request.headers.get('X-Shopify-Topic'),
-          legacyUrl: url.pathname
-        });
-
-        try {
-          const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
-          if (shopDomain) {
-            // Clear all sessions for the shop when app is uninstalled
-            const clearedSessions = await clearShopSessions(shopDomain, env);
-            logger.info('Legacy app uninstalled - cleared shop sessions', {
-              shopDomain,
-              clearedSessions
-            });
-          }
-
-          const response = new Response(JSON.stringify({
-            success: true,
-            message: 'Legacy app uninstalled webhook processed',
-            note: 'This endpoint is deprecated. Use /api/webhooks/app/uninstalled',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-          return addCorsHeaders(response, corsHeaders);
-        } catch (error: any) {
-          logger.error('Legacy app uninstalled webhook error', { error: error.message });
-          const response = new Response(JSON.stringify({
-            success: false,
-            error: 'Failed to process legacy app uninstalled webhook',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' }
-          });
-
-          logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-          return addCorsHeaders(response, corsHeaders);
-        }
-      }
-
-      // === EXISTING API ENDPOINTS (UNCHANGED) ===
-
-      // DutchNed delivery dates endpoint
-      if (url.pathname === '/api/delivery-dates/available') {
-        const response = await handleDeliveryDatesEndpoint(request, env, logger, config);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Shipping methods endpoint
-      if (url.pathname === '/api/products/shipping-methods' && request.method === 'POST') {
-        const response = await handleShippingMethodsEndpoint(request, env, logger, config);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // ERP delivery times endpoint
-      if (url.pathname === '/api/products/erp-delivery-times' && request.method === 'POST') {
-        const response = await handleErpDeliveryTimesEndpoint(request, env, logger, config);
-        logger.logRequest(request.method, url.pathname, response.status, Date.now() - startTime);
-        return addCorsHeaders(response, corsHeaders);
-      }
-
-      // Debug endpoint to check sessions for a shop
-      if (url.pathname === '/debug/sessions' && url.searchParams.get('shop')) {
-        const shop = url.searchParams.get('shop')!;
-        logger.info('Debug: Checking sessions for shop', { shop });
-
-        try {
-          const accessToken = await getShopAccessToken(shop, env);
-          const sessionStorage = new SimpleTokenService(env);
-          const sessions = await sessionStorage.listShopsWithTokens();
-
-          return new Response(JSON.stringify({
-            shop,
-            hasAccessToken: !!accessToken,
-            accessToken: accessToken ? `${accessToken.substring(0, 10)}...` : null,
-            sessionCount: sessions.length,
-            sessions: sessions.map(shopDomain => ({
-              shop: shopDomain,
-              hasAccessToken: true // If it's in the list, it has a token
-            })),
-            timestamp: new Date().toISOString()
-          }, null, 2), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Debug endpoint to clear sessions for a shop
-      if (url.pathname === '/debug/clear-sessions' && url.searchParams.get('shop')) {
-        const shop = url.searchParams.get('shop')!;
-        logger.info('Debug: Clearing sessions for shop', { shop });
-
-        try {
-          const sessionStorage = new SimpleTokenService(env);
-          const sessions = await sessionStorage.listShopsWithTokens();
-
-          // Delete all sessions for this shop
-          for (const shopDomain of sessions) {
-            await sessionStorage.deleteToken(shopDomain);
-          }
-
-          return new Response(JSON.stringify({
-            shop,
-            message: `Cleared ${sessions.length} sessions`,
-            clearedSessions: sessions.length,
-            timestamp: new Date().toISOString()
-          }, null, 2), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Unknown error',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Auto-fix session decryption issues
-      if (url.pathname === '/debug/fix-sessions' && url.searchParams.get('shop')) {
-        const shop = url.searchParams.get('shop')!;
-        logger.info('🔧 Debug: Fixing corrupted sessions for shop', { shop });
-
-        try {
-          const sessionStorage = new SimpleTokenService(env);
-
-          // Try to get all sessions for this shop, but catch decryption errors
-          let allSessionKeys: string[] = [];
-          let corruptedSessions: string[] = [];
-          let validSessions: any[] = [];
-
+      let response: Response;
+
+      // Simplified routing
+      switch (true) {
+        case path === '/' || path === '/install':
+          response = await handleInstall(request, env);
+          break;
+
+        case path === '/auth/callback':
+          response = await handleCallback(request, env);
+          break;
+
+        case path === '/api/delivery-dates':
+          response = await handleDeliveryDates(request, env);
+          break;
+
+        case path === '/api/webhooks/orders' && request.method === 'POST':
+          response = await handleOrderWebhook(request, env);
+          break;
+
+        case path === '/admin':
+          response = await handleAdmin(request, env);
+          break;
+
+        case path === '/health':
+          response = await handleHealth(request, env);
+          break;
+
+        case path === '/test-webhooks' && request.method === 'POST':
+          response = await handleTestWebhooks(request, env);
+          break;
+
+        case path === '/api/upsert-store-locator' && request.method === 'POST':
           try {
-            const sessions = await sessionStorage.listShopsWithTokens();
-            validSessions = sessions;
-          } catch (sessionError) {
-            logger.warn('Error loading sessions - attempting cleanup', {
-              shop,
-              error: sessionError instanceof Error ? sessionError.message : 'Unknown error'
-            });
-
-            // Try to manually clean up corrupted sessions
-            // This is a more aggressive approach to find and remove corrupted data
-            const kvKeys = await env.WOOOD_KV.list({ prefix: `session_${shop}_` });
-            allSessionKeys = kvKeys.keys.map((k: any) => k.name);
-
-            for (const key of allSessionKeys) {
-              try {
-                const sessionData = await env.WOOOD_KV.get(key);
-                if (sessionData) {
-                  // Try to parse/decrypt the session
-                  JSON.parse(sessionData);
-                }
-              } catch (parseError) {
-                corruptedSessions.push(key);
-                logger.info('Found corrupted session, deleting', { shop, sessionKey: key });
-                await env.WOOOD_KV.delete(key);
-              }
-            }
+            const result = await upsertStoreLocator(env);
+            response = new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+          } catch (error: any) {
+            response = new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
           }
+          break;
 
-          return new Response(JSON.stringify({
-            shop,
-            message: 'Session cleanup completed',
-            totalSessionKeys: allSessionKeys.length,
-            validSessions: validSessions.length,
-            corruptedSessionsRemoved: corruptedSessions.length,
-            corruptedKeys: corruptedSessions,
-            recommendation: corruptedSessions.length > 0 ? 'OAuth reinstall recommended' : 'Sessions are healthy',
-            timestamp: new Date().toISOString()
+        case path === '/api/inventory' && request.method === 'POST':
+          response = await handleInventoryCheck(request, env);
+          break;
+
+        case path === '/api/store-locator/trigger' && request.method === 'POST':
+          response = await handleStoreLocatorUpsert(request, env);
+          break;
+
+        case path === '/api/store-locator/status' && request.method === 'GET':
+          response = await handleStoreLocatorStatus(request, env);
+          break;
+
+        case path === '/api/experience-center/trigger' && request.method === 'POST':
+          response = await handleExperienceCenterTrigger(request, env);
+          break;
+
+        case path === '/api/experience-center/status' && request.method === 'GET':
+          response = await handleExperienceCenterStatus(request, env);
+          break;
+
+        case path === '/api/experience-center/bulk-test' && request.method === 'POST':
+          response = await handleExperienceCenterBulkTest(request, env);
+          break;
+
+        case path === '/api/debug/env' && request.method === 'GET':
+          response = new Response(JSON.stringify({
+            hasShopifyToken: !!env.SHOPIFY_ADMIN_API_ACCESS_TOKEN,
+            hasStoreUrl: !!env.SHOPIFY_STORE_URL,
+            hasDutchFurnitureUrl: !!env.DUTCH_FURNITURE_BASE_URL,
+            hasDutchFurnitureKey: !!env.DUTCH_FURNITURE_API_KEY,
+            storeUrl: env.SHOPIFY_STORE_URL,
+            dutchFurnitureUrl: env.DUTCH_FURNITURE_BASE_URL,
+            tokenLength: env.SHOPIFY_ADMIN_API_ACCESS_TOKEN?.length || 0,
+            keyLength: env.DUTCH_FURNITURE_API_KEY?.length || 0,
           }, null, 2), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Unknown error',
-            shop,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Debug endpoint to test metafield API calls
-      if (url.pathname === '/debug/metafields' && url.searchParams.get('shop') && url.searchParams.get('productId')) {
-        const shop = url.searchParams.get('shop')!;
-        const productId = url.searchParams.get('productId')!;
-
-        try {
-          const accessToken = await getShopAccessToken(shop, env);
-
-          if (!accessToken) {
-            return new Response(JSON.stringify({
-              error: 'No access token found for shop',
-              shop,
-              timestamp: new Date().toISOString()
-            }), {
-              status: 404,
-              headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-          }
-
-          // Test: Get all metafields for the product
-          const allMetafieldsUrl = `https://${shop}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json`;
-          const allMetafieldsResponse = await fetch(allMetafieldsUrl, {
-            headers: {
-              'X-Shopify-Access-Token': accessToken,
-              'Content-Type': 'application/json'
-            }
-          });
-
-          const results = {
-            shop,
-            productId,
-            accessToken: `${accessToken.substring(0, 10)}...`,
-            url: allMetafieldsUrl,
-            status: allMetafieldsResponse.status,
-            statusText: allMetafieldsResponse.statusText,
-            data: allMetafieldsResponse.ok ? await allMetafieldsResponse.json() : await allMetafieldsResponse.text(),
-            timestamp: new Date().toISOString()
-          };
-
-          return new Response(JSON.stringify(results, null, 2), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-
-        } catch (error) {
-          return new Response(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Unknown error',
-            shop,
-            productId,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // 🔧 PERFORMANCE FIX: Background session cleanup to prevent CPU-intensive decryption loops
-      if (url.pathname === '/admin/cleanup-sessions' && request.method === 'POST' && url.searchParams.get('shop')) {
-        const sessionResult = await authenticateRequest(request, env, logger, requestId);
-        if (!sessionResult.success || !sessionResult.shop) {
-          return new Response(JSON.stringify({ error: 'Authentication required' }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-
-        const shop = sessionResult.shop;
-        logger.info('🧹 Starting background session cleanup', { shop, requestId });
-
-        try {
-          const sessionStorage = new SimpleTokenService(env);
-
-          // Get session index
-          const indexKey = `shop_index:${shop}`;
-          const indexData = await env.WOOOD_KV.get(indexKey);
-
-          if (!indexData) {
-            return new Response(JSON.stringify({
-              shop,
-              message: 'No sessions found for cleanup',
-              corruptedSessionsRemoved: 0,
-              timestamp: new Date().toISOString()
-            }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-          }
-
-          const sessionIds: string[] = JSON.parse(indexData);
-          let corruptedSessionsRemoved = 0;
-          let validSessions = 0;
-
-          // Process sessions one by one (avoid CPU limits)
-          for (const sessionId of sessionIds) {
-            try {
-              // Try to load session (will handle decryption internally)
-              const sessionData = await env.WOOOD_KV.get(`session:${sessionId}`);
-              if (!sessionData) {
-                // Session missing, remove from index
-                corruptedSessionsRemoved++;
-                continue;
-              }
-
-              // Try basic JSON parse to check if it's corrupted
-              JSON.parse(sessionData);
-              validSessions++;
-            } catch (parseError) {
-              // Corrupted session, delete it
-              logger.info('🗑️ Removing corrupted session', { sessionId: sessionId.substring(0, 8) + '...', shop });
-              await env.WOOOD_KV.delete(`session:${sessionId}`);
-              await env.WOOOD_KV.delete(`session_fingerprint:${sessionId}`);
-              corruptedSessionsRemoved++;
-            }
-          }
-
-          // Update shop index with only valid sessions
-          if (corruptedSessionsRemoved > 0) {
-            const remainingSessionIds = sessionIds.slice(validSessions);
-            if (remainingSessionIds.length > 0) {
-              await env.WOOOD_KV.put(indexKey, JSON.stringify(remainingSessionIds), {
-                expirationTtl: 86400 * 365 * 2 // 2 years
-              });
-            } else {
-              await env.WOOOD_KV.delete(indexKey);
-            }
-          }
-
-          return new Response(JSON.stringify({
-            shop,
-            message: 'Session cleanup completed',
-            totalSessions: sessionIds.length,
-            validSessions,
-            corruptedSessionsRemoved,
-            recommendation: corruptedSessionsRemoved > 0 ? 'OAuth performance should be improved' : 'Sessions are healthy',
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-
-        } catch (error) {
-          logger.error('Session cleanup failed', { error: error instanceof Error ? error.message : 'Unknown error', shop, requestId });
-          return new Response(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Unknown error',
-            shop,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Debug endpoint to directly check and delete shop token
-      if (url.pathname === '/debug/token' && url.searchParams.get('shop')) {
-        const shop = url.searchParams.get('shop')!;
-        logger.info('Debug: Checking shop token directly', { shop });
-
-        try {
-          const key = `shop_token:${shop}`;
-          const tokenData = await env.DELIVERY_CACHE.get(key);
-
-          const result: {
-            shop: string;
-            key: string;
-            hasToken: boolean;
-            tokenData: any;
-            timestamp: string;
-            deleted?: boolean;
-          } = {
-            shop,
-            key,
-            hasToken: !!tokenData,
-            tokenData: tokenData ? JSON.parse(tokenData) : null,
-            timestamp: new Date().toISOString()
-          };
-
-          // If token exists, delete it
-          if (tokenData) {
-            await env.DELIVERY_CACHE.delete(key);
-            result.deleted = true;
-            logger.info('Debug: Deleted existing token', { shop, key });
-          }
-
-          return new Response(JSON.stringify(result, null, 2), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        } catch (error) {
-          return new Response(JSON.stringify({
-            error: error instanceof Error ? error.message : 'Unknown error',
-            shop,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders }
-          });
-        }
-      }
-
-      // Default 404 response
-      logger.warn('Endpoint not found', { pathname: url.pathname, method: request.method });
-      const notFoundResponse = new Response(JSON.stringify({
-        success: false,
-        error: 'Endpoint not found',
-        pathname: url.pathname,
-        availableEndpoints: [
-          'GET /health',
-          'GET /api/delivery-dates/available',
-          'POST /api/products/shipping-methods',
-          'POST /api/products/erp-delivery-times',
-          'POST /api/webhooks/orders/created',
-          'POST /api/webhooks/orders/paid',
-          'POST /api/webhooks/orders/updated',
-          'POST /api/webhooks/app/uninstalled',
-          'POST /api/webhooks/register',
-          'GET /api/webhooks/status'
-        ],
-        timestamp: new Date().toISOString()
-      }), {
-        status: 404,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders
-        }
-      });
-
-      logger.logRequest(request.method, url.pathname, 404, Date.now() - startTime);
-      return notFoundResponse;
-
-    } catch (error: any) {
-      logger.error('Unhandled worker error', {
-        pathname: url.pathname,
-        method: request.method,
-        error: error.message,
-        stack: error.stack
-      });
-
-      const errorResponse = new Response(JSON.stringify({
-        success: false,
-        error: 'Internal server error',
-        ...(config.features.enableDetailedErrors && {
-          details: error.message,
-          pathname: url.pathname
-        }),
-        timestamp: new Date().toISOString()
-      }), {
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          ...corsHeaders
-        }
-      });
-
-      logger.logRequest(request.method, url.pathname, 500, Date.now() - startTime);
-      return errorResponse;
-    }
-  },
-};
-
-// === WEBHOOK PROCESSING CORE FUNCTION ===
-
-async function processOrderWebhook(
-  request: Request,
-  env: Env,
-  logger: WorkersLogger,
-  expectedTopic: string,
-  handler: (orderData: ShopifyOrder, shop: string, env: Env, logger: WorkersLogger) => Promise<any>
-): Promise<Response> {
-  const config = parseEnvironment(env);
-  try {
-    // Extract webhook headers
-    const shopDomain = request.headers.get('X-Shopify-Shop-Domain');
-    const topic = request.headers.get('X-Shopify-Topic');
-    const hmacHeader = request.headers.get('X-Shopify-Hmac-Sha256');
-
-    if (!shopDomain || !topic || !hmacHeader) {
-      logger.warn('Invalid webhook request - missing headers', {
-        shopDomain,
-        topic,
-        hasHmac: !!hmacHeader
-      });
-
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Missing required webhook headers'
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Verify topic matches expected
-    if (topic !== expectedTopic) {
-      logger.warn('Webhook topic mismatch', {
-        expected: expectedTopic,
-        received: topic,
-        shopDomain
-      });
-
-      return new Response(JSON.stringify({
-        success: false,
-        error: `Topic mismatch. Expected: ${expectedTopic}, Received: ${topic}`
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Clone the request to read body multiple times
-    const requestClone = request.clone();
-
-    // Get raw body bytes for signature verification
-    const rawBodyBuffer = await request.arrayBuffer();
-    const rawBodyBytes = new Uint8Array(rawBodyBuffer);
-
-    // Get text body for JSON parsing
-    const bodyText = await requestClone.text();
-
-    // Debug body data
-    logger.info('Webhook body data info', {
-      shopDomain,
-      topic,
-      bodyLength: rawBodyBytes.length,
-      textLength: bodyText.length,
-      bodyStartBytes: Array.from(rawBodyBytes.slice(0, 20)), // First 20 bytes
-      bodyStartText: bodyText.substring(0, 50) + '...' // First 50 chars
-    });
-
-    // Try both available webhook secrets
-    const webhookSecret1 = config.shopifyOAuth.webhookSecret; // WEBHOOK_SECRET
-    const webhookSecret2 = env.SHOPIFY_WEBHOOK_SECRET; // Legacy SHOPIFY_WEBHOOK_SECRET
-    const appClientSecret = config.shopifyOAuth.clientSecret; // App client secret (Shopify's default)
-
-    const availableSecrets = [
-      { name: 'WEBHOOK_SECRET', secret: webhookSecret1 },
-      { name: 'SHOPIFY_WEBHOOK_SECRET', secret: webhookSecret2 },
-      { name: 'APP_CLIENT_SECRET', secret: appClientSecret }
-    ].filter(s => s.secret && s.secret !== 'webhook-secret');
-
-    // Debug webhook secret info
-    logger.info('Webhook signature verification setup', {
-      shopDomain,
-      topic,
-      availableSecrets: availableSecrets.map(s => ({
-        name: s.name,
-        hasSecret: !!s.secret,
-        secretLength: s.secret?.length || 0,
-        secretPrefix: s.secret ? s.secret.substring(0, 8) + '...' : 'none'
-      })),
-      headerSignature: hmacHeader ? hmacHeader.substring(0, 12) + '...' : 'none'
-    });
-
-    let isValidSignature = false;
-    if (availableSecrets.length === 0) {
-      logger.warn('No webhook secrets configured - skipping verification', {
-        shopDomain,
-        topic,
-        environment: config.environment
-      });
-      isValidSignature = true; // Allow processing when no secrets configured
-    } else {
-      // Try each available secret
-      for (const secretInfo of availableSecrets) {
-        logger.info(`Trying webhook secret: ${secretInfo.name}`, {
-          shopDomain,
-          topic,
-          secretLength: secretInfo.secret?.length || 0
-        });
-
-        isValidSignature = await verifyWebhookSignature(rawBodyBytes, hmacHeader, secretInfo.secret!);
-
-        if (isValidSignature) {
-          logger.info(`✅ Signature verification SUCCESS with ${secretInfo.name}`, {
-            shopDomain,
-            topic
+            headers: { 'Content-Type': 'application/json' }
           });
           break;
-        } else {
-          logger.warn(`❌ Signature verification FAILED with ${secretInfo.name}`, {
-            shopDomain,
-            topic
+
+        case path === '/api/cleanup-tokens' && request.method === 'POST':
+          await cleanupOldTokens(env);
+          response = new Response(JSON.stringify({
+            success: true,
+            message: 'Token cleanup completed',
+            timestamp: new Date().toISOString(),
+          }), { headers: { 'Content-Type': 'application/json' } });
+          break;
+
+        default:
+          response = new Response(JSON.stringify({
+              success: false,
+            error: 'Endpoint not found'
+          }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
           });
+          break;
+      }
+
+        return addCorsHeaders(response, corsHeaders);
+
+    } catch (error) {
+      console.error('Request processing error:', error);
+      const errorResponse = new Response(JSON.stringify({
+            success: false,
+        error: 'Internal server error'
+          }), {
+            status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return addCorsHeaders(errorResponse, corsHeaders);
+    }
+  },
+  // Add cron integration for store locator upserter
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    console.log('🕐 Starting scheduled tasks...');
+
+    // Clean up old tokens first
+    try {
+      console.log('🧹 Cleaning up old tokens...');
+      await cleanupOldTokens(env);
+    } catch (error: any) {
+      console.error('❌ Token cleanup error:', error);
+    }
+
+    // Store locator cron job
+    try {
+      console.log('🗺️ Starting store locator update...');
+      const dealers = await fetchAndTransformDealers(env);
+      const installedShops = await getInstalledShops(env);
+
+      if (installedShops.length === 0) {
+        console.log('⚠️ No installed shops found');
+        return;
+      }
+
+      const results = [];
+      for (const shop of installedShops) {
+        try {
+          const upsertResult = await upsertShopMetafield(env, dealers, shop);
+          results.push({ shop, success: true, result: upsertResult });
+        } catch (error: any) {
+          console.error(`❌ Failed to update shop ${shop}:`, error.message);
+          results.push({ shop, success: false, error: error.message });
         }
+      }
+
+      const successfulShops = results.filter(r => r.success).length;
+      const status = {
+        success: successfulShops > 0,
+        timestamp: new Date().toISOString(),
+        count: dealers.length,
+        results,
+        summary: {
+          totalShops: installedShops.length,
+          successfulShops,
+          failedShops: installedShops.length - successfulShops,
+        },
+        cron: true,
+      };
+      if (env.STORE_LOCATOR_STATUS) {
+        await env.STORE_LOCATOR_STATUS.put(STORE_LOCATOR_STATUS_KEY, JSON.stringify(status));
+      }
+      console.log(`✅ Store locator update completed: ${dealers.length} dealers processed for ${successfulShops}/${installedShops.length} shops`);
+    } catch (error: any) {
+      console.error('❌ Store locator cron error:', error);
+      const status = {
+        success: false,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        cron: true,
+      };
+      if (env.STORE_LOCATOR_STATUS) {
+        await env.STORE_LOCATOR_STATUS.put(STORE_LOCATOR_STATUS_KEY, JSON.stringify(status));
       }
     }
 
-    if (!isValidSignature && availableSecrets.length > 0) {
-      logger.error('Webhook signature verification failed', {
-        shopDomain,
-        topic,
-        testedSecrets: availableSecrets.length,
-        secretLengths: availableSecrets.map(s => s.secret?.length || 0),
-        signatureLength: hmacHeader?.length || 0,
-        bodyLength: rawBodyBytes.length
-      });
-
-      return new Response(JSON.stringify({
-        success: false,
-        error: 'Invalid webhook signature'
-      }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    if (isValidSignature) {
-      logger.info('Webhook signature verification passed', {
-        shopDomain,
-        topic
-      });
-    } else {
-      logger.warn('Webhook signature verification skipped - no secrets available', {
-        shopDomain,
-        topic,
-        environment: config.environment
-      });
-    }
-
-    // Parse order data
-    let orderData: ShopifyOrder;
+    // Experience center cron job - process all shops with resume capability
     try {
-      orderData = JSON.parse(bodyText);
-      logger.info('Webhook data parsed successfully', {
-        orderId: orderData.id,
-        orderNumber: orderData.order_number,
-        noteAttributesCount: orderData.note_attributes?.length || 0,
-        shopDomain
-      });
-    } catch (parseError: any) {
-      logger.error('Failed to parse webhook JSON', {
-        error: parseError.message,
-        shopDomain,
-        topic
-      });
+      console.log('🏪 Starting experience center update for all shops...');
 
-      return new Response(JSON.stringify({
+      // Start fresh processing with bulk operations - the main and only flow
+      const result = await processExperienceCenterUpdateAllShops(env);
+      if (env.EXPERIENCE_CENTER_STATUS) {
+        await env.EXPERIENCE_CENTER_STATUS.put(EXPERIENCE_CENTER_STATUS_KEY, JSON.stringify(result));
+      }
+      console.log(`✅ Experience center update completed: ${result.summary?.successfulProducts || 0} successful, ${result.summary?.failedProducts || 0} failed`);
+    } catch (error: any) {
+      console.error('❌ Experience center cron error:', error);
+      const errorResult = {
         success: false,
-        error: 'Invalid JSON in webhook payload'
-      }), {
-        status: 400,
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        cron: true,
+      };
+      if (env.EXPERIENCE_CENTER_STATUS) {
+        await env.EXPERIENCE_CENTER_STATUS.put(EXPERIENCE_CENTER_STATUS_KEY, JSON.stringify(errorResult));
+      }
+    }
+  }
+};
+
+// App installation handler
+async function handleInstall(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const shop = url.searchParams.get('shop');
+
+  if (!shop) {
+    return new Response(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Delivery Date Picker</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                   max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; }
+            .header { font-size: 32px; margin-bottom: 20px; }
+            .description { font-size: 18px; color: #666; margin-bottom: 30px; }
+            .form { background: #f8f9fa; padding: 30px; border-radius: 8px; }
+            .input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
+            .button { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; }
+          </style>
+        </head>
+        <body>
+          <div class="header">📅 Delivery Date Picker</div>
+          <div class="description">Enable customers to select delivery dates during checkout</div>
+          <div class="form">
+            <form action="/install" method="get">
+              <input type="text" name="shop" placeholder="your-shop.myshopify.com" class="input" required>
+              <button type="submit" class="button">Install App</button>
+            </form>
+          </div>
+        </body>
+      </html>
+    `, { headers: { 'Content-Type': 'text/html' } });
+  }
+
+  if (!isValidShopDomain(shop)) {
+    return new Response('Invalid shop domain', { status: 400 });
+  }
+
+  // Generate OAuth URL
+  const state = crypto.randomUUID();
+  const scopes = 'read_products,write_products,write_checkouts,write_delivery_customizations,write_orders';
+  const redirectUri = `${env.SHOPIFY_APP_URL}/auth/callback`;
+
+  // Store state temporarily
+  if (env.WOOOD_KV) {
+    await env.WOOOD_KV.put(`oauth_state:${state}`, shop, { expirationTtl: 600 });
+  }
+
+  const oauthUrl = `https://${shop}/admin/oauth/authorize?` +
+    `client_id=${env.SHOPIFY_APP_CLIENT_ID}&` +
+    `scope=${encodeURIComponent(scopes)}&` +
+    `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+    `state=${state}`;
+
+  return Response.redirect(oauthUrl, 302);
+}
+
+// OAuth callback handler
+async function handleCallback(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  const shop = url.searchParams.get('shop');
+
+  if (!code || !state || !shop) {
+    return new Response('Missing required parameters', { status: 400 });
+  }
+
+  // Validate state
+  let storedShop = null;
+  if (env.WOOOD_KV) {
+    storedShop = await env.WOOOD_KV.get(`oauth_state:${state}`);
+    if (storedShop !== shop) {
+      return new Response('Invalid state parameter', { status: 400 });
+    }
+    await env.WOOOD_KV.delete(`oauth_state:${state}`);
+  }
+
+  // Exchange code for token
+  const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: env.SHOPIFY_APP_CLIENT_ID,
+      client_secret: env.SHOPIFY_APP_CLIENT_SECRET,
+      code: code
+    })
+  });
+
+  if (!tokenResponse.ok) {
+    const errorText = await tokenResponse.text();
+    console.error('Token exchange failed:', {
+      status: tokenResponse.status,
+      statusText: tokenResponse.statusText,
+      error: errorText,
+      shop: shop,
+      client_id: env.SHOPIFY_APP_CLIENT_ID ? 'SET' : 'MISSING',
+      client_secret: env.SHOPIFY_APP_CLIENT_SECRET ? 'SET' : 'MISSING'
+    });
+    return new Response(`Token exchange failed: ${errorText}`, { status: 500 });
+  }
+
+  const tokenData: OAuthTokenResponse = await tokenResponse.json();
+
+  // Store offline token
+  const tokenRecord = {
+    accessToken: tokenData.access_token,
+    scope: tokenData.scope,
+    shop: shop,
+    createdAt: Date.now()
+  };
+
+  if (env.WOOOD_KV) {
+    await env.WOOOD_KV.put(`shop_token:${shop}`, JSON.stringify(tokenRecord));
+  }
+
+  // Register webhooks
+  await registerWebhooks(shop, tokenData.access_token, env);
+
+  return new Response(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Installation Complete</title>
+        <meta http-equiv="refresh" content="3;url=https://${shop}/admin/apps">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                 max-width: 600px; margin: 100px auto; padding: 20px; text-align: center; }
+          .success { color: #28a745; font-size: 24px; margin-bottom: 20px; }
+          .button { background: #007bff; color: white; padding: 12px 24px;
+                   text-decoration: none; border-radius: 4px; display: inline-block; }
+        </style>
+      </head>
+      <body>
+        <div class="success">Delivery Date Picker Installed Successfully!</div>
+        <p><em>Redirecting to Shopify admin...</em></p>
+        <a href="https://${shop}/admin/apps" class="button">Go to Admin</a>
+      </body>
+    </html>
+  `, { headers: { 'Content-Type': 'text/html' } });
+}
+
+// Delivery dates API handler
+async function handleDeliveryDates(request: Request, env: Env): Promise<Response> {
+  try {
+    let dates: DeliveryDate[] = [];
+
+    // Check cache first
+    const cacheKey = 'delivery_dates';
+    if (env.WOOOD_KV) {
+      const cached = await env.WOOOD_KV.get(cacheKey, 'json');
+      if (cached) {
+        dates = cached as DeliveryDate[];
+      }
+    }
+
+    // Fetch from API if not cached
+    if (dates.length === 0) {
+      if (env.ENABLE_MOCK_FALLBACK === 'true') {
+        dates = generateMockDates();
+      } else {
+        const response = await fetch(env.DUTCHNED_API_URL, {
+          method: 'GET',
+            headers: {
+            'Authorization': `Basic ${env.DUTCHNED_API_CREDENTIALS}`,
+            'Accept': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const apiData = await response.json();
+          dates = Array.isArray(apiData) ? apiData.map((item: any) => ({
+            date: item.date,
+            displayName: item.displayName || formatDateInDutch(new Date(item.date))
+          })) : [];
+        } else {
+          dates = generateMockDates();
+        }
+      }
+
+      // Cache for 30 minutes
+      if (env.WOOOD_KV && dates.length > 0) {
+        await env.WOOOD_KV.put(cacheKey, JSON.stringify(dates), { expirationTtl: 1800 });
+            }
+          }
+
+            return new Response(JSON.stringify({
+      success: true,
+      data: dates,
+      metadata: {
+        mockDataEnabled: env.ENABLE_MOCK_FALLBACK === 'true',
+        cacheHit: dates.length > 0
+      }
+    }), { headers: { 'Content-Type': 'application/json' } });
+
+        } catch (error) {
+          return new Response(JSON.stringify({
+        success: false,
+      error: 'Internal server error'
+          }), {
+            status: 500,
+        headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      }
+
+// Order webhook handler
+async function handleOrderWebhook(request: Request, env: Env): Promise<Response> {
+  try {
+    const signature = request.headers.get('X-Shopify-Hmac-Sha256');
+    const shop = request.headers.get('X-Shopify-Shop-Domain');
+
+    if (!signature || !shop) {
+      return new Response('Missing required headers', { status: 401 });
+    }
+
+    const bodyText = await request.text();
+    const isValid = await validateWebhookSignature(bodyText, signature, env.SHOPIFY_APP_CLIENT_SECRET);
+
+    if (!isValid) {
+      return new Response('Invalid signature', { status: 401 });
+    }
+
+    const orderData: ShopifyOrder = JSON.parse(bodyText);
+    const metafields = transformNoteAttributesToMetafields(orderData.note_attributes || []);
+
+    console.log(`Processing order webhook for order #${orderData.id}`, {
+      shop: shop,
+      noteAttributes: orderData.note_attributes,
+      transformedMetafields: metafields
+    });
+
+    if (metafields.length === 0) {
+      console.log(`No delivery metafields to create for order #${orderData.id}`);
+      return new Response(JSON.stringify({ success: true, metafieldsCreated: 0 }), {
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Process the order using the appropriate handler
-    logger.info('Processing order webhook', {
-      orderId: orderData.id,
-      topic,
-      shopDomain,
-      noteAttributes: orderData.note_attributes
+    // Get shop token
+    const tokenKey = `shop_token:${shop}`;
+    let accessToken = '';
+
+    if (env.WOOOD_KV) {
+      const tokenData = await env.WOOOD_KV.get(tokenKey, 'json') as any;
+      if (tokenData && tokenData.accessToken) {
+        accessToken = tokenData.accessToken;
+      }
+    }
+
+    if (!accessToken) {
+      return new Response(JSON.stringify({ success: false, error: 'Shop not authenticated' }), {
+          status: 401,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Create metafields
+    await createOrderMetafields(orderData.id, metafields, accessToken, shop);
+
+      return new Response(JSON.stringify({
+        success: true,
+      metafieldsCreated: metafields.length,
+      orderId: orderData.id
+    }), { headers: { 'Content-Type': 'application/json' } });
+
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: 'Internal server error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+}
+
+/**
+ * POST /api/inventory
+ * Body: { shop: string, variantIds: string[] }
+ * Returns: { [variantId: string]: number | null }
+ * Checks inventory for given variant IDs using Shopify Admin API.
+ */
+async function handleInventoryCheck(request: Request, env: Env): Promise<Response> {
+  try {
+    const body = await request.json() as { shop: string; variantIds: string[] };
+    const shop = body.shop;
+    const variantIds = body.variantIds;
+    if (!shop || !Array.isArray(variantIds) || variantIds.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: 'Missing shop or variantIds' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (!isValidShopDomain(shop)) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid shop domain' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Get access token from KV
+    let accessToken = '';
+    if (env.WOOOD_KV) {
+      const tokenData = await env.WOOOD_KV.get(`shop_token:${shop}`, 'json');
+      if (tokenData && tokenData.accessToken) {
+        accessToken = tokenData.accessToken;
+      }
+    }
+    if (!accessToken) {
+      return new Response(JSON.stringify({ success: false, error: 'Shop not authenticated' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Build GraphQL query for Admin API
+    const query = `query($ids: [ID!]!) {\n  nodes(ids: $ids) {\n    ... on ProductVariant {\n      id\n      inventoryQuantity: quantityAvailable\n    }\n  }\n}`;
+    const variables = { ids: variantIds };
+    const apiRes = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken
+      },
+      body: JSON.stringify({ query, variables })
     });
-
-    const result = await handler(orderData, shopDomain, env, logger);
-
-    logger.info('Order webhook processing completed', {
-      orderId: orderData.id,
-      success: result.success,
-      metafieldsCreated: result.metafieldsCreated,
-      processingTime: result.processingTime
-    });
-
-    return new Response(JSON.stringify({
-      success: result.success,
-      orderId: result.orderId,
-      metafieldsCreated: result.metafieldsCreated,
-      processingTime: result.processingTime,
-      timestamp: new Date().toISOString()
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
+    if (!apiRes.ok) {
+      const err = await apiRes.text();
+      return new Response(JSON.stringify({ success: false, error: 'Shopify API error', details: err }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+    const data = await apiRes.json() as { data?: { nodes?: Array<{ id: string; inventoryQuantity?: number }> } };
+    const result: Record<string, number | null> = {};
+    if (data && data.data && Array.isArray(data.data.nodes)) {
+      for (const node of data.data.nodes) {
+        if (node && node.id) {
+          result[node.id] = typeof node.inventoryQuantity === 'number' ? node.inventoryQuantity : null;
+        }
+      }
+    }
+    return new Response(JSON.stringify({ success: true, inventory: result }), { headers: { 'Content-Type': 'application/json' } });
   } catch (error: any) {
-    logger.error('Webhook processing error', {
-      error: error.message,
-      stack: error.stack,
-      topic: expectedTopic
-    });
+    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+// Simple admin interface
+async function handleAdmin(request: Request, env: Env): Promise<Response> {
+  return new Response(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Delivery Date Picker - Admin</title>
+        <link rel="stylesheet" href="https://unpkg.com/@shopify/polaris@12.0.0/build/esm/styles.css">
+        <style>
+          body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+          .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+          .card { background: white; border: 1px solid #e1e3e5; border-radius: 8px; padding: 20px; margin: 20px 0; }
+          .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+          .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+          .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h1>📅 Delivery Date Picker</h1>
+
+          <div class="card">
+            <h2>System Status</h2>
+            <div class="status success">✅ Application is running normally</div>
+            <div class="status info">ℹ️ Environment: ${env.ENVIRONMENT}</div>
+          </div>
+
+          <div class="card">
+            <h2>Configuration</h2>
+            <p><strong>API Endpoint:</strong> /api/delivery-dates</p>
+            <p><strong>Webhook Endpoint:</strong> /api/webhooks/orders</p>
+            <p><strong>Mock Data:</strong> ${env.ENABLE_MOCK_FALLBACK === 'true' ? 'Enabled' : 'Disabled'}</p>
+          </div>
+
+          <div class="card">
+            <h2>Documentation</h2>
+            <p>This app provides delivery date selection functionality for Shopify checkout extensions.</p>
+            <ul>
+              <li>Customers can select delivery dates during checkout</li>
+              <li>Selected dates are automatically saved to order metafields</li>
+              <li>Integration with external delivery date API</li>
+            </ul>
+          </div>
+        </div>
+      </body>
+    </html>
+  `, { headers: { 'Content-Type': 'text/html' } });
+}
+
+// Health check handler
+async function handleHealth(request: Request, env: Env): Promise<Response> {
+  try {
+    // Try to fetch WOOOD API data to show totals
+    let woodApiStatus = 'unknown';
+    let woodApiTotals = null;
+
+    try {
+      const experienceCenterData = await fetchExperienceCenterData(env);
+      woodApiStatus = 'available';
+      woodApiTotals = {
+        total: experienceCenterData.total
+      };
+    } catch (error) {
+      woodApiStatus = 'unavailable';
+      console.error('Failed to fetch WOOOD API data for health check:', error);
+    }
 
     return new Response(JSON.stringify({
-      success: false,
-      error: 'Webhook processing failed',
-      details: error.message,
-      timestamp: new Date().toISOString()
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      environment: env.ENVIRONMENT,
+      services: {
+        kv: env.WOOOD_KV ? 'available' : 'unavailable',
+        dutchNedApi: woodApiStatus
+      },
+      woodApi: woodApiTotals ? {
+        status: woodApiStatus,
+        totals: woodApiTotals
+      } : {
+        status: woodApiStatus
+      }
+    }), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    return new Response(JSON.stringify({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      environment: env.ENVIRONMENT,
+      error: 'Health check failed'
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
@@ -1271,671 +881,1018 @@ async function processOrderWebhook(
   }
 }
 
-// === EXISTING ENDPOINT HANDLERS (REFACTORED) ===
+// Test webhook registration handler
+async function handleTestWebhooks(request: Request, env: Env): Promise<Response> {
+  const body = await request.json() as { shop: string; accessToken: string };
 
-async function handleDeliveryDatesEndpoint(request: Request, env: Env, logger: WorkersLogger, config: WorkerConfig): Promise<Response> {
-  try {
-    // Check if request is from checkout extension
-    const origin = request.headers.get('Origin') || '';
-    const isCheckoutExtension = origin.includes('shop.app') ||
-                               origin.includes('checkout.shopify.com') ||
-                               origin.includes('pay.shopify.com') ||
-                               origin.includes('shopifycdn.com') ||
-                               origin.includes('extensions.shopifycdn.com');
-
-    let shopDomain: string | undefined;
-
-    if (isCheckoutExtension) {
-      // For checkout extensions, try to get shop domain from request body
-      try {
-        const body = await request.json() as any;
-        shopDomain = body.shopDomain;
-        logger.info('Checkout extension delivery dates request', { origin, shopDomain });
-      } catch (bodyError) {
-        // If no body or JSON parsing fails, that's okay for delivery dates
-        logger.info('Checkout extension delivery dates request (no shop domain in body)', { origin });
-      }
-    } else {
-      // For admin requests, require OAuth authentication
-      const authResult = await authenticateRequest(request, env, logger, crypto.randomUUID());
-      if (!authResult.success || !authResult.shop) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'Authentication required',
-          timestamp: new Date().toISOString()
-        }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      shopDomain = authResult.shop;
-      logger.info('OAuth delivery dates request', { shopDomain });
-    }
-
-    const dutchNedUrl = config.dutchNedApi.url;
-    const credentials = config.dutchNedApi.credentials;
-
-    if (!credentials) {
-      logger.info('DutchNed API credentials not configured - returning empty dates');
-      return new Response(JSON.stringify({
-        success: true,
-        data: [],
-        message: 'DutchNed API credentials not configured - no delivery dates available',
-        shop: shopDomain,
-        source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
-        timestamp: new Date().toISOString()
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    logger.info('Fetching delivery dates from DutchNed API', { url: dutchNedUrl, shopDomain });
-
-    const response = await fetch(dutchNedUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Accept': 'application/json',
-        'User-Agent': 'WOOOD-Delivery-API/1.11.1 (Cloudflare Workers)',
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      logger.error('DutchNed API unavailable', {
-        status: response.status,
-        statusText: response.statusText,
-        shopDomain
-      });
-
-      return new Response(JSON.stringify({
-        success: true,
-        data: [],
-        message: `DutchNed API unavailable: ${response.status} ${response.statusText}`,
-        shop: shopDomain,
-        source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
-        timestamp: new Date().toISOString()
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    const apiData = await response.json();
-    const dates: Array<{date: string, displayName: string, available: boolean}> = [];
-
-    if (Array.isArray(apiData)) {
-      apiData.filter((item: any) => item && item.date).forEach((item: any) => {
-        dates.push({
-          date: item.date,
-          displayName: item.displayName || new Date(item.date).toLocaleDateString('nl-NL', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long'
-          }),
-          available: item.available !== false
-        });
-      });
-    }
-
-    logger.info('Delivery dates fetched successfully', { datesCount: dates.length, shopDomain });
-
-    return new Response(JSON.stringify({
-      success: true,
-      data: dates,
-      shop: shopDomain,
-      source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
-      timestamp: new Date().toISOString()
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-
-  } catch (error: any) {
-    logger.warn('DutchNed API connection failed', { error: error.message });
-
-    return new Response(JSON.stringify({
-      success: true,
-      data: [],
-      message: `DutchNed API connection failed: ${error.message}`,
-      timestamp: new Date().toISOString()
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
-
-async function handleShippingMethodsEndpoint(request: Request, env: Env, logger: WorkersLogger, config: WorkerConfig): Promise<Response> {
-  try {
-    const body = await request.json() as any;
-    const shippingMethodsResponse: Record<string, { value: string; number: number; deliveryTime: string } | null> = {};
-
-    if (!body.productIds || !Array.isArray(body.productIds)) {
+  if (!body.shop || !body.accessToken) {
       return new Response(JSON.stringify({
         success: false,
-        error: 'productIds array is required',
-        timestamp: new Date().toISOString()
+      error: 'Missing shop or accessToken'
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // Check if request is from checkout extension
-    const origin = request.headers.get('Origin') || '';
-    const isCheckoutExtension = origin.includes('shop.app') ||
-                               origin.includes('checkout.shopify.com') ||
-                               origin.includes('pay.shopify.com') ||
-                               origin.includes('shopifycdn.com') ||
-                               origin.includes('extensions.shopifycdn.com') ||
-                               body.source === 'checkout_extension';
+  console.log(`Manual webhook registration test for shop: ${body.shop}`);
 
-    let shopDomain: string;
-    let accessToken: string | undefined;
+  try {
+    await registerWebhooks(body.shop, body.accessToken, env);
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Webhook registration attempted - check logs for details'
+    }), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    console.error('Test webhook registration failed:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: 'Webhook registration failed'
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
 
-    if (isCheckoutExtension) {
-      // For checkout extensions, get shop domain from request body
-      shopDomain = body.shopDomain;
-      if (!shopDomain) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'shopDomain is required for checkout extension requests',
-          timestamp: new Date().toISOString()
-        }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      // Get stored access token for the shop
-      accessToken = await getShopAccessToken(shopDomain, env);
-      logger.info('Checkout extension shipping methods request', { origin, shopDomain, hasAccessToken: !!accessToken });
-    } else {
-      // For admin requests, require OAuth authentication
-      const authResult = await authenticateRequest(request, env, logger, crypto.randomUUID());
-      if (!authResult.success || !authResult.shop) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'Authentication required',
-          timestamp: new Date().toISOString()
-        }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      shopDomain = authResult.shop;
-      accessToken = authResult.accessToken;
-      logger.info('OAuth shipping methods request', { shopDomain });
+// Store locator upsert handler
+async function handleStoreLocatorUpsert(request: Request, env: Env): Promise<Response> {
+  try {
+    const dealers = await fetchAndTransformDealers(env);
+    const installedShops = await getInstalledShops(env);
+
+    if (installedShops.length === 0) {
+      return new Response(JSON.stringify({
+        success: false,
+        timestamp: new Date().toISOString(),
+        error: 'No installed shops found',
+        results: [],
+        summary: {
+          totalShops: 0,
+          successfulShops: 0,
+          failedShops: 0,
+        },
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     }
 
-    logger.info('Fetching shipping methods for products', {
-      productCount: body.productIds.length,
-      shopDomain,
-      isCheckoutExtension
-    });
-
-    for (const productId of body.productIds) {
+    const results = [];
+    for (const shop of installedShops) {
       try {
-        // Fetch both metafields we need
-        const customMetafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json?namespace=custom&key=ShippingMethod2`;
-        const erpMetafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json?namespace=erp&key=levertijd`;
+        const upsertResult = await upsertShopMetafield(env, dealers, shop);
+        results.push({
+          shop,
+          success: true,
+          summary: {
+            total: dealers.length,
+            successful: dealers.length,
+            failed: 0,
+          },
+          result: upsertResult,
+        });
+      } catch (error: any) {
+        console.error(`❌ Failed to update shop ${shop}:`, error.message);
+        results.push({
+          shop,
+          success: false,
+          error: error.message,
+        });
+      }
+    }
 
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
+    const successfulShops = results.filter(r => r.success).length;
+    const status = {
+      success: successfulShops > 0,
+      timestamp: new Date().toISOString(),
+      count: dealers.length,
+      results,
+      summary: {
+        totalShops: installedShops.length,
+        successfulShops,
+        failedShops: installedShops.length - successfulShops,
+      },
+    };
+    if (env.STORE_LOCATOR_STATUS) {
+      await env.STORE_LOCATOR_STATUS.put(STORE_LOCATOR_STATUS_KEY, JSON.stringify(status));
+    }
 
-        // Only add access token if we have one (OAuth requests)
-        if (accessToken) {
-          headers['X-Shopify-Access-Token'] = accessToken;
-        }
+    return new Response(JSON.stringify({
+      success: successfulShops > 0,
+      timestamp: new Date().toISOString(),
+      results,
+      summary: {
+        totalShops: installedShops.length,
+        successfulShops,
+        failedShops: installedShops.length - successfulShops,
+      },
+    }), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error: any) {
+    const status = {
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: error.message,
+    };
+    if (env.STORE_LOCATOR_STATUS) {
+      await env.STORE_LOCATOR_STATUS.put(STORE_LOCATOR_STATUS_KEY, JSON.stringify(status));
+    }
+    return new Response(JSON.stringify({
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      results: [],
+      summary: {
+        totalShops: 0,
+        successfulShops: 0,
+        failedShops: 0,
+      },
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
 
-        // Fetch both metafields in parallel
-        const [customResponse, erpResponse] = await Promise.all([
-          fetch(customMetafieldsUrl, { headers }),
-          fetch(erpMetafieldsUrl, { headers })
-        ]);
+// Store locator status handler
+async function handleStoreLocatorStatus(request: Request, env: Env): Promise<Response> {
+  if (env.STORE_LOCATOR_STATUS) {
+    const status = await env.STORE_LOCATOR_STATUS.get(STORE_LOCATOR_STATUS_KEY);
+    if (status) {
+      const statusData = JSON.parse(status);
+      return new Response(JSON.stringify(statusData), { headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+  return new Response(JSON.stringify({ success: false, message: 'No status available' }), { headers: { 'Content-Type': 'application/json' } });
+}
 
-        let shippingMethodValue: string = '';
-        let shippingMethodNumber: number = 0;
-        let deliveryTime: string = '';
+// Experience center functions - OPTIMIZED WITH BULK OPERATIONS
+async function fetchExperienceCenterData(env: Env): Promise<{data: any[], total: number}> {
+  const { DUTCH_FURNITURE_BASE_URL, DUTCH_FURNITURE_API_KEY } = env;
+  if (!DUTCH_FURNITURE_BASE_URL || !DUTCH_FURNITURE_API_KEY) {
+    throw new Error('Missing DUTCH_FURNITURE_BASE_URL or DUTCH_FURNITURE_API_KEY');
+  }
 
-        // Process custom.ShippingMethod2 metafield
-        if (customResponse.ok) {
-          const customData = await customResponse.json() as any;
-          if (customData.metafields && customData.metafields.length > 0) {
-            const shippingMethodMetafield = customData.metafields.find((mf: any) =>
-              mf.namespace === 'custom' && mf.key === 'ShippingMethod2'
-            );
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${DUTCH_FURNITURE_API_KEY}`,
+  };
 
-            if (shippingMethodMetafield && shippingMethodMetafield.value) {
-              try {
-                const shippingData = JSON.parse(shippingMethodMetafield.value);
-                shippingMethodValue = shippingData.value || '';
-                shippingMethodNumber = shippingData.number || 0;
-              } catch {
-                // If JSON parsing fails, treat as plain text and extract number
-                const valueString = shippingMethodMetafield.value || '';
-                shippingMethodValue = valueString;
+  const experienceCenterUrl = `${DUTCH_FURNITURE_BASE_URL}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
+  const response = await fetch(experienceCenterUrl, { headers });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch experience center data: ${response.status} ${response.statusText}`);
+  }
 
-                // Extract number from the beginning of the string (e.g., "30 - EXPEDITIE STANDAARD" -> 30)
-                const numberMatch = valueString.match(/^(\d+)/);
-                if (numberMatch) {
-                  shippingMethodNumber = parseInt(numberMatch[1], 10);
+  const rawData = await response.json() as any;
+  const allData = Array.isArray(rawData) ? rawData : rawData.data || [];
+  
+  // Filter for only Experience Center products with EAN codes
+  const experienceCenterData = allData.filter((item: any) => 
+    item.channel === 'EC' && item.ean
+  );
+  
+  return {
+    data: experienceCenterData,
+    total: experienceCenterData.length // Only count EC products as total
+  };
+}
+
+// NEW: Bulk Operations implementation for Experience Center
+async function processExperienceCenterWithBulkOperations(env: Env, shop: string, availableEans: Set<string>): Promise<{successful: number, failed: number, errors: string[], eanMatches: number, totalProducts: number}> {
+  const accessToken = await getShopAccessToken(env, shop);
+  if (!accessToken) {
+    throw new Error(`No access token found for shop: ${shop}`);
+  }
+
+  console.log(`🚀 Starting bulk operations for ${shop} with ${availableEans.size} available EANs`);
+
+  // Step 1: Create bulk operation to fetch all products and variants
+  const bulkQuery = `
+    {
+      products {
+          edges {
+            node {
+              id
+            variants {
+                edges {
+                  node {
+                    id
+                    barcode
+                  }
                 }
               }
             }
           }
-        } else {
-          logger.warn('Failed to fetch custom shipping metafields for product', {
-            productId,
-            status: customResponse.status,
-            shop: shopDomain,
-            isCheckoutExtension
-          });
         }
+      }
+    `;
 
-        // Process erp.levertijd metafield
-        if (erpResponse.ok) {
-          const erpData = await erpResponse.json() as any;
-          if (erpData.metafields && erpData.metafields.length > 0) {
-            const deliveryTimeMetafield = erpData.metafields.find((mf: any) =>
-              mf.namespace === 'erp' && mf.key === 'levertijd'
-            );
-
-            if (deliveryTimeMetafield && deliveryTimeMetafield.value) {
-              deliveryTime = deliveryTimeMetafield.value;
-            }
-          }
-        } else {
-          logger.error('Failed to fetch ERP delivery time metafields for product', {
-            productId,
-            status: erpResponse.status,
-            shop: shopDomain,
-            isCheckoutExtension
-          });
+  const createBulkOperationMutation = `
+    mutation {
+      bulkOperationRunQuery(
+        query: """
+        ${bulkQuery}
+        """
+      ) {
+        bulkOperation {
+          id
+          status
         }
-
-        // Set response data
-        if (shippingMethodValue || deliveryTime) {
-          shippingMethodsResponse[productId] = {
-            value: shippingMethodValue,
-            number: shippingMethodNumber,
-            deliveryTime: deliveryTime
-          };
-        } else {
-          shippingMethodsResponse[productId] = null;
+        userErrors {
+          field
+          message
         }
-
-      } catch (productError) {
-        logger.error('Error fetching product metafields', {
-          productId,
-          error: (productError as Error).message,
-          shop: shopDomain,
-          isCheckoutExtension
-        });
-        shippingMethodsResponse[productId] = null;
       }
     }
+  `;
 
-    logger.info('Shipping methods fetched', {
-      productCount: body.productIds.length,
-      foundShippingMethods: Object.values(shippingMethodsResponse).filter(v => v !== null).length,
-      shop: shopDomain,
-      source: isCheckoutExtension ? 'checkout-extension' : 'oauth'
-    });
+  console.log(`📤 Creating bulk operation for ${shop}...`);
+  const createResponse = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': accessToken,
+        },
+    body: JSON.stringify({ query: createBulkOperationMutation }),
+  });
 
-    return new Response(JSON.stringify({
-      success: true,
-      data: shippingMethodsResponse,
-      shop: shopDomain,
-      source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
-      timestamp: new Date().toISOString()
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    logger.error('Shipping methods endpoint error', { error: (error as Error).message });
-    return new Response(JSON.stringify({
-      success: false,
-      error: 'Invalid JSON in request body',
-      timestamp: new Date().toISOString()
-    }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' }
-    });
+  if (!createResponse.ok) {
+    throw new Error(`Failed to create bulk operation: ${createResponse.status} ${createResponse.statusText}`);
   }
+
+  const createResult = await createResponse.json() as any;
+  const userErrors = createResult.data?.bulkOperationRunQuery?.userErrors || [];
+
+  if (userErrors.length > 0) {
+    throw new Error(`Bulk operation creation failed: ${JSON.stringify(userErrors)}`);
+  }
+
+  const bulkOperationId = createResult.data?.bulkOperationRunQuery?.bulkOperation?.id;
+  if (!bulkOperationId) {
+    throw new Error('No bulk operation ID returned');
+  }
+
+  console.log(`✅ Bulk operation created: ${bulkOperationId}`);
+
+  // Step 2: Poll for completion
+  const maxWaitTime = 10 * 60 * 1000; // 10 minutes max wait
+  const pollInterval = 5000; // 5 seconds
+  const startTime = Date.now();
+  let operationStatus = 'CREATED';
+  let downloadUrl: string | null = null;
+
+  while (operationStatus !== 'COMPLETED' && operationStatus !== 'FAILED' && operationStatus !== 'CANCELED') {
+    if (Date.now() - startTime > maxWaitTime) {
+      throw new Error('Bulk operation timeout - exceeded 10 minutes');
+    }
+
+    await delay(pollInterval);
+
+    const statusQuery = `
+      query {
+        node(id: "${bulkOperationId}") {
+          ... on BulkOperation {
+            id
+            status
+            errorCode
+            objectCount
+            fileSize
+            url
+            partialDataUrl
+          }
+        }
+      }
+    `;
+
+    const statusResponse = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': accessToken,
+      },
+      body: JSON.stringify({ query: statusQuery }),
+    });
+
+    if (!statusResponse.ok) {
+      throw new Error(`Failed to check bulk operation status: ${statusResponse.status} ${statusResponse.statusText}`);
+    }
+
+    const statusResult = await statusResponse.json() as any;
+    const bulkOperation = statusResult.data?.node;
+
+    if (!bulkOperation) {
+      throw new Error('Could not retrieve bulk operation status');
+    }
+
+    operationStatus = bulkOperation.status;
+    downloadUrl = bulkOperation.url;
+
+    console.log(`📊 Bulk operation status: ${operationStatus}, objects: ${bulkOperation.objectCount || 0}`);
+
+    if (operationStatus === 'FAILED') {
+      throw new Error(`Bulk operation failed: ${bulkOperation.errorCode || 'Unknown error'}`);
+    }
+
+    if (operationStatus === 'CANCELED') {
+      throw new Error('Bulk operation was canceled');
+    }
+  }
+
+  if (!downloadUrl) {
+    throw new Error('No download URL available for completed bulk operation');
+  }
+
+  console.log(`✅ Bulk operation completed, downloading data from: ${downloadUrl}`);
+
+  // Step 3: Download and parse JSONL data
+  const downloadResponse = await fetch(downloadUrl);
+  if (!downloadResponse.ok) {
+    throw new Error(`Failed to download bulk operation data: ${downloadResponse.status} ${downloadResponse.statusText}`);
+  }
+
+  const jsonlData = await downloadResponse.text();
+  const lines = jsonlData.trim().split('\n');
+
+  console.log(`📦 Downloaded ${lines.length} lines of JSONL data`);
+
+  // Step 4: Parse JSONL and build product map
+  const products = new Map<string, { id: string, variants: Array<{ id: string, barcode: string | null }> }>();
+  const variants = new Map<string, { id: string, barcode: string | null, productId: string }>();
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+
+    try {
+      const obj = JSON.parse(line);
+
+      if (obj.id?.includes('/Product/')) {
+        // This is a product
+        products.set(obj.id, {
+          id: obj.id,
+          variants: []
+        });
+      } else if (obj.id?.includes('/ProductVariant/') && obj.__parentId) {
+        // This is a variant
+        const variant = {
+          id: obj.id,
+          barcode: obj.barcode || null,
+          productId: obj.__parentId
+        };
+        variants.set(obj.id, variant);
+
+        // Add to product's variants array
+        const product = products.get(obj.__parentId);
+        if (product) {
+          product.variants.push(variant);
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ Failed to parse JSONL line: ${line}`);
+    }
+  }
+
+  console.log(`📊 Parsed ${products.size} products and ${variants.size} variants`);
+
+  // Step 5: Process products and prepare metafield updates
+  const metafieldsToUpdate: Array<{productId: string, experienceCenter: boolean}> = [];
+  let processedProducts = 0;
+  let skippedProducts = 0;
+  let eanMatches = 0;
+
+  for (const [productId, product] of products) {
+    try {
+      // Find barcode from variants
+      let barcode: string | null = null;
+      for (const variant of product.variants) {
+        if (variant.barcode) {
+          barcode = variant.barcode;
+          break;
+        }
+      }
+
+      if (!barcode) {
+        skippedProducts++;
+        continue;
+      }
+
+      const experienceCenter = availableEans.has(barcode);
+      if (experienceCenter) {
+        eanMatches++;
+      }
+
+      metafieldsToUpdate.push({
+        productId,
+        experienceCenter,
+      });
+
+      processedProducts++;
+    } catch (error: any) {
+      console.error(`❌ Error processing product ${productId}:`, error.message);
+    }
+  }
+
+  console.log(`📊 Prepared ${metafieldsToUpdate.length} metafield updates (${processedProducts} processed, ${skippedProducts} skipped, ${eanMatches} EAN matches)`);
+
+  // Step 6: Update metafields in efficient batches
+  const batchSize = 25; // Shopify limit: maximum 25 metafields per request
+  let totalSuccessful = 0;
+  let totalFailed = 0;
+  const allErrors: string[] = [];
+
+  for (let i = 0; i < metafieldsToUpdate.length; i += batchSize) {
+    const batch = metafieldsToUpdate.slice(i, i + batchSize);
+
+    try {
+      console.log(`🔄 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(metafieldsToUpdate.length / batchSize)} (${batch.length} products)`);
+
+      const result = await setProductExperienceCenterMetafieldsBulk(env, shop, batch);
+      totalSuccessful += result.successful;
+      totalFailed += result.failed;
+      allErrors.push(...result.errors);
+
+      // Small delay between batches
+      if (i + batchSize < metafieldsToUpdate.length) {
+        await delay(1000); // 1 second delay between batches
+      }
+    } catch (error: any) {
+      console.error(`❌ Error processing batch:`, error.message);
+      totalFailed += batch.length;
+      allErrors.push(`Batch error: ${error.message}`);
+    }
+  }
+
+  console.log(`🎯 Bulk operations completed for ${shop}: ${totalSuccessful} successful, ${totalFailed} failed, ${eanMatches} EAN matches out of ${availableEans.size} available`);
+
+  return {
+    successful: totalSuccessful,
+    failed: totalFailed,
+    errors: allErrors.slice(0, 20),
+    eanMatches,
+    totalProducts: processedProducts,
+  };
 }
 
-async function handleErpDeliveryTimesEndpoint(request: Request, env: Env, logger: WorkersLogger, config: WorkerConfig): Promise<Response> {
-  try {
-    const body = await request.json() as any;
-    const erpResponse: Record<string, string | null> = {};
 
-    if (!body.productIds || !Array.isArray(body.productIds)) {
-      return new Response(JSON.stringify({
+
+async function setProductExperienceCenterMetafieldsBulk(env: Env, shop: string, metafields: Array<{productId: string, experienceCenter: boolean}>): Promise<{successful: number, failed: number, errors: string[]}> {
+  // Shopify limit: maximum 25 metafields per request
+  if (metafields.length > 25) {
+    throw new Error(`Batch size too large: ${metafields.length}. Maximum allowed: 25 for Shopify metafields API`);
+  }
+  const accessToken = await getShopAccessToken(env, shop);
+  if (!accessToken) {
+    throw new Error(`No access token found for shop: ${shop}`);
+  }
+
+  const mutation = `
+    mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields { key namespace value type ownerType }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const metafieldsInput = metafields.map(({productId, experienceCenter}) => ({
+    key: 'experiencecenter',
+    namespace: 'woood',
+    value: experienceCenter.toString(),
+    type: 'boolean',
+    ownerId: productId,
+  }));
+
+  const response = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': accessToken,
+    },
+    body: JSON.stringify({ query: mutation, variables: { metafields: metafieldsInput } }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to set experience center metafields: ${response.status} ${response.statusText}`);
+  }
+
+  const result = await response.json() as any;
+  const userErrors = result.data?.metafieldsSet?.userErrors || [];
+  const successfulMetafields = result.data?.metafieldsSet?.metafields || [];
+
+  // Only count as successful if the metafield was actually created/updated
+  const successful = successfulMetafields.length;
+  const failed = metafields.length - successful;
+
+  const errors = userErrors.map((error: any) => `${error.field}: ${error.message}`);
+
+  return {
+    successful,
+    failed,
+    errors,
+  };
+}
+
+// Helper function to add delay between requests
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function processExperienceCenterUpdateAllShops(env: Env): Promise<any> {
+  console.log('🏪 Starting experience center update for all shops...');
+
+  // Fetch experience center data from external API
+  const experienceCenterData = await fetchExperienceCenterData(env);
+  console.log(`📊 Fetched ${experienceCenterData.total} Experience Center products from WOOOD API`);
+
+  // Create a set of EAN codes that are available in experience centers
+  const availableEans = new Set(experienceCenterData.data.map((item: any) => item.ean));
+
+  // Get all installed shops
+  const installedShops = await getInstalledShops(env);
+  if (installedShops.length === 0) {
+    console.log('⚠️ No installed shops found');
+    return {
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: 'No installed shops found',
+      results: [],
+      summary: {
+        totalShops: 0,
+        successfulShops: 0,
+        failedShops: 0,
+        totalProducts: 0,
+        successfulProducts: 0,
+        failedProducts: 0,
+      },
+    };
+  }
+
+  const results = [];
+  let totalSuccessful = 0;
+  let totalFailed = 0;
+  const startTime = Date.now();
+  const maxExecutionTime = 25 * 60 * 1000; // 25 minutes (leaving 5 min buffer for 30 min limit)
+
+  console.log(`🏪 Processing ${installedShops.length} shops with ${availableEans.size} available EANs`);
+
+  // Process shops sequentially with time management
+  for (let i = 0; i < installedShops.length; i++) {
+    const shop = installedShops[i]!;
+    const elapsedTime = Date.now() - startTime;
+
+    // Check if we're approaching the time limit
+    if (elapsedTime > maxExecutionTime) {
+      console.log(`⏰ Time limit approaching (${Math.round(elapsedTime/1000)}s elapsed), stopping processing`);
+
+      // Save partial progress to KV for next execution
+      const partialState = {
+        availableEans: Array.from(availableEans),
+        shops: installedShops,
+        currentShopIndex: i,
+        results,
+        totalSuccessful,
+        totalFailed,
+        startTime: new Date(startTime).toISOString(),
+        partial: true,
+      };
+      await env.EXPERIENCE_CENTER_STATUS?.put('processing_state', JSON.stringify(partialState));
+
+      return {
+        success: true,
+        timestamp: new Date().toISOString(),
+        message: `Partial completion due to time limit. Processed ${i}/${installedShops.length} shops.`,
+        partial: true,
+        progress: {
+          current: i,
+          total: installedShops.length,
+          percentage: Math.round((i / installedShops.length) * 100),
+        },
+        summary: {
+          totalShops: installedShops.length,
+          successfulShops: results.filter((r: any) => r.success).length,
+          failedShops: results.filter((r: any) => !r.success).length,
+          totalProducts: totalSuccessful + totalFailed,
+          successfulProducts: totalSuccessful,
+          failedProducts: totalFailed,
+        },
+        cron: true,
+      };
+    }
+
+    try {
+      console.log(`🏪 Processing shop ${i + 1}/${installedShops.length}: ${shop} (${Math.round(elapsedTime/1000)}s elapsed)`);
+
+      // Process products using bulk operations for maximum efficiency
+      const result = await processExperienceCenterWithBulkOperations(env, shop, availableEans);
+
+      const successful = result.successful;
+      const failed = result.failed;
+      const errors = result.errors;
+      const eanMatches = result.eanMatches;
+      const totalProducts = result.totalProducts;
+
+      results.push({
+        shop,
+        success: true,
+        summary: {
+          total: successful + failed,
+          successful,
+          failed,
+          errors: errors.slice(0, 10), // Limit error messages
+          eanMatches,
+          totalProducts,
+          availableEans: availableEans.size,
+        },
+      });
+
+      totalSuccessful += successful;
+      totalFailed += failed;
+      console.log(`✅ Experience center update completed for ${shop}: ${successful} successful, ${failed} failed, ${eanMatches} EAN matches`);
+
+      // Add longer delay between shops for truly sequential processing
+      if (i < installedShops.length - 1) {
+        console.log(`⏳ Waiting 5 seconds before processing next shop...`);
+        await delay(5000);
+      }
+
+    } catch (error: any) {
+      console.error(`❌ Failed to process shop ${shop}:`, error.message);
+      results.push({
+        shop,
         success: false,
-        error: 'productIds array is required',
-        timestamp: new Date().toISOString()
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
+        error: error.message,
       });
     }
+  }
 
-    // Check if request is from checkout extension
-    const origin = request.headers.get('Origin') || '';
-    const isCheckoutExtension = origin.includes('shop.app') ||
-                               origin.includes('checkout.shopify.com') ||
-                               origin.includes('pay.shopify.com') ||
-                               origin.includes('shopifycdn.com') ||
-                               origin.includes('extensions.shopifycdn.com') ||
-                               body.source === 'checkout_extension';
+  // Clean up any partial state since we completed all shops
+  await env.EXPERIENCE_CENTER_STATUS?.delete('processing_state');
 
-    let shopDomain: string;
-    let accessToken: string | undefined;
+  const successfulShops = results.filter((r: any) => r.success).length;
+  const totalTime = Math.round((Date.now() - startTime) / 1000);
 
-    if (isCheckoutExtension) {
-      // For checkout extensions, get shop domain from request body
-      shopDomain = body.shopDomain;
-      if (!shopDomain) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'shopDomain is required for checkout extension requests',
-          timestamp: new Date().toISOString()
-        }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      // Get stored access token for the shop
-      accessToken = await getShopAccessToken(shopDomain, env);
-      logger.info('Checkout extension ERP delivery times request', { origin, shopDomain, hasAccessToken: !!accessToken });
-    } else {
-      // For admin requests, require OAuth authentication
-      const authResult = await authenticateRequest(request, env, logger, crypto.randomUUID());
-      if (!authResult.success || !authResult.shop) {
-        return new Response(JSON.stringify({
-          success: false,
-          error: 'Authentication required',
-          timestamp: new Date().toISOString()
-        }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      shopDomain = authResult.shop;
-      accessToken = authResult.accessToken;
-      logger.info('OAuth ERP delivery times request', { shopDomain });
+  console.log(`🎯 All shops processed in ${totalTime}s: ${successfulShops}/${installedShops.length} successful`);
+
+  return {
+    success: successfulShops > 0,
+    timestamp: new Date().toISOString(),
+    message: `Completed all ${installedShops.length} shops in ${totalTime}s`,
+    results,
+    summary: {
+      totalShops: installedShops.length,
+      successfulShops,
+      failedShops: installedShops.length - successfulShops,
+      totalProducts: totalSuccessful + totalFailed,
+      successfulProducts: totalSuccessful,
+      failedProducts: totalFailed,
+    },
+    cron: true,
+  };
+}
+
+
+
+
+
+
+
+// Experience center trigger handler - Bulk Operations Only
+async function handleExperienceCenterTrigger(request: Request, env: Env): Promise<Response> {
+  try {
+    console.log('🚀 Starting Experience Center bulk operations for all shops');
+
+    // Always use bulk operations - the main and only flow
+    const result = await processExperienceCenterUpdateAllShops(env);
+
+    // Store status in KV
+    if (env.EXPERIENCE_CENTER_STATUS) {
+      await env.EXPERIENCE_CENTER_STATUS.put(EXPERIENCE_CENTER_STATUS_KEY, JSON.stringify(result));
     }
 
-    logger.info('Fetching ERP delivery times for products', {
-      productCount: body.productIds.length,
-      shopDomain,
-      isCheckoutExtension
-    });
+    return new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error: any) {
+    const errorResult = {
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: error.message,
+    };
 
-    for (const productId of body.productIds) {
-      try {
-        const metafieldsUrl = `https://${shopDomain}/admin/api/${config.shopifyOAuth.apiVersion}/products/${productId}/metafields.json?namespace=erp&key=levertijd`;
-
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/json'
-        };
-
-        // Only add access token if we have one (OAuth requests)
-        if (accessToken) {
-          headers['X-Shopify-Access-Token'] = accessToken;
-        }
-
-        const response = await fetch(metafieldsUrl, { headers });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-
-          if (data.metafields && data.metafields.length > 0) {
-            const erpMetafield = data.metafields.find((mf: any) =>
-              mf.namespace === 'erp' && mf.key === 'levertijd'
-            );
-
-            if (erpMetafield && erpMetafield.value) {
-              erpResponse[productId] = erpMetafield.value;
-            } else {
-              erpResponse[productId] = null;
-            }
-          } else {
-            erpResponse[productId] = null;
-          }
-        } else {
-          logger.warn('Failed to fetch ERP metafields for product', {
-            productId,
-            status: response.status,
-            shop: shopDomain,
-            isCheckoutExtension
-          });
-          erpResponse[productId] = null;
-        }
-      } catch (productError) {
-        logger.warn('Error fetching ERP product metafields', {
-          productId,
-          error: (productError as Error).message,
-          shop: shopDomain,
-          isCheckoutExtension
-        });
-        erpResponse[productId] = null;
-      }
+    if (env.EXPERIENCE_CENTER_STATUS) {
+      await env.EXPERIENCE_CENTER_STATUS.put(EXPERIENCE_CENTER_STATUS_KEY, JSON.stringify(errorResult));
     }
 
-    logger.info('ERP delivery times fetched', {
-      productCount: body.productIds.length,
-      foundErpTimes: Object.values(erpResponse).filter(v => v !== null).length,
-      shop: shopDomain,
-      source: isCheckoutExtension ? 'checkout-extension' : 'oauth'
-    });
-
-    return new Response(JSON.stringify({
-      success: true,
-      data: erpResponse,
-      shop: shopDomain,
-      source: isCheckoutExtension ? 'checkout-extension' : 'oauth',
-      timestamp: new Date().toISOString()
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    logger.error('ERP delivery times endpoint error', { error: (error as Error).message });
     return new Response(JSON.stringify({
       success: false,
-      error: 'Invalid JSON in request body',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      results: [{
+        shop: env.SHOPIFY_STORE_URL?.replace('https://', '').replace('http://', ''),
+        success: false,
+        error: error.message,
+      }],
+      summary: {
+        totalShops: 1,
+        successfulShops: 0,
+        failedShops: 1,
+      },
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+// Experience center status handler
+async function handleExperienceCenterStatus(request: Request, env: Env): Promise<Response> {
+  try {
+    // Get stored status
+    let statusData = null;
+    if (env.EXPERIENCE_CENTER_STATUS) {
+      const status = await env.EXPERIENCE_CENTER_STATUS.get(EXPERIENCE_CENTER_STATUS_KEY);
+      if (status) {
+        statusData = JSON.parse(status);
+      }
+    }
+
+    // Try to fetch current WOOOD API data
+    let woodApiTotals = null;
+    try {
+      const experienceCenterData = await fetchExperienceCenterData(env);
+      woodApiTotals = {
+        total: experienceCenterData.total
+      };
+    } catch (error) {
+      console.error('Failed to fetch WOOOD API data for status check:', error);
+    }
+
+    // Combine status data with WOOOD API totals
+    const response = {
+      ...statusData,
+      woodApi: woodApiTotals ? {
+        status: 'available',
+        totals: woodApiTotals
+      } : {
+        status: 'unavailable'
+      }
+    };
+
+    if (!statusData) {
+      return new Response(JSON.stringify({
+        success: false,
+        message: 'No status available',
+        woodApi: response.woodApi
+      }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error) {
+    console.error('Experience center status check failed:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      message: 'Status check failed',
+      error: error instanceof Error ? error.message : 'Unknown error'
     }), {
-      status: 400,
+      status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
 }
 
-// === UTILITY FUNCTIONS ===
-
-/**
- * Get shop access token using SimpleTokenService
- * Replaces complex session decryption with simple token lookup
- */
-async function getShopAccessToken(shopDomain: string, env: Env): Promise<string | undefined> {
+// NEW: Bulk operations test handler
+async function handleExperienceCenterBulkTest(request: Request, env: Env): Promise<Response> {
   try {
-    const tokenService = new SimpleTokenService(env);
-    const token = await tokenService.getToken(shopDomain);
-    return token || undefined;
-  } catch (error) {
-    console.error('Failed to get shop access token:', error);
-    return undefined;
+    const body = await request.json().catch(() => ({})) as any;
+    const shop = body.shop || env.SHOPIFY_STORE_URL?.replace('https://', '').replace('http://', '');
+
+    if (!shop) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'No shop specified',
+        timestamp: new Date().toISOString(),
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    console.log(`🧪 Testing bulk operations for shop: ${shop}`);
+
+    // Fetch experience center data
+    const experienceCenterData = await fetchExperienceCenterData(env);
+    const availableEans = new Set(experienceCenterData.data.map((item: any) => item.ean));
+
+    console.log(`📊 Testing with ${availableEans.size} available EANs`);
+
+    // Test bulk operations on single shop
+    const result = await processExperienceCenterWithBulkOperations(env, shop, availableEans);
+
+    const response = {
+      success: true,
+      timestamp: new Date().toISOString(),
+      shop,
+      testType: 'bulk_operations',
+      result,
+      summary: {
+        availableEans: availableEans.size,
+        successfulProducts: result.successful,
+        failedProducts: result.failed,
+        eanMatches: result.eanMatches,
+        totalProducts: result.totalProducts,
+        errors: result.errors.slice(0, 5), // Limit error messages for test
+      },
+    };
+
+    return new Response(JSON.stringify(response), { headers: { 'Content-Type': 'application/json' } });
+  } catch (error: any) {
+    console.error('❌ Bulk operations test failed:', error);
+
+    return new Response(JSON.stringify({
+      success: false,
+      timestamp: new Date().toISOString(),
+      error: error.message,
+      testType: 'bulk_operations',
+    }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
 
-/**
- * Clear shop token (used when app is uninstalled)
- */
-async function clearShopSessions(shopDomain: string, env: Env): Promise<number> {
-  try {
-    const tokenService = new SimpleTokenService(env);
-    await tokenService.deleteToken(shopDomain);
-    return 1; // Return 1 since we only have one token per shop now
-  } catch (error) {
-    console.error('Failed to clear shop token:', error);
-    return 0;
-  }
-}
-
+// Utility functions
 function getAllowedOrigin(request: Request, allowedOrigins: string[]): string {
   const origin = request.headers.get('Origin');
   if (!origin) return '*';
 
-  // Essential origins for checkout extensions and Shopify admin
-  const coreAllowedOrigins = [
-    'https://shop.app',
-    'https://checkout.shopify.com',
-    'https://pay.shopify.com',
-    'https://extensions.shopifycdn.com',
-    'https://admin.shopify.com',
-    'https://partners.shopify.com'
-  ];
-
-  // Combine core origins with configured origins
-  const allAllowedOrigins = [...coreAllowedOrigins, ...allowedOrigins];
-
-  for (const allowedOrigin of allAllowedOrigins) {
-    if (allowedOrigin === '*') return '*';
-    if (allowedOrigin.includes('*')) {
-      const pattern = allowedOrigin.replace(/\*/g, '.*');
-      const regex = new RegExp(`^${pattern}$`);
-      if (regex.test(origin)) return origin;
-    } else if (allowedOrigin === origin) {
-      return origin;
-    }
+  for (const allowed of allowedOrigins) {
+    if (allowed === '*' || origin === allowed) return origin;
+    if (allowed.startsWith('https://*.') && origin.endsWith(allowed.replace('https://*.', ''))) return origin;
   }
-
-  return '*'; // Allow all origins if no match found to prevent CORS issues
+  return '*';
 }
 
 function addCorsHeaders(response: Response, corsHeaders: Record<string, string>): Response {
   const newHeaders = new Headers(response.headers);
-  Object.entries(corsHeaders).forEach(([key, value]) => {
+  for (const [key, value] of Object.entries(corsHeaders)) {
     newHeaders.set(key, value);
-  });
-
+  }
   return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
+        status: response.status,
+        statusText: response.statusText,
     headers: newHeaders
   });
 }
 
-async function verifyWebhookSignature(bodyBytes: Uint8Array, signature: string, secret: string): Promise<boolean> {
-  try {
-    const encoder = new TextEncoder();
+function isValidShopDomain(shop: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$/.test(shop);
+}
 
-    // Try multiple approaches to handle the secret
-    const secretApproaches = [
-      { name: 'raw_secret', key: encoder.encode(secret) },
-      { name: 'base64_decoded_secret', key: (() => {
-        try {
-          return new Uint8Array(atob(secret).split('').map(c => c.charCodeAt(0)));
-        } catch {
-          return encoder.encode(secret); // fallback to raw if base64 decode fails
-        }
-      })() }
-    ];
+async function registerWebhooks(shop: string, accessToken: string, env: Env): Promise<void> {
+  const webhooks = [
+    { topic: 'orders/paid', address: `${env.SHOPIFY_APP_URL}/api/webhooks/orders` },
+    { topic: 'orders/create', address: `${env.SHOPIFY_APP_URL}/api/webhooks/orders` }
+  ];
 
-    // Clean the signature (remove any whitespace or extra characters)
-    const cleanSignature = signature.trim();
+  console.log(`Starting webhook registration for shop: ${shop}`);
+  console.log(`Webhook endpoint: ${env.SHOPIFY_APP_URL}/api/webhooks/orders`);
 
-    console.log('Webhook signature verification attempts:', {
-      bodyBytesLength: bodyBytes.length,
-      originalSignature: signature,
-      cleanedSignature: cleanSignature,
-      secretLength: secret.length,
-      secretStartsWithBase64: /^[A-Za-z0-9+/]/.test(secret),
-      secretEndsWithEquals: secret.endsWith('='),
+  for (const webhook of webhooks) {
+    try {
+      console.log(`Registering webhook: ${webhook.topic} -> ${webhook.address}`);
+
+      const response = await fetch(`https://${shop}/admin/api/2024-10/webhooks.json`, {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ webhook })
+      });
+
+      if (response.ok) {
+        const result = await response.json() as any;
+        console.log(`✅ Successfully registered webhook: ${webhook.topic}`, {
+          id: result.webhook?.id,
+          topic: result.webhook?.topic,
+          address: result.webhook?.address,
+          created_at: result.webhook?.created_at
+        });
+        } else {
+        const errorText = await response.text();
+        console.error(`❌ Failed to register webhook: ${webhook.topic}`, {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText,
+          shop: shop,
+          webhook: webhook
+        });
+      }
+  } catch (error) {
+      console.error(`❌ Exception registering webhook: ${webhook.topic}`, {
+        error: (error as Error).message,
+        shop: shop,
+        webhook: webhook
     });
+  }
+}
 
-    for (const approach of secretApproaches) {
-      try {
+  console.log(`Completed webhook registration for shop: ${shop}`);
+}
+
+function transformNoteAttributesToMetafields(noteAttributes: NoteAttribute[]): OrderMetafield[] {
+  const metafields: OrderMetafield[] = [];
+
+  for (const attr of noteAttributes) {
+    switch (attr.name) {
+      case 'delivery_date':
+      case 'selected_delivery_date':
+        metafields.push({
+          namespace: 'custom',
+          key: 'dutchned_delivery_date',
+          value: attr.value,
+          type: 'date'
+        });
+        break;
+      case 'shipping_method':
+        metafields.push({
+          namespace: 'custom',
+          key: 'ShippingMethod2',
+          value: attr.value,
+          type: 'single_line_text_field'
+        });
+        break;
+    }
+  }
+
+  return metafields;
+}
+
+async function createOrderMetafields(orderId: number, metafields: OrderMetafield[], accessToken: string, shop: string): Promise<void> {
+  console.log(`Creating ${metafields.length} metafields for order #${orderId}`);
+
+  for (const metafield of metafields) {
+    try {
+      console.log(`Creating metafield: ${metafield.namespace}.${metafield.key} = ${metafield.value}`);
+
+      const response = await fetch(`https://${shop}/admin/api/2024-10/orders/${orderId}/metafields.json`, {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ metafield })
+      });
+
+        if (response.ok) {
+        const result = await response.json() as any;
+        console.log(`✅ Successfully created metafield: ${metafield.namespace}.${metafield.key}`, {
+          id: result.metafield?.id,
+          value: result.metafield?.value
+        });
+            } else {
+        const errorText = await response.text();
+        console.error(`❌ Failed to create metafield: ${metafield.namespace}.${metafield.key}`, {
+            status: response.status,
+          error: errorText,
+          metafield: metafield
+        });
+      }
+  } catch (error) {
+      console.error(`❌ Exception creating metafield: ${metafield.namespace}.${metafield.key}`, {
+        error: (error as Error).message,
+        metafield: metafield
+    });
+  }
+}
+
+  console.log(`Completed metafield creation for order #${orderId}`);
+}
+
+async function validateWebhookSignature(body: string, signature: string, secret: string): Promise<boolean> {
+    const encoder = new TextEncoder();
         const key = await crypto.subtle.importKey(
           'raw',
-          approach.key,
+    encoder.encode(secret),
           { name: 'HMAC', hash: 'SHA-256' },
           false,
           ['sign']
         );
 
-        // Compute HMAC-SHA256 of the raw body bytes
-        const signatureBuffer = await crypto.subtle.sign('HMAC', key, bodyBytes);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+  const expected = btoa(String.fromCharCode(...new Uint8Array(sig)));
 
-        // Try both base64 and hex output formats
-        const computedBase64 = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
-        const computedHex = Array.from(new Uint8Array(signatureBuffer))
-          .map(b => b.toString(16).padStart(2, '0')).join('');
-
-        const matchBase64 = computedBase64 === cleanSignature;
-        const matchHex = computedHex === cleanSignature;
-
-        console.log(`Approach: ${approach.name}`, {
-          keyLength: approach.key.length,
-          computedBase64,
-          computedHex,
-          receivedSignature: cleanSignature,
-          matchBase64,
-          matchHex,
-          firstDiffBase64: matchBase64 ? 'none' : (() => {
-            for (let i = 0; i < Math.min(computedBase64.length, cleanSignature.length); i++) {
-              if (computedBase64[i] !== cleanSignature[i]) {
-                return { position: i, computed: computedBase64[i], received: cleanSignature[i] };
-              }
-            }
-            return 'length_mismatch';
-          })()
-        });
-
-        if (matchBase64 || matchHex) {
-          console.log(`✅ Signature verification SUCCESS with approach: ${approach.name}, format: ${matchBase64 ? 'base64' : 'hex'}`);
-          return true;
-        }
-      } catch (approachError) {
-        console.error(`Approach ${approach.name} failed:`, approachError);
-      }
-    }
-
-    console.log('❌ All signature verification approaches failed');
-    return false;
-  } catch (error) {
-    console.error('Webhook signature verification error:', error);
-    return false;
-  }
+  return expected === signature;
 }
 
-// Add this simple authentication function:
-async function authenticateRequest(
-  request: Request,
-  env: Env,
-  logger: WorkersLogger,
-  requestId: string
-): Promise<{ success: boolean; shop?: string; accessToken?: string; error?: string }> {
+function generateMockDates(): DeliveryDate[] {
+  const dates: DeliveryDate[] = [];
+  const today = new Date();
+
+  for (let i = 1; i <= 14; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    dates.push({
+      date: date.toISOString().split('T')[0]!,
+      displayName: formatDateInDutch(date)
+    });
+  }
+
+  return dates;
+}
+
+function formatDateInDutch(date: Date): string {
   try {
-    const url = new URL(request.url);
-    const shop = url.searchParams.get('shop') || request.headers.get('X-Shopify-Shop-Domain');
-    if (!shop) {
-      return { success: false, error: 'Missing shop parameter' };
-    }
-    const tokenService = new SimpleTokenService(env);
-    const accessToken = await tokenService.getToken(shop);
-    if (!accessToken) {
-      return { success: false, shop, error: 'No access token found for shop' };
-    }
-    return { success: true, shop, accessToken };
-  } catch (error) {
-    logger.error('Authentication failed', { requestId, error: error instanceof Error ? error.message : 'Unknown error' });
-    return { success: false, error: 'Authentication failed' };
+    return new Intl.DateTimeFormat('nl-NL', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric'
+    }).format(date);
+  } catch {
+    const weekdays = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'];
+    const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+    return `${weekdays[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`;
   }
 }
