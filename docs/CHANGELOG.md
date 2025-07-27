@@ -471,6 +471,7 @@ Automatically syncs a dealer/store locator JSON blob to a shop metafield for use
 - [x] **Comprehensive Flow Logging**: Detailed console logs showing complete decision flow
 - [x] **Inventory Check Always Enabled**: Stock verification now built into extension (no longer optional)
 - [x] **Enhanced Debug Visibility**: Clear logging for shipping method detection, delivery type, and date filtering
+- [x] **Visual Flow Documentation**: Added Mermaid flowchart to README.md for clear decision flow visualization
 
 **Settings Changes:**
 - **Removed**: `only_show_if_in_stock` (inventory check now always enabled)
@@ -499,12 +500,36 @@ Automatically syncs a dealer/store locator JSON blob to a shop metafield for use
 2. **Shipping Method Analysis**: Extract number from method name, compare with cutoff
 3. **Date Source Selection**: ERP (no picker), DUTCHNED (API dates), or POST (mock dates)
 
+**Visual Flow Documentation:**
+Added comprehensive Mermaid flowchart to README.md showing the complete decision process:
+```mermaid
+flowchart TD
+    A[🛒 Cart Items] --> B{📦 Stock Check}
+    B -->|❌ Out of Stock| C[🏭 ERP Delivery]
+    B -->|✅ In Stock| D{🚚 Shipping Method Check}
+
+    D -->|≥ 30| E[🚛 DUTCHNED Delivery]
+    D -->|< 30| F[📮 POST Delivery]
+
+    C --> G[📅 No Date Picker<br/>ERP determines dates]
+    E --> H[📅 API Dates<br/>Live from Dutchned]
+    F --> I[📅 Mock Dates<br/>Generated locally]
+
+    H --> J{🔍 ERP Filtering?}
+    I --> J
+    J -->|Yes| K[Filter dates ≥ minimum ERP date]
+    J -->|No| L[Show all dates]
+    K --> M[📱 Display Date Picker]
+    L --> M
+```
+
 **Technical Implementation:**
 - **Baked-in Inventory Check**: Removed setting dependency, always verify stock
 - **Enhanced Error Handling**: Better fallbacks when inventory API fails
 - **Comprehensive Logging**: Track complete flow from settings to final display
 - **Type Safety**: Improved TypeScript types for settings and logging
 - **Performance Optimization**: Reduced unnecessary re-renders with better useMemo dependencies
+- **Visual Documentation**: Professional Mermaid flowchart for developer and merchant understanding
 
 **Debugging Benefits:**
 - **Clear Flow Visibility**: See exactly why dates appear or don't appear
@@ -512,8 +537,9 @@ Automatically syncs a dealer/store locator JSON blob to a shop metafield for use
 - **Delivery Type Logic**: See which delivery type is selected and why
 - **Date Filtering Details**: Track how ERP filtering affects available dates
 - **Error Diagnosis**: Better error messages and fallback behavior
+- **Visual Understanding**: Clear flowchart for troubleshooting and onboarding
 
-**Expected Outcome:** ✅ **ACHIEVED** - Simplified, more intuitive settings with comprehensive debugging capabilities to troubleshoot delivery date issues.
+**Expected Outcome:** ✅ **ACHIEVED** - Simplified, more intuitive settings with comprehensive debugging capabilities and visual documentation for troubleshooting delivery date issues.
 
 ---
 
@@ -559,11 +585,11 @@ Automatically syncs a dealer/store locator JSON blob to a shop metafield for use
 
 ## 📊 PROJECT STATISTICS
 
-### **Total Story Points Completed: 148 SP**
-### **Total Story Points Planned: 14 SP**
-### **Overall Project Total: 162 SP**
+### **Total Story Points Completed: 150 SP**
+### **Total Story Points Planned: 24 SP**
+### **Overall Project Total: 174 SP**
 
-**Current Status:** ✅ **91% PROJECT COMPLETE** with enterprise-scale EC processing and new collection sorting feature planned
+**Current Status:** ✅ **86% PROJECT COMPLETE** with enterprise-scale EC processing, enhanced documentation, comprehensive Omnia pricing integration with dashboard, and collection sorting features planned
 
 **🚀 MASSIVE CONSOLIDATION ACHIEVEMENTS:**
 - **Files Reduced**: 28+ complex files → 8 core files (71% reduction)
@@ -602,6 +628,1021 @@ Automatically syncs a dealer/store locator JSON blob to a shop metafield for use
 ---
 
 ## 🎯 REMAINING WORK
+
+### Sprint 28: Omnia Pricing Feed Backend Integration (Planned - 6 SP)
+**Goal:** Implement comprehensive Omnia pricing feed backend integration with automated daily imports, pricing validation engine, email notifications, and API endpoints for pricing management.
+
+**Technical Requirements:**
+- **Feed URL**: `https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV`
+- **Feed Format**: CSV with columns: `OmniUniqueId`, `EAN`, `RecommendedSellingPrice`, `PriceAdvice`
+- **Schedule**: Daily import at 4:00 AM UTC (after Omnia's 3:00-3:30 AM processing window)
+- **Validation**: Mirror Basiclabel.nl validation rules with Shopify-specific adaptations
+
+**Phase 1: CSV Feed Parser & Product Matching (2 SP)**
+
+**1.1 CSV Feed Fetcher**
+```typescript
+interface OmniaFeedRow {
+  omniUniqueId: string;
+  ean: string;
+  recommendedSellingPrice: number;
+  priceAdvice: number;
+}
+
+interface FeedParseResult {
+  success: boolean;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  products: OmniaFeedRow[];
+  errors: string[];
+}
+
+async function fetchOmniaFeed(env: Env): Promise<FeedParseResult> {
+  const feedUrl = env.OMNIA_FEED_URL;
+
+  try {
+    const response = await fetch(feedUrl, {
+      headers: {
+        'User-Agent': 'WOOOD-Shopify-Integration/1.0',
+        'Accept': 'text/csv',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const csvData = await response.text();
+    return parseOmniaCSV(csvData);
+  } catch (error: any) {
+    console.error('❌ Failed to fetch Omnia feed:', error);
+    throw new Error(`Feed fetch failed: ${error.message}`);
+  }
+}
+
+function parseOmniaCSV(csvData: string): FeedParseResult {
+  const lines = csvData.split('\n');
+  const headers = lines[0].split(';').map(h => h.replace(/"/g, ''));
+
+  const result: FeedParseResult = {
+    success: false,
+    totalRows: lines.length - 1,
+    validRows: 0,
+    invalidRows: 0,
+    products: [],
+    errors: [],
+  };
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(';').map(v => v.replace(/"/g, ''));
+
+    if (values.length < 4) {
+      result.invalidRows++;
+      continue;
+    }
+
+    const [omniUniqueId, ean, recommendedSellingPrice, priceAdvice] = values;
+
+    // Validate required fields
+    if (!ean || !recommendedSellingPrice || !priceAdvice) {
+      result.invalidRows++;
+      result.errors.push(`Row ${i}: Missing required fields`);
+      continue;
+    }
+
+    // Validate numeric values
+    const price = parseFloat(recommendedSellingPrice);
+    const advice = parseFloat(priceAdvice);
+
+    if (isNaN(price) || isNaN(advice) || price <= 0 || advice <= 0) {
+      result.invalidRows++;
+      result.errors.push(`Row ${i}: Invalid price values`);
+      continue;
+    }
+
+    result.products.push({
+      omniUniqueId,
+      ean,
+      recommendedSellingPrice: price,
+      priceAdvice: advice,
+    });
+    result.validRows++;
+  }
+
+  result.success = result.validRows > 0;
+  return result;
+}
+```
+
+**1.2 Product Matching Engine**
+```typescript
+interface ProductMatch {
+  productId: string;
+  variantId: string;
+  ean: string;
+  currentPrice: number;
+  currentCompareAtPrice: number | null;
+  newPrice: number;
+  newCompareAtPrice: number;
+  discountPercentage: number;
+}
+
+async function matchProductsByEAN(
+  env: Env,
+  shop: string,
+  omniaProducts: OmniaFeedRow[]
+): Promise<{matches: ProductMatch[], unmatched: string[]}> {
+  const accessToken = await getShopAccessToken(env, shop);
+  if (!accessToken) {
+    throw new Error(`No access token found for shop: ${shop}`);
+  }
+
+  // Use Bulk Operations API for efficient product fetching
+  const bulkOperation = await createBulkOperation(env, shop, `
+    query {
+      products {
+        edges {
+          node {
+            id
+            handle
+            variants {
+              edges {
+                node {
+                  id
+                  barcode
+                  price
+                  compareAtPrice
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `);
+
+  const products = await pollAndParseBulkOperation(env, shop, bulkOperation.id);
+
+  const matches: ProductMatch[] = [];
+  const unmatched: string[] = [];
+  const eanMap = new Map<string, OmniaFeedRow>();
+
+  // Create EAN lookup map
+  omniaProducts.forEach(product => {
+    eanMap.set(product.ean, product);
+  });
+
+  // Match products by EAN/barcode
+  for (const product of products) {
+    for (const variant of product.variants) {
+      if (variant.barcode && eanMap.has(variant.barcode)) {
+        const omniaProduct = eanMap.get(variant.barcode)!;
+        const currentPrice = parseFloat(variant.price);
+        const newPrice = omniaProduct.recommendedSellingPrice;
+        const newCompareAtPrice = omniaProduct.priceAdvice;
+
+        const discountPercentage = ((newCompareAtPrice - newPrice) / newCompareAtPrice) * 100;
+
+        matches.push({
+          productId: product.id,
+          variantId: variant.id,
+          ean: variant.barcode,
+          currentPrice,
+          currentCompareAtPrice: variant.compareAtPrice ? parseFloat(variant.compareAtPrice) : null,
+          newPrice,
+          newCompareAtPrice,
+          discountPercentage,
+        });
+
+        eanMap.delete(variant.barcode);
+      }
+    }
+  }
+
+  // Track unmatched EANs
+  eanMap.forEach((product, ean) => {
+    unmatched.push(ean);
+  });
+
+  return { matches, unmatched };
+}
+```
+
+**Phase 2: Pricing Validation Engine (2 SP)**
+
+**2.1 Validation Rules Implementation**
+```typescript
+interface ValidationError {
+  productId: string;
+  variantId: string;
+  ean: string;
+  errorCode: 'discount_too_large' | 'base_price_differs' | 'validation_fails';
+  errorMessage: string;
+  currentPrice: number;
+  newPrice: number;
+  discountPercentage: number;
+}
+
+interface ValidationResult {
+  valid: ProductMatch[];
+  invalid: ValidationError[];
+  summary: {
+    totalProducts: number;
+    validProducts: number;
+    invalidProducts: number;
+    errorBreakdown: Record<string, number>;
+  };
+}
+
+function validatePricingUpdates(
+  matches: ProductMatch[],
+  validationConfig: PricingValidationConfig
+): ValidationResult {
+  const valid: ProductMatch[] = [];
+  const invalid: ValidationError[] = [];
+  const errorBreakdown: Record<string, number> = {};
+
+  for (const match of matches) {
+    const errors = validateSingleProduct(match, validationConfig);
+
+    if (errors.length === 0) {
+      valid.push(match);
+    } else {
+      for (const error of errors) {
+        invalid.push(error);
+        errorBreakdown[error.errorCode] = (errorBreakdown[error.errorCode] || 0) + 1;
+      }
+    }
+  }
+
+  return {
+    valid,
+    invalid,
+    summary: {
+      totalProducts: matches.length,
+      validProducts: valid.length,
+      invalidProducts: invalid.length,
+      errorBreakdown,
+    },
+  };
+}
+
+function validateSingleProduct(
+  match: ProductMatch,
+  config: PricingValidationConfig
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  // Rule 1: Discount limit check (max 90%)
+  if (match.discountPercentage > config.maxDiscountPercentage) {
+    errors.push({
+      productId: match.productId,
+      variantId: match.variantId,
+      ean: match.ean,
+      errorCode: 'discount_too_large',
+      errorMessage: `Discount ${match.discountPercentage.toFixed(1)}% exceeds maximum ${config.maxDiscountPercentage}%`,
+      currentPrice: match.currentPrice,
+      newPrice: match.newPrice,
+      discountPercentage: match.discountPercentage,
+    });
+  }
+
+  // Rule 2: Base price comparison check
+  if (match.currentCompareAtPrice && config.enforceBasePriceMatch) {
+    const priceDifference = Math.abs(match.currentCompareAtPrice - match.newCompareAtPrice);
+    const toleranceAmount = match.newCompareAtPrice * (config.basePriceTolerance / 100);
+
+    if (priceDifference > toleranceAmount) {
+      errors.push({
+        productId: match.productId,
+        variantId: match.variantId,
+        ean: match.ean,
+        errorCode: 'base_price_differs',
+        errorMessage: `Base price differs by €${priceDifference.toFixed(2)} (tolerance: €${toleranceAmount.toFixed(2)})`,
+        currentPrice: match.currentPrice,
+        newPrice: match.newPrice,
+        discountPercentage: match.discountPercentage,
+      });
+    }
+  }
+
+  // Rule 3: Price validation (dynamic price shouldn't exceed AVP)
+  if (match.newPrice > match.newCompareAtPrice) {
+    errors.push({
+      productId: match.productId,
+      variantId: match.variantId,
+      ean: match.ean,
+      errorCode: 'validation_fails',
+      errorMessage: `Dynamic price €${match.newPrice} exceeds AVP €${match.newCompareAtPrice}`,
+      currentPrice: match.currentPrice,
+      newPrice: match.newPrice,
+      discountPercentage: match.discountPercentage,
+    });
+  }
+
+  return errors;
+}
+
+interface PricingValidationConfig {
+  maxDiscountPercentage: number;     // Default: 90
+  enforceBasePriceMatch: boolean;    // Default: true
+  basePriceTolerance: number;        // Default: 5% tolerance
+  minPriceThreshold: number;         // Default: 0.01
+  maxPriceThreshold: number;         // Default: 10000
+}
+```
+
+**Phase 3: Shopify Price Updates & Email Notifications (2 SP)**
+
+**3.1 Batch Price Updates**
+```typescript
+interface PriceUpdateResult {
+  success: boolean;
+  updated: number;
+  failed: number;
+  errors: string[];
+  updateDetails: Array<{
+    variantId: string;
+    ean: string;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+async function updateProductPrices(
+  env: Env,
+  shop: string,
+  validMatches: ProductMatch[]
+): Promise<PriceUpdateResult> {
+  const accessToken = await getShopAccessToken(env, shop);
+  const batchSize = 10; // Conservative batch size for price updates
+  const result: PriceUpdateResult = {
+    success: false,
+    updated: 0,
+    failed: 0,
+    errors: [],
+    updateDetails: [],
+  };
+
+  for (let i = 0; i < validMatches.length; i += batchSize) {
+    const batch = validMatches.slice(i, i + batchSize);
+
+    for (const match of batch) {
+      try {
+        const mutation = `
+          mutation productVariantUpdate($input: ProductVariantInput!) {
+            productVariantUpdate(input: $input) {
+              productVariant {
+                id
+                price
+                compareAtPrice
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `;
+
+        const variables = {
+          input: {
+            id: match.variantId,
+            price: match.newPrice.toFixed(2),
+            compareAtPrice: match.newCompareAtPrice.toFixed(2),
+          },
+        };
+
+        const response = await fetch(`https://${shop}/admin/api/2023-10/graphql.json`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': accessToken,
+          },
+          body: JSON.stringify({ query: mutation, variables }),
+        });
+
+        const data = await response.json() as any;
+        const userErrors = data.data?.productVariantUpdate?.userErrors || [];
+
+        if (userErrors.length > 0) {
+          const errorMsg = userErrors.map((e: any) => e.message).join(', ');
+          result.failed++;
+          result.errors.push(`${match.ean}: ${errorMsg}`);
+          result.updateDetails.push({
+            variantId: match.variantId,
+            ean: match.ean,
+            success: false,
+            error: errorMsg,
+          });
+        } else {
+          result.updated++;
+          result.updateDetails.push({
+            variantId: match.variantId,
+            ean: match.ean,
+            success: true,
+          });
+        }
+
+        // Rate limiting delay
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (error: any) {
+        result.failed++;
+        result.errors.push(`${match.ean}: ${error.message}`);
+        result.updateDetails.push({
+          variantId: match.variantId,
+          ean: match.ean,
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+
+    // Batch delay
+    if (i + batchSize < validMatches.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  result.success = result.updated > 0;
+  return result;
+}
+```
+
+**3.2 Email Notification System**
+```typescript
+interface EmailNotificationData {
+  importTimestamp: string;
+  shop: string;
+  feedStats: {
+    totalFeedRows: number;
+    validFeedRows: number;
+    invalidFeedRows: number;
+  };
+  matchingStats: {
+    totalMatches: number;
+    unmatchedEANs: number;
+  };
+  validationStats: {
+    validProducts: number;
+    invalidProducts: number;
+    errorBreakdown: Record<string, number>;
+  };
+  updateStats: {
+    updatedProducts: number;
+    failedProducts: number;
+  };
+  errors: ValidationError[];
+  updateErrors: string[];
+}
+
+async function sendDailyImportReport(
+  env: Env,
+  notificationData: EmailNotificationData
+): Promise<void> {
+  const emailContent = generateImportReportEmail(notificationData);
+
+  // Use Cloudflare Workers Email API or external service
+  await sendEmail(env, {
+    to: env.PRICING_NOTIFICATION_EMAIL,
+    subject: `Daily Omnia Pricing Import Report - ${notificationData.shop}`,
+    html: emailContent,
+  });
+}
+
+function generateImportReportEmail(data: EmailNotificationData): string {
+  const discountStats = calculateDiscountStats(data);
+
+  return `
+    <h2>Daily Omnia Pricing Import Report</h2>
+    <p><strong>Shop:</strong> ${data.shop}</p>
+    <p><strong>Import Time:</strong> ${data.importTimestamp}</p>
+
+    <h3>Import Summary</h3>
+    <ul>
+      <li><strong>Products Updated:</strong> ${data.updateStats.updatedProducts}</li>
+      <li><strong>Products Failed:</strong> ${data.updateStats.failedProducts}</li>
+      <li><strong>New Discounts Created:</strong> ${discountStats.newDiscounts}</li>
+      <li><strong>Existing Discounts Updated:</strong> ${discountStats.updatedDiscounts}</li>
+      <li><strong>Discounts Removed:</strong> ${discountStats.removedDiscounts}</li>
+    </ul>
+
+    <h3>Validation Errors</h3>
+    ${data.validationStats.invalidProducts > 0 ? `
+      <ul>
+        <li><strong>Discount Too Large:</strong> ${data.validationStats.errorBreakdown.discount_too_large || 0}</li>
+        <li><strong>Base Price Differs:</strong> ${data.validationStats.errorBreakdown.base_price_differs || 0}</li>
+        <li><strong>Validation Fails:</strong> ${data.validationStats.errorBreakdown.validation_fails || 0}</li>
+      </ul>
+    ` : '<p>No validation errors</p>'}
+
+    <h3>Feed Statistics</h3>
+    <ul>
+      <li><strong>Total Feed Rows:</strong> ${data.feedStats.totalFeedRows}</li>
+      <li><strong>Valid Rows:</strong> ${data.feedStats.validFeedRows}</li>
+      <li><strong>Product Matches:</strong> ${data.matchingStats.totalMatches}</li>
+      <li><strong>Unmatched EANs:</strong> ${data.matchingStats.unmatchedEANs}</li>
+    </ul>
+
+    ${data.errors.length > 0 || data.updateErrors.length > 0 ? `
+      <h3>Detailed Errors</h3>
+      ${generateErrorTable(data.errors, data.updateErrors)}
+    ` : ''}
+  `;
+}
+```
+
+**API Endpoints:**
+- `POST /api/pricing-feed/import` - Manual pricing feed import trigger
+- `GET /api/pricing-feed/status` - Current import status and history
+- `GET /api/pricing-feed/errors` - Detailed error reports with pagination
+- `GET /api/pricing-feed/validation-config` - Current validation configuration
+- `PUT /api/pricing-feed/validation-config` - Update validation rules
+- Enhanced `GET /api/health` - Includes pricing feed metrics
+
+**Environment Variables:**
+```typescript
+interface Env {
+  OMNIA_FEED_URL: string;
+  PRICING_NOTIFICATION_EMAIL: string;
+  PRICING_MAX_DISCOUNT_PERCENTAGE: string; // Default: "90"
+  PRICING_BASE_PRICE_TOLERANCE: string;    // Default: "5"
+  PRICING_ENFORCE_BASE_PRICE_MATCH: string; // Default: "true"
+}
+```
+
+**Expected Outcome:** Complete backend pricing feed integration with enterprise-grade validation, error handling, and notification systems ready for dashboard integration.
+
+### Sprint 29: Omnia Pricing Dashboard & Management Interface (Planned - 4 SP)
+**Goal:** Implement embedded Shopify app dashboard for Omnia pricing management with real-time import status, manual controls, error management, and configuration interface.
+
+**Technical Requirements:**
+- **Framework**: React with Shopify Polaris design system
+- **Authentication**: Shopify App Bridge for embedded app experience
+- **Real-time Updates**: WebSocket or polling for live import status
+- **Data Visualization**: Charts and tables for pricing analytics
+- **Error Management**: Detailed error display with filtering and search
+
+**Phase 1: Dashboard Foundation & Authentication (1 SP)**
+
+**1.1 App Bridge Integration**
+```typescript
+// app/routes/app.pricing.tsx
+import { useLoaderData, useNavigate } from '@remix-run/react';
+import { authenticate } from '~/shopify.server';
+import { PricingDashboard } from '~/components/PricingDashboard';
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const { session } = await authenticate.admin(request);
+
+  // Fetch initial pricing data
+  const pricingStatus = await fetchPricingStatus(session.shop);
+  const validationConfig = await fetchValidationConfig(session.shop);
+
+  return json({
+    shop: session.shop,
+    pricingStatus,
+    validationConfig,
+  });
+}
+
+export default function PricingPage() {
+  const { shop, pricingStatus, validationConfig } = useLoaderData<typeof loader>();
+
+  return (
+    <PricingDashboard
+      shop={shop}
+      initialStatus={pricingStatus}
+      initialConfig={validationConfig}
+    />
+  );
+}
+```
+
+**1.2 Real-time Status Component**
+```typescript
+// components/PricingDashboard.tsx
+import { useState, useEffect } from 'react';
+import { Card, Page, Layout, Button, Badge, DataTable } from '@shopify/polaris';
+import { usePricingStatus } from '~/hooks/usePricingStatus';
+
+interface PricingDashboardProps {
+  shop: string;
+  initialStatus: PricingStatus;
+  initialConfig: ValidationConfig;
+}
+
+export function PricingDashboard({ shop, initialStatus, initialConfig }: PricingDashboardProps) {
+  const { status, isLoading, triggerImport, error } = usePricingStatus(shop, initialStatus);
+  const [showErrors, setShowErrors] = useState(false);
+
+  return (
+    <Page title="Omnia Pricing Management">
+      <Layout>
+        <Layout.Section>
+          <ImportStatusCard status={status} onTriggerImport={triggerImport} isLoading={isLoading} />
+        </Layout.Section>
+
+        <Layout.Section secondary>
+          <ValidationConfigCard config={initialConfig} shop={shop} />
+        </Layout.Section>
+
+        <Layout.Section>
+          <ImportHistoryCard history={status.history} />
+        </Layout.Section>
+
+        {status.lastImport?.errors && status.lastImport.errors.length > 0 && (
+          <Layout.Section>
+            <ErrorManagementCard errors={status.lastImport.errors} />
+          </Layout.Section>
+        )}
+      </Layout>
+    </Page>
+  );
+}
+```
+
+**Phase 2: Import Controls & Status Display (1 SP)**
+
+**2.1 Import Status Card**
+```typescript
+// components/ImportStatusCard.tsx
+import { Card, Button, Badge, Stack, TextContainer, ProgressBar } from '@shopify/polaris';
+
+interface ImportStatusCardProps {
+  status: PricingStatus;
+  onTriggerImport: () => void;
+  isLoading: boolean;
+}
+
+export function ImportStatusCard({ status, onTriggerImport, isLoading }: ImportStatusCardProps) {
+  const getStatusBadge = (importStatus: string) => {
+    switch (importStatus) {
+      case 'running':
+        return <Badge status="info">Import Running</Badge>;
+      case 'completed':
+        return <Badge status="success">Completed</Badge>;
+      case 'failed':
+        return <Badge status="critical">Failed</Badge>;
+      default:
+        return <Badge>Idle</Badge>;
+    }
+  };
+
+  return (
+    <Card>
+      <Card.Section>
+        <Stack alignment="center" distribution="equalSpacing">
+          <Stack vertical spacing="tight">
+            <h3>Import Status</h3>
+            {getStatusBadge(status.currentStatus)}
+          </Stack>
+
+          <Button
+            primary
+            loading={isLoading}
+            disabled={status.currentStatus === 'running'}
+            onClick={onTriggerImport}
+          >
+            Trigger Manual Import
+          </Button>
+        </Stack>
+      </Card.Section>
+
+      {status.currentStatus === 'running' && (
+        <Card.Section>
+          <Stack vertical spacing="tight">
+            <p>Import Progress</p>
+            <ProgressBar progress={status.progress || 0} />
+            <p style={{ fontSize: '0.875rem', color: '#637381' }}>
+              {status.currentStep || 'Processing...'}
+            </p>
+          </Stack>
+        </Card.Section>
+      )}
+
+      {status.lastImport && (
+        <Card.Section>
+          <Stack vertical spacing="tight">
+            <h4>Last Import Summary</h4>
+            <Stack distribution="equalSpacing">
+              <Stack vertical spacing="extraTight">
+                <p style={{ fontWeight: 'bold' }}>Products Updated</p>
+                <p>{status.lastImport.updated}</p>
+              </Stack>
+              <Stack vertical spacing="extraTight">
+                <p style={{ fontWeight: 'bold' }}>Products Failed</p>
+                <p>{status.lastImport.failed}</p>
+              </Stack>
+              <Stack vertical spacing="extraTight">
+                <p style={{ fontWeight: 'bold' }}>New Discounts</p>
+                <p>{status.lastImport.newDiscounts}</p>
+              </Stack>
+              <Stack vertical spacing="extraTight">
+                <p style={{ fontWeight: 'bold' }}>Updated Discounts</p>
+                <p>{status.lastImport.updatedDiscounts}</p>
+              </Stack>
+            </Stack>
+            <p style={{ fontSize: '0.875rem', color: '#637381' }}>
+              Last run: {new Date(status.lastImport.timestamp).toLocaleString()}
+            </p>
+          </Stack>
+        </Card.Section>
+      )}
+    </Card>
+  );
+}
+```
+
+**2.2 Real-time Status Hook**
+```typescript
+// hooks/usePricingStatus.ts
+import { useState, useEffect, useCallback } from 'react';
+import { useAppBridge } from '@shopify/app-bridge-react';
+
+export function usePricingStatus(shop: string, initialStatus: PricingStatus) {
+  const app = useAppBridge();
+  const [status, setStatus] = useState(initialStatus);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Poll for status updates when import is running
+  useEffect(() => {
+    if (status.currentStatus === 'running') {
+      const interval = setInterval(async () => {
+        try {
+          const response = await fetch('/api/pricing-feed/status');
+          const updatedStatus = await response.json();
+          setStatus(updatedStatus);
+
+          if (updatedStatus.currentStatus !== 'running') {
+            clearInterval(interval);
+          }
+        } catch (err) {
+          console.error('Failed to fetch status:', err);
+        }
+      }, 2000);
+
+      return () => clearInterval(interval);
+    }
+  }, [status.currentStatus]);
+
+  const triggerImport = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/pricing-feed/import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ shop }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Import failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      setStatus(prev => ({ ...prev, currentStatus: 'running', progress: 0 }));
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [shop]);
+
+  return { status, isLoading, error, triggerImport };
+}
+```
+
+**Phase 3: Error Management & Analytics (1 SP)**
+
+**3.1 Error Management Interface**
+```typescript
+// components/ErrorManagementCard.tsx
+import { Card, DataTable, Badge, Filters, Pagination } from '@shopify/polaris';
+import { useState, useMemo } from 'react';
+
+interface ErrorManagementCardProps {
+  errors: ValidationError[];
+}
+
+export function ErrorManagementCard({ errors }: ErrorManagementCardProps) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [errorTypeFilter, setErrorTypeFilter] = useState<string | null>(null);
+  const [searchValue, setSearchValue] = useState('');
+
+  const itemsPerPage = 10;
+
+  const filteredErrors = useMemo(() => {
+    return errors.filter(error => {
+      const matchesType = !errorTypeFilter || error.errorCode === errorTypeFilter;
+      const matchesSearch = !searchValue ||
+        error.ean.toLowerCase().includes(searchValue.toLowerCase()) ||
+        error.errorMessage.toLowerCase().includes(searchValue.toLowerCase());
+
+      return matchesType && matchesSearch;
+    });
+  }, [errors, errorTypeFilter, searchValue]);
+
+  const paginatedErrors = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredErrors.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredErrors, currentPage]);
+
+  const tableRows = paginatedErrors.map(error => [
+    error.ean,
+    <Badge status="critical">{error.errorCode.replace('_', ' ')}</Badge>,
+    error.errorMessage,
+    `€${error.currentPrice.toFixed(2)}`,
+    `€${error.newPrice.toFixed(2)}`,
+    `${error.discountPercentage.toFixed(1)}%`,
+  ]);
+
+  const errorTypeOptions = [
+    { label: 'All Types', value: null },
+    { label: 'Discount Too Large', value: 'discount_too_large' },
+    { label: 'Base Price Differs', value: 'base_price_differs' },
+    { label: 'Validation Fails', value: 'validation_fails' },
+  ];
+
+  return (
+    <Card>
+      <Card.Section>
+        <Filters
+          queryValue={searchValue}
+          filters={[
+            {
+              key: 'errorType',
+              label: 'Error Type',
+              filter: (
+                <Select
+                  options={errorTypeOptions}
+                  value={errorTypeFilter}
+                  onChange={setErrorTypeFilter}
+                />
+              ),
+            },
+          ]}
+          onQueryChange={setSearchValue}
+          onQueryClear={() => setSearchValue('')}
+          onClearAll={() => {
+            setSearchValue('');
+            setErrorTypeFilter(null);
+          }}
+        />
+      </Card.Section>
+
+      <DataTable
+        columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'numeric']}
+        headings={['EAN', 'Error Type', 'Message', 'Current Price', 'New Price', 'Discount %']}
+        rows={tableRows}
+      />
+
+      {filteredErrors.length > itemsPerPage && (
+        <Card.Section>
+          <Pagination
+            hasNext={currentPage * itemsPerPage < filteredErrors.length}
+            hasPrevious={currentPage > 1}
+            onNext={() => setCurrentPage(prev => prev + 1)}
+            onPrevious={() => setCurrentPage(prev => prev - 1)}
+          />
+        </Card.Section>
+      )}
+    </Card>
+  );
+}
+```
+
+**Phase 4: Configuration Management (1 SP)**
+
+**4.1 Validation Configuration Interface**
+```typescript
+// components/ValidationConfigCard.tsx
+import { Card, FormLayout, TextField, Checkbox, Button, Banner } from '@shopify/polaris';
+import { useState } from 'react';
+
+interface ValidationConfigCardProps {
+  config: ValidationConfig;
+  shop: string;
+}
+
+export function ValidationConfigCard({ config, shop }: ValidationConfigCardProps) {
+  const [formData, setFormData] = useState(config);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch('/api/pricing-feed/validation-config', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ shop, config: formData }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save configuration');
+      }
+
+      setSaveMessage('Configuration saved successfully');
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (error: any) {
+      setSaveMessage(`Error: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <Card.Section>
+        <FormLayout>
+          <h3>Validation Configuration</h3>
+
+          {saveMessage && (
+            <Banner
+              status={saveMessage.startsWith('Error') ? 'critical' : 'success'}
+              onDismiss={() => setSaveMessage(null)}
+            >
+              {saveMessage}
+            </Banner>
+          )}
+
+          <TextField
+            label="Maximum Discount Percentage"
+            type="number"
+            value={formData.maxDiscountPercentage.toString()}
+            onChange={(value) => setFormData(prev => ({
+              ...prev,
+              maxDiscountPercentage: parseFloat(value) || 0
+            }))}
+            suffix="%"
+            helpText="Products with discounts higher than this will be rejected"
+          />
+
+          <TextField
+            label="Base Price Tolerance"
+            type="number"
+            value={formData.basePriceTolerance.toString()}
+            onChange={(value) => setFormData(prev => ({
+              ...prev,
+              basePriceTolerance: parseFloat(value) || 0
+            }))}
+            suffix="%"
+            helpText="Allowed difference between current and new base prices"
+          />
+
+          <Checkbox
+            label="Enforce Base Price Matching"
+            checked={formData.enforceBasePriceMatch}
+            onChange={(checked) => setFormData(prev => ({
+              ...prev,
+              enforceBasePriceMatch: checked
+            }))}
+            helpText="Reject updates where base prices don't match within tolerance"
+          />
+
+          <TextField
+            label="Minimum Price Threshold"
+            type="number"
+            value={formData.minPriceThreshold.toString()}
+            onChange={(value) => setFormData(prev => ({
+              ...prev,
+              minPriceThreshold: parseFloat(value) || 0
+            }))}
+            prefix="€"
+            helpText="Minimum allowed product price"
+          />
+
+          <Button
+            primary
+            loading={isSaving}
+            onClick={handleSave}
+          >
+            Save Configuration
+          </Button>
+        </FormLayout>
+      </Card.Section>
+    </Card>
+  );
+}
+```
+
+**Dashboard Routes:**
+- `/app/pricing` - Main dashboard overview
+- `/app/pricing/errors` - Detailed error management
+- `/app/pricing/history` - Import history and analytics
+- `/app/pricing/config` - Validation configuration
+
+**Expected Outcome:** Professional embedded Shopify app dashboard providing complete pricing management interface with real-time status, error handling, and configuration controls.
 
 ### Sprint 25: Collection Sorting by Product Metafields (Planned - 6 SP)
 **Goal:** Implement automated collection sorting system based on product metafields, enabling intelligent product ordering across all collections.
