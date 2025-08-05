@@ -674,7 +674,7 @@ function DeliveryDatePicker() {
     // Apply delivery type specific limits
     const originalLength = filtered.length;
     if (deliveryType === 'DUTCHNED') {
-      filtered = filtered.slice(0, 14);
+      filtered = filtered.slice(0, maxDatesToShow);
       console.log(`🔍 [Date Filtering] DUTCHNED limit applied: ${originalLength} → ${filtered.length} dates (max 14)`);
     } else {
       filtered = filtered.slice(0, maxDatesToShow);

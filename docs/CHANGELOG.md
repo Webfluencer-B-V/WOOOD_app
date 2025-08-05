@@ -1175,28 +1175,35 @@ interface Env {
 **Expected Outcome:** Complete backend pricing feed integration with enterprise-grade validation, error handling, and notification systems ready for dashboard integration.
 
 ### Sprint 29: Omnia Pricing Dashboard & Management Interface (Planned - 4 SP)
-**Goal:** Implement embedded Shopify app dashboard for Omnia pricing management with real-time import status, manual controls, error management, and configuration interface.
+**Goal:** Implement embedded Shopify app dashboard for Omnia pricing management with real-time import status, manual controls, error management, and configuration interface using Shopify Polaris design system.
 
 **Technical Requirements:**
-- **Framework**: React with Shopify Polaris design system
+- **Framework**: React with Shopify Polaris design system (complete component library)
 - **Authentication**: Shopify App Bridge for embedded app experience
-- **Real-time Updates**: WebSocket or polling for live import status
-- **Data Visualization**: Charts and tables for pricing analytics
-- **Error Management**: Detailed error display with filtering and search
+- **Real-time Updates**: Polling-based status updates with Polaris loading states
+- **Data Visualization**: Polaris DataTable, ProgressBar, and Badge components
+- **Error Management**: Polaris Filters, Pagination, and Banner components
 
-**Phase 1: Dashboard Foundation & Authentication (1 SP)**
+**Phase 1: Dashboard Foundation & Polaris Setup (1 SP)**
 
-**1.1 App Bridge Integration**
+**1.1 Polaris App Structure**
 ```typescript
 // app/routes/app.pricing.tsx
-import { useLoaderData, useNavigate } from '@remix-run/react';
+import { useLoaderData } from '@remix-run/react';
 import { authenticate } from '~/shopify.server';
+import {
+  Page,
+  Layout,
+  Card,
+  Banner,
+  Spinner,
+  EmptyState
+} from '@shopify/polaris';
 import { PricingDashboard } from '~/components/PricingDashboard';
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
 
-  // Fetch initial pricing data
   const pricingStatus = await fetchPricingStatus(session.shop);
   const validationConfig = await fetchValidationConfig(session.shop);
 
@@ -1210,6 +1217,24 @@ export async function loader({ request }: LoaderFunctionArgs) {
 export default function PricingPage() {
   const { shop, pricingStatus, validationConfig } = useLoaderData<typeof loader>();
 
+  if (!pricingStatus) {
+    return (
+      <Page title="Omnia Pricing Management">
+        <Layout>
+          <Layout.Section>
+            <Card>
+              <Card.Section>
+                <div style={{ textAlign: 'center', padding: '2rem' }}>
+                  <Spinner size="large" />
+                </div>
+              </Card.Section>
+            </Card>
+          </Layout.Section>
+        </Layout>
+      </Page>
+    );
+  }
+
   return (
     <PricingDashboard
       shop={shop}
@@ -1220,74 +1245,152 @@ export default function PricingPage() {
 }
 ```
 
-**1.2 Real-time Status Component**
+**1.2 Main Dashboard with Polaris Layout**
 ```typescript
 // components/PricingDashboard.tsx
-import { useState, useEffect } from 'react';
-import { Card, Page, Layout, Button, Badge, DataTable } from '@shopify/polaris';
-import { usePricingStatus } from '~/hooks/usePricingStatus';
-
-interface PricingDashboardProps {
-  shop: string;
-  initialStatus: PricingStatus;
-  initialConfig: ValidationConfig;
-}
+import { useState } from 'react';
+import {
+  Page,
+  Layout,
+  Card,
+  Banner,
+  Divider,
+  PageActions,
+  Button
+} from '@shopify/polaris';
+import {
+  ImportStatusCard,
+  ValidationConfigCard,
+  ImportHistoryCard,
+  ErrorManagementCard
+} from './pricing';
 
 export function PricingDashboard({ shop, initialStatus, initialConfig }: PricingDashboardProps) {
   const { status, isLoading, triggerImport, error } = usePricingStatus(shop, initialStatus);
-  const [showErrors, setShowErrors] = useState(false);
+  const [activeTab, setActiveTab] = useState(0);
+
+  const tabs = [
+    { id: 'overview', content: 'Overview' },
+    { id: 'errors', content: 'Error Management' },
+    { id: 'history', content: 'Import History' },
+    { id: 'config', content: 'Configuration' },
+  ];
 
   return (
-    <Page title="Omnia Pricing Management">
+    <Page
+      title="Omnia Pricing Management"
+      subtitle="Automated pricing feed integration with real-time status monitoring"
+      primaryAction={{
+        content: 'Manual Import',
+        onAction: triggerImport,
+        loading: isLoading,
+        disabled: status.currentStatus === 'running',
+      }}
+      secondaryActions={[
+        {
+          content: 'View Logs',
+          onAction: () => window.open('/api/pricing-feed/logs', '_blank'),
+        },
+        {
+          content: 'Download Report',
+          onAction: () => downloadLatestReport(shop),
+        },
+      ]}
+    >
       <Layout>
-        <Layout.Section>
-          <ImportStatusCard status={status} onTriggerImport={triggerImport} isLoading={isLoading} />
-        </Layout.Section>
-
-        <Layout.Section secondary>
-          <ValidationConfigCard config={initialConfig} shop={shop} />
-        </Layout.Section>
-
-        <Layout.Section>
-          <ImportHistoryCard history={status.history} />
-        </Layout.Section>
-
-        {status.lastImport?.errors && status.lastImport.errors.length > 0 && (
+        {error && (
           <Layout.Section>
-            <ErrorManagementCard errors={status.lastImport.errors} />
+            <Banner status="critical" onDismiss={() => setError(null)}>
+              <p>{error}</p>
+            </Banner>
           </Layout.Section>
         )}
+
+        <Layout.Section>
+          <Card>
+            <Tabs tabs={tabs} selected={activeTab} onSelect={setActiveTab}>
+              <Card.Section>
+                {activeTab === 0 && (
+                  <Layout>
+                    <Layout.Section oneHalf>
+                      <ImportStatusCard
+                        status={status}
+                        onTriggerImport={triggerImport}
+                        isLoading={isLoading}
+                      />
+                    </Layout.Section>
+                    <Layout.Section oneHalf>
+                      <QuickStatsCard status={status} />
+                    </Layout.Section>
+                  </Layout>
+                )}
+
+                {activeTab === 1 && (
+                  <ErrorManagementCard errors={status.lastImport?.errors || []} />
+                )}
+
+                {activeTab === 2 && (
+                  <ImportHistoryCard history={status.history || []} />
+                )}
+
+                {activeTab === 3 && (
+                  <ValidationConfigCard config={initialConfig} shop={shop} />
+                )}
+              </Card.Section>
+            </Tabs>
+          </Card>
+        </Layout.Section>
       </Layout>
     </Page>
   );
 }
 ```
 
-**Phase 2: Import Controls & Status Display (1 SP)**
+**Phase 2: Import Status with Polaris Components (1 SP)**
 
-**2.1 Import Status Card**
+**2.1 Enhanced Import Status Card**
 ```typescript
 // components/ImportStatusCard.tsx
-import { Card, Button, Badge, Stack, TextContainer, ProgressBar } from '@shopify/polaris';
-
-interface ImportStatusCardProps {
-  status: PricingStatus;
-  onTriggerImport: () => void;
-  isLoading: boolean;
-}
+import {
+  Card,
+  Button,
+  Badge,
+  Stack,
+  TextContainer,
+  ProgressBar,
+  DisplayText,
+  Heading,
+  TextStyle,
+  Icon,
+  Tooltip,
+  ButtonGroup
+} from '@shopify/polaris';
+import {
+  PlayMajor,
+  RefreshMajor,
+  ExportMinor,
+  AlertTriangleIcon
+} from '@shopify/polaris-icons';
 
 export function ImportStatusCard({ status, onTriggerImport, isLoading }: ImportStatusCardProps) {
   const getStatusBadge = (importStatus: string) => {
-    switch (importStatus) {
-      case 'running':
-        return <Badge status="info">Import Running</Badge>;
-      case 'completed':
-        return <Badge status="success">Completed</Badge>;
-      case 'failed':
-        return <Badge status="critical">Failed</Badge>;
-      default:
-        return <Badge>Idle</Badge>;
-    }
+    const statusConfig = {
+      running: { status: 'info', content: 'Import Running', icon: PlayMajor },
+      completed: { status: 'success', content: 'Completed', icon: CheckIcon },
+      failed: { status: 'critical', content: 'Failed', icon: AlertTriangleIcon },
+      idle: { status: 'subdued', content: 'Idle', icon: null },
+    };
+
+    const config = statusConfig[importStatus] || statusConfig.idle;
+
+    return (
+      <Badge status={config.status}>
+        <Stack spacing="extraTight" alignment="center">
+          {config.icon && <Icon source={config.icon} />}
+          <span>{config.content}</span>
+        </Stack>
+      </Badge>
+    );
   };
 
   return (
@@ -1295,150 +1398,260 @@ export function ImportStatusCard({ status, onTriggerImport, isLoading }: ImportS
       <Card.Section>
         <Stack alignment="center" distribution="equalSpacing">
           <Stack vertical spacing="tight">
-            <h3>Import Status</h3>
+            <Heading>Import Status</Heading>
             {getStatusBadge(status.currentStatus)}
+            {status.lastImport && (
+              <TextStyle variation="subdued">
+                Last run: {new Date(status.lastImport.timestamp).toLocaleString()}
+              </TextStyle>
+            )}
           </Stack>
 
-          <Button
-            primary
-            loading={isLoading}
-            disabled={status.currentStatus === 'running'}
-            onClick={onTriggerImport}
-          >
-            Trigger Manual Import
-          </Button>
+          <ButtonGroup>
+            <Tooltip content="Trigger manual import">
+              <Button
+                primary
+                icon={RefreshMajor}
+                loading={isLoading}
+                disabled={status.currentStatus === 'running'}
+                onClick={onTriggerImport}
+              >
+                Manual Import
+              </Button>
+            </Tooltip>
+
+            <Tooltip content="Export last import report">
+              <Button
+                icon={ExportMinor}
+                disabled={!status.lastImport}
+                onClick={() => exportImportReport(status.lastImport)}
+              >
+                Export Report
+              </Button>
+            </Tooltip>
+          </ButtonGroup>
         </Stack>
       </Card.Section>
 
       {status.currentStatus === 'running' && (
-        <Card.Section>
-          <Stack vertical spacing="tight">
-            <p>Import Progress</p>
-            <ProgressBar progress={status.progress || 0} />
-            <p style={{ fontSize: '0.875rem', color: '#637381' }}>
-              {status.currentStep || 'Processing...'}
-            </p>
-          </Stack>
-        </Card.Section>
+        <>
+          <Card.Section>
+            <Stack vertical spacing="tight">
+              <TextContainer>
+                <Heading element="h4">Import Progress</Heading>
+                <ProgressBar progress={status.progress || 0} />
+              </TextContainer>
+
+              <Stack distribution="equalSpacing">
+                <TextStyle variation="subdued">
+                  {status.currentStep || 'Initializing...'}
+                </TextStyle>
+                <TextStyle variation="subdued">
+                  {Math.round(status.progress || 0)}% complete
+                </TextStyle>
+              </Stack>
+            </Stack>
+          </Card.Section>
+        </>
       )}
 
       {status.lastImport && (
-        <Card.Section>
-          <Stack vertical spacing="tight">
-            <h4>Last Import Summary</h4>
-            <Stack distribution="equalSpacing">
-              <Stack vertical spacing="extraTight">
-                <p style={{ fontWeight: 'bold' }}>Products Updated</p>
-                <p>{status.lastImport.updated}</p>
-              </Stack>
-              <Stack vertical spacing="extraTight">
-                <p style={{ fontWeight: 'bold' }}>Products Failed</p>
-                <p>{status.lastImport.failed}</p>
-              </Stack>
-              <Stack vertical spacing="extraTight">
-                <p style={{ fontWeight: 'bold' }}>New Discounts</p>
-                <p>{status.lastImport.newDiscounts}</p>
-              </Stack>
-              <Stack vertical spacing="extraTight">
-                <p style={{ fontWeight: 'bold' }}>Updated Discounts</p>
-                <p>{status.lastImport.updatedDiscounts}</p>
-              </Stack>
+        <>
+          <Card.Section>
+            <Divider />
+          </Card.Section>
+
+          <Card.Section>
+            <Stack vertical spacing="tight">
+              <Heading element="h4">Last Import Summary</Heading>
+
+              <Layout>
+                <Layout.Section oneQuarter>
+                  <Card sectioned>
+                    <Stack vertical spacing="extraTight" alignment="center">
+                      <DisplayText size="medium">{status.lastImport.updated}</DisplayText>
+                      <TextStyle variation="subdued">Products Updated</TextStyle>
+                    </Stack>
+                  </Card>
+                </Layout.Section>
+
+                <Layout.Section oneQuarter>
+                  <Card sectioned>
+                    <Stack vertical spacing="extraTight" alignment="center">
+                      <DisplayText size="medium">{status.lastImport.failed}</DisplayText>
+                      <TextStyle variation="subdued">Products Failed</TextStyle>
+                    </Stack>
+                  </Card>
+                </Layout.Section>
+
+                <Layout.Section oneQuarter>
+                  <Card sectioned>
+                    <Stack vertical spacing="extraTight" alignment="center">
+                      <DisplayText size="medium">{status.lastImport.newDiscounts}</DisplayText>
+                      <TextStyle variation="subdued">New Discounts</TextStyle>
+                    </Stack>
+                  </Card>
+                </Layout.Section>
+
+                <Layout.Section oneQuarter>
+                  <Card sectioned>
+                    <Stack vertical spacing="extraTight" alignment="center">
+                      <DisplayText size="medium">{status.lastImport.updatedDiscounts}</DisplayText>
+                      <TextStyle variation="subdued">Updated Discounts</TextStyle>
+                    </Stack>
+                  </Card>
+                </Layout.Section>
+              </Layout>
+
+              {status.lastImport.errors && status.lastImport.errors.length > 0 && (
+                <Banner status="warning">
+                  <p>
+                    {status.lastImport.errors.length} validation errors occurred during the last import.
+                    <Button plain onClick={() => setActiveTab(1)}>
+                      View errors
+                    </Button>
+                  </p>
+                </Banner>
+              )}
             </Stack>
-            <p style={{ fontSize: '0.875rem', color: '#637381' }}>
-              Last run: {new Date(status.lastImport.timestamp).toLocaleString()}
-            </p>
-          </Stack>
-        </Card.Section>
+          </Card.Section>
+        </>
       )}
     </Card>
   );
 }
 ```
 
-**2.2 Real-time Status Hook**
+**2.2 Quick Stats Card with Polaris Metrics**
 ```typescript
-// hooks/usePricingStatus.ts
-import { useState, useEffect, useCallback } from 'react';
-import { useAppBridge } from '@shopify/app-bridge-react';
+// components/QuickStatsCard.tsx
+import {
+  Card,
+  Stack,
+  DisplayText,
+  TextStyle,
+  Heading,
+  DescriptionList,
+  Icon
+} from '@shopify/polaris';
+import {
+  ProductsMinor,
+  AnalyticsMajor,
+  CalendarMinor,
+  AlertTriangleIcon
+} from '@shopify/polaris-icons';
 
-export function usePricingStatus(shop: string, initialStatus: PricingStatus) {
-  const app = useAppBridge();
-  const [status, setStatus] = useState(initialStatus);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function QuickStatsCard({ status }: { status: PricingStatus }) {
+  const stats = calculatePricingStats(status);
 
-  // Poll for status updates when import is running
-  useEffect(() => {
-    if (status.currentStatus === 'running') {
-      const interval = setInterval(async () => {
-        try {
-          const response = await fetch('/api/pricing-feed/status');
-          const updatedStatus = await response.json();
-          setStatus(updatedStatus);
-
-          if (updatedStatus.currentStatus !== 'running') {
-            clearInterval(interval);
-          }
-        } catch (err) {
-          console.error('Failed to fetch status:', err);
-        }
-      }, 2000);
-
-      return () => clearInterval(interval);
-    }
-  }, [status.currentStatus]);
-
-  const triggerImport = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/pricing-feed/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ shop }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Import failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      setStatus(prev => ({ ...prev, currentStatus: 'running', progress: 0 }));
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [shop]);
-
-  return { status, isLoading, error, triggerImport };
+  return (
+    <Card title="Quick Statistics">
+      <Card.Section>
+        <Stack vertical spacing="loose">
+          <DescriptionList
+            items={[
+              {
+                term: (
+                  <Stack spacing="extraTight" alignment="center">
+                    <Icon source={ProductsMinor} />
+                    <span>Total Products</span>
+                  </Stack>
+                ),
+                description: (
+                  <DisplayText size="small">
+                    {stats.totalProducts.toLocaleString()}
+                  </DisplayText>
+                ),
+              },
+              {
+                term: (
+                  <Stack spacing="extraTight" alignment="center">
+                    <Icon source={AnalyticsMajor} />
+                    <span>Success Rate</span>
+                  </Stack>
+                ),
+                description: (
+                  <DisplayText size="small">
+                    {stats.successRate.toFixed(1)}%
+                  </DisplayText>
+                ),
+              },
+              {
+                term: (
+                  <Stack spacing="extraTight" alignment="center">
+                    <Icon source={CalendarMinor} />
+                    <span>Next Scheduled</span>
+                  </Stack>
+                ),
+                description: (
+                  <TextStyle variation="subdued">
+                    {stats.nextScheduled}
+                  </TextStyle>
+                ),
+              },
+              {
+                term: (
+                  <Stack spacing="extraTight" alignment="center">
+                    <Icon source={AlertTriangleIcon} />
+                    <span>Recent Errors</span>
+                  </Stack>
+                ),
+                description: (
+                  <DisplayText size="small">
+                    {stats.recentErrors}
+                  </DisplayText>
+                ),
+              },
+            ]}
+          />
+        </Stack>
+      </Card.Section>
+    </Card>
+  );
 }
 ```
 
-**Phase 3: Error Management & Analytics (1 SP)**
+**Phase 3: Advanced Error Management with Polaris (1 SP)**
 
-**3.1 Error Management Interface**
+**3.1 Comprehensive Error Management Interface**
 ```typescript
 // components/ErrorManagementCard.tsx
-import { Card, DataTable, Badge, Filters, Pagination } from '@shopify/polaris';
-import { useState, useMemo } from 'react';
-
-interface ErrorManagementCardProps {
-  errors: ValidationError[];
-}
+import {
+  Card,
+  DataTable,
+  Badge,
+  Filters,
+  Pagination,
+  Select,
+  TextField,
+  Button,
+  ButtonGroup,
+  Stack,
+  Heading,
+  TextStyle,
+  Banner,
+  Modal,
+  Scrollable,
+  EmptyState
+} from '@shopify/polaris';
+import {
+  SearchMinor,
+  ExportMinor,
+  FilterMajor
+} from '@shopify/polaris-icons';
 
 export function ErrorManagementCard({ errors }: ErrorManagementCardProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [errorTypeFilter, setErrorTypeFilter] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState('');
+  const [sortValue, setSortValue] = useState('timestamp_desc');
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [selectedError, setSelectedError] = useState<ValidationError | null>(null);
 
-  const itemsPerPage = 10;
+  const itemsPerPage = 15;
 
-  const filteredErrors = useMemo(() => {
-    return errors.filter(error => {
+  const filteredAndSortedErrors = useMemo(() => {
+    let filtered = errors.filter(error => {
       const matchesType = !errorTypeFilter || error.errorCode === errorTypeFilter;
       const matchesSearch = !searchValue ||
         error.ean.toLowerCase().includes(searchValue.toLowerCase()) ||
@@ -1446,114 +1659,299 @@ export function ErrorManagementCard({ errors }: ErrorManagementCardProps) {
 
       return matchesType && matchesSearch;
     });
-  }, [errors, errorTypeFilter, searchValue]);
+
+    // Sort errors
+    const [sortKey, sortDirection] = sortValue.split('_');
+    filtered.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortKey) {
+        case 'discount':
+          comparison = a.discountPercentage - b.discountPercentage;
+          break;
+        case 'price':
+          comparison = a.newPrice - b.newPrice;
+          break;
+        case 'ean':
+          comparison = a.ean.localeCompare(b.ean);
+          break;
+        default:
+          comparison = 0;
+      }
+
+      return sortDirection === 'desc' ? -comparison : comparison;
+    });
+
+    return filtered;
+  }, [errors, errorTypeFilter, searchValue, sortValue]);
 
   const paginatedErrors = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredErrors.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredErrors, currentPage]);
+    return filteredAndSortedErrors.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredAndSortedErrors, currentPage]);
 
-  const tableRows = paginatedErrors.map(error => [
+  const tableRows = paginatedErrors.map((error, index) => [
     error.ean,
-    <Badge status="critical">{error.errorCode.replace('_', ' ')}</Badge>,
+    <Badge
+      status="critical"
+      onClick={() => {
+        setSelectedError(error);
+        setShowErrorModal(true);
+      }}
+    >
+      {error.errorCode.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+    </Badge>,
     error.errorMessage,
     `€${error.currentPrice.toFixed(2)}`,
     `€${error.newPrice.toFixed(2)}`,
     `${error.discountPercentage.toFixed(1)}%`,
+    <ButtonGroup>
+      <Button
+        size="slim"
+        onClick={() => viewProductDetails(error.productId)}
+      >
+        View Product
+      </Button>
+      <Button
+        size="slim"
+        onClick={() => retryProduct(error.productId)}
+      >
+        Retry
+      </Button>
+    </ButtonGroup>,
   ]);
 
   const errorTypeOptions = [
-    { label: 'All Types', value: null },
+    { label: 'All Error Types', value: '' },
     { label: 'Discount Too Large', value: 'discount_too_large' },
     { label: 'Base Price Differs', value: 'base_price_differs' },
     { label: 'Validation Fails', value: 'validation_fails' },
   ];
 
+  const sortOptions = [
+    { label: 'Newest First', value: 'timestamp_desc' },
+    { label: 'Oldest First', value: 'timestamp_asc' },
+    { label: 'Highest Discount', value: 'discount_desc' },
+    { label: 'Lowest Discount', value: 'discount_asc' },
+    { label: 'Highest Price', value: 'price_desc' },
+    { label: 'Lowest Price', value: 'price_asc' },
+  ];
+
+  if (errors.length === 0) {
+    return (
+      <Card>
+        <Card.Section>
+          <EmptyState
+            heading="No validation errors"
+            image="https://cdn.shopify.com/s/files/1/0757/9955/files/empty-state.svg"
+          >
+            <p>All products passed validation in the last import.</p>
+          </EmptyState>
+        </Card.Section>
+      </Card>
+    );
+  }
+
   return (
-    <Card>
-      <Card.Section>
-        <Filters
-          queryValue={searchValue}
-          filters={[
+    <>
+      <Card>
+        <Card.Section>
+          <Stack vertical spacing="loose">
+            <Stack alignment="center" distribution="equalSpacing">
+              <Heading>Error Management</Heading>
+              <ButtonGroup>
+                <Button
+                  icon={ExportMinor}
+                  onClick={() => exportErrors(filteredAndSortedErrors)}
+                >
+                  Export Errors
+                </Button>
+                <Button
+                  primary
+                  onClick={() => retryAllErrors(filteredAndSortedErrors)}
+                >
+                  Retry All
+                </Button>
+              </ButtonGroup>
+            </Stack>
+
+            <Banner status="info">
+              <p>
+                Showing {filteredAndSortedErrors.length} of {errors.length} errors.
+                Products with validation errors are not updated and require manual review.
+              </p>
+            </Banner>
+
+            <Filters
+              queryValue={searchValue}
+              queryPlaceholder="Search by EAN or error message"
+              filters={[
+                {
+                  key: 'errorType',
+                  label: 'Error Type',
+                  filter: (
+                    <Select
+                      options={errorTypeOptions}
+                      value={errorTypeFilter || ''}
+                      onChange={setErrorTypeFilter}
+                    />
+                  ),
+                },
+                {
+                  key: 'sort',
+                  label: 'Sort by',
+                  filter: (
+                    <Select
+                      options={sortOptions}
+                      value={sortValue}
+                      onChange={setSortValue}
+                    />
+                  ),
+                },
+              ]}
+              onQueryChange={setSearchValue}
+              onQueryClear={() => setSearchValue('')}
+              onClearAll={() => {
+                setSearchValue('');
+                setErrorTypeFilter('');
+                setSortValue('timestamp_desc');
+              }}
+            />
+          </Stack>
+        </Card.Section>
+
+        <DataTable
+          columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'numeric', 'text']}
+          headings={['EAN', 'Error Type', 'Message', 'Current Price', 'New Price', 'Discount %', 'Actions']}
+          rows={tableRows}
+          sortable={[false, true, false, true, true, true, false]}
+          defaultSortDirection="descending"
+          initialSortColumnIndex={1}
+        />
+
+        {filteredAndSortedErrors.length > itemsPerPage && (
+          <Card.Section>
+            <Stack alignment="center">
+              <Pagination
+                hasNext={currentPage * itemsPerPage < filteredAndSortedErrors.length}
+                hasPrevious={currentPage > 1}
+                onNext={() => setCurrentPage(prev => prev + 1)}
+                onPrevious={() => setCurrentPage(prev => prev - 1)}
+              />
+              <TextStyle variation="subdued">
+                Page {currentPage} of {Math.ceil(filteredAndSortedErrors.length / itemsPerPage)}
+              </TextStyle>
+            </Stack>
+          </Card.Section>
+        )}
+      </Card>
+
+      {selectedError && (
+        <Modal
+          open={showErrorModal}
+          onClose={() => setShowErrorModal(false)}
+          title="Error Details"
+          primaryAction={{
+            content: 'View Product',
+            onAction: () => viewProductDetails(selectedError.productId),
+          }}
+          secondaryActions={[
             {
-              key: 'errorType',
-              label: 'Error Type',
-              filter: (
-                <Select
-                  options={errorTypeOptions}
-                  value={errorTypeFilter}
-                  onChange={setErrorTypeFilter}
-                />
-              ),
+              content: 'Retry Product',
+              onAction: () => retryProduct(selectedError.productId),
             },
           ]}
-          onQueryChange={setSearchValue}
-          onQueryClear={() => setSearchValue('')}
-          onClearAll={() => {
-            setSearchValue('');
-            setErrorTypeFilter(null);
-          }}
-        />
-      </Card.Section>
-
-      <DataTable
-        columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'numeric']}
-        headings={['EAN', 'Error Type', 'Message', 'Current Price', 'New Price', 'Discount %']}
-        rows={tableRows}
-      />
-
-      {filteredErrors.length > itemsPerPage && (
-        <Card.Section>
-          <Pagination
-            hasNext={currentPage * itemsPerPage < filteredErrors.length}
-            hasPrevious={currentPage > 1}
-            onNext={() => setCurrentPage(prev => prev + 1)}
-            onPrevious={() => setCurrentPage(prev => prev - 1)}
-          />
-        </Card.Section>
+        >
+          <Modal.Section>
+            <Scrollable style={{height: '300px'}}>
+              <Stack vertical spacing="loose">
+                <DescriptionList
+                  items={[
+                    { term: 'EAN Code', description: selectedError.ean },
+                    { term: 'Error Type', description: selectedError.errorCode },
+                    { term: 'Error Message', description: selectedError.errorMessage },
+                    { term: 'Current Price', description: `€${selectedError.currentPrice.toFixed(2)}` },
+                    { term: 'New Price', description: `€${selectedError.newPrice.toFixed(2)}` },
+                    { term: 'Discount Percentage', description: `${selectedError.discountPercentage.toFixed(1)}%` },
+                  ]}
+                />
+              </Stack>
+            </Scrollable>
+          </Modal.Section>
+        </Modal>
       )}
-    </Card>
+    </>
   );
 }
 ```
 
-**Phase 4: Configuration Management (1 SP)**
+**Phase 4: Configuration Management with Polaris Forms (1 SP)**
 
-**4.1 Validation Configuration Interface**
+**4.1 Advanced Configuration Interface**
 ```typescript
 // components/ValidationConfigCard.tsx
-import { Card, FormLayout, TextField, Checkbox, Button, Banner } from '@shopify/polaris';
-import { useState } from 'react';
-
-interface ValidationConfigCardProps {
-  config: ValidationConfig;
-  shop: string;
-}
+import {
+  Card,
+  FormLayout,
+  TextField,
+  Checkbox,
+  Button,
+  Banner,
+  Stack,
+  Heading,
+  TextStyle,
+  RangeSlider,
+  Select,
+  Collapsible,
+  Link,
+  Tooltip,
+  Icon
+} from '@shopify/polaris';
+import { QuestionMarkInverseMinor } from '@shopify/polaris-icons';
 
 export function ValidationConfigCard({ config, shop }: ValidationConfigCardProps) {
   const [formData, setFormData] = useState(config);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (formData.maxDiscountPercentage < 0 || formData.maxDiscountPercentage > 100) {
+      newErrors.maxDiscountPercentage = 'Discount percentage must be between 0 and 100';
+    }
+
+    if (formData.basePriceTolerance < 0 || formData.basePriceTolerance > 50) {
+      newErrors.basePriceTolerance = 'Base price tolerance must be between 0 and 50%';
+    }
+
+    if (formData.minPriceThreshold < 0) {
+      newErrors.minPriceThreshold = 'Minimum price threshold cannot be negative';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSave = async () => {
+    if (!validateForm()) return;
+
     setIsSaving(true);
     setSaveMessage(null);
 
     try {
       const response = await fetch('/api/pricing-feed/validation-config', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shop, config: formData }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to save configuration');
-      }
+      if (!response.ok) throw new Error('Failed to save configuration');
 
       setSaveMessage('Configuration saved successfully');
-      setTimeout(() => setSaveMessage(null), 3000);
+      setTimeout(() => setSaveMessage(null), 5000);
     } catch (error: any) {
       setSaveMessage(`Error: ${error.message}`);
     } finally {
@@ -1561,11 +1959,23 @@ export function ValidationConfigCard({ config, shop }: ValidationConfigCardProps
     }
   };
 
+  const discountPresetOptions = [
+    { label: 'Conservative (70%)', value: '70' },
+    { label: 'Standard (90%)', value: '90' },
+    { label: 'Aggressive (95%)', value: '95' },
+    { label: 'Custom', value: 'custom' },
+  ];
+
   return (
     <Card>
       <Card.Section>
-        <FormLayout>
-          <h3>Validation Configuration</h3>
+        <Stack vertical spacing="loose">
+          <Stack alignment="center" distribution="equalSpacing">
+            <Heading>Validation Configuration</Heading>
+            <Link onClick={() => setShowAdvanced(!showAdvanced)}>
+              {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+            </Link>
+          </Stack>
 
           {saveMessage && (
             <Banner
@@ -1576,73 +1986,158 @@ export function ValidationConfigCard({ config, shop }: ValidationConfigCardProps
             </Banner>
           )}
 
-          <TextField
-            label="Maximum Discount Percentage"
-            type="number"
-            value={formData.maxDiscountPercentage.toString()}
-            onChange={(value) => setFormData(prev => ({
-              ...prev,
-              maxDiscountPercentage: parseFloat(value) || 0
-            }))}
-            suffix="%"
-            helpText="Products with discounts higher than this will be rejected"
-          />
+          <FormLayout>
+            <FormLayout.Group>
+              <Stack spacing="tight" alignment="center">
+                <TextField
+                  label="Maximum Discount Percentage"
+                  type="number"
+                  value={formData.maxDiscountPercentage.toString()}
+                  onChange={(value) => setFormData(prev => ({
+                    ...prev,
+                    maxDiscountPercentage: parseFloat(value) || 0
+                  }))}
+                  suffix="%"
+                  error={errors.maxDiscountPercentage}
+                  helpText="Products with discounts higher than this will be rejected"
+                />
+                <Tooltip content="This prevents unrealistic discounts that might indicate data errors">
+                  <Icon source={QuestionMarkInverseMinor} />
+                </Tooltip>
+              </Stack>
 
-          <TextField
-            label="Base Price Tolerance"
-            type="number"
-            value={formData.basePriceTolerance.toString()}
-            onChange={(value) => setFormData(prev => ({
-              ...prev,
-              basePriceTolerance: parseFloat(value) || 0
-            }))}
-            suffix="%"
-            helpText="Allowed difference between current and new base prices"
-          />
+              <Select
+                label="Discount Preset"
+                options={discountPresetOptions}
+                value={formData.maxDiscountPercentage.toString()}
+                onChange={(value) => {
+                  if (value !== 'custom') {
+                    setFormData(prev => ({
+                      ...prev,
+                      maxDiscountPercentage: parseFloat(value)
+                    }));
+                  }
+                }}
+              />
+            </FormLayout.Group>
 
-          <Checkbox
-            label="Enforce Base Price Matching"
-            checked={formData.enforceBasePriceMatch}
-            onChange={(checked) => setFormData(prev => ({
-              ...prev,
-              enforceBasePriceMatch: checked
-            }))}
-            helpText="Reject updates where base prices don't match within tolerance"
-          />
+            <RangeSlider
+              label="Maximum Discount Percentage (Visual)"
+              value={formData.maxDiscountPercentage}
+              onChange={(value) => setFormData(prev => ({
+                ...prev,
+                maxDiscountPercentage: value
+              }))}
+              output
+              min={0}
+              max={100}
+              step={5}
+            />
 
-          <TextField
-            label="Minimum Price Threshold"
-            type="number"
-            value={formData.minPriceThreshold.toString()}
-            onChange={(value) => setFormData(prev => ({
-              ...prev,
-              minPriceThreshold: parseFloat(value) || 0
-            }))}
-            prefix="€"
-            helpText="Minimum allowed product price"
-          />
+            <FormLayout.Group>
+              <TextField
+                label="Base Price Tolerance"
+                type="number"
+                value={formData.basePriceTolerance.toString()}
+                onChange={(value) => setFormData(prev => ({
+                  ...prev,
+                  basePriceTolerance: parseFloat(value) || 0
+                }))}
+                suffix="%"
+                error={errors.basePriceTolerance}
+                helpText="Allowed difference between current and new base prices"
+              />
 
-          <Button
-            primary
-            loading={isSaving}
-            onClick={handleSave}
-          >
-            Save Configuration
-          </Button>
-        </FormLayout>
+              <Checkbox
+                label="Enforce Base Price Matching"
+                checked={formData.enforceBasePriceMatch}
+                onChange={(checked) => setFormData(prev => ({
+                  ...prev,
+                  enforceBasePriceMatch: checked
+                }))}
+                helpText="Reject updates where base prices don't match within tolerance"
+              />
+            </FormLayout.Group>
+
+            <Collapsible
+              open={showAdvanced}
+              id="advanced-settings"
+              transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
+            >
+              <Stack vertical spacing="loose">
+                <Heading element="h4">Advanced Settings</Heading>
+
+                <FormLayout.Group>
+                  <TextField
+                    label="Minimum Price Threshold"
+                    type="number"
+                    value={formData.minPriceThreshold.toString()}
+                    onChange={(value) => setFormData(prev => ({
+                      ...prev,
+                      minPriceThreshold: parseFloat(value) || 0
+                    }))}
+                    prefix="€"
+                    error={errors.minPriceThreshold}
+                    helpText="Minimum allowed product price"
+                  />
+
+                  <TextField
+                    label="Maximum Price Threshold"
+                    type="number"
+                    value={formData.maxPriceThreshold.toString()}
+                    onChange={(value) => setFormData(prev => ({
+                      ...prev,
+                      maxPriceThreshold: parseFloat(value) || 0
+                    }))}
+                    prefix="€"
+                    helpText="Maximum allowed product price"
+                  />
+                </FormLayout.Group>
+
+                <Checkbox
+                  label="Enable Strict Validation Mode"
+                  checked={formData.strictMode || false}
+                  onChange={(checked) => setFormData(prev => ({
+                    ...prev,
+                    strictMode: checked
+                  }))}
+                  helpText="Apply additional validation rules for data consistency"
+                />
+              </Stack>
+            </Collapsible>
+
+            <Stack distribution="trailing">
+              <ButtonGroup>
+                <Button onClick={() => setFormData(config)}>
+                  Reset to Default
+                </Button>
+                <Button
+                  primary
+                  loading={isSaving}
+                  onClick={handleSave}
+                  disabled={Object.keys(errors).length > 0}
+                >
+                  Save Configuration
+                </Button>
+              </ButtonGroup>
+            </Stack>
+          </FormLayout>
+        </Stack>
       </Card.Section>
     </Card>
   );
 }
 ```
 
-**Dashboard Routes:**
-- `/app/pricing` - Main dashboard overview
-- `/app/pricing/errors` - Detailed error management
-- `/app/pricing/history` - Import history and analytics
-- `/app/pricing/config` - Validation configuration
+**Complete Polaris Component Integration:**
+- **Layout & Navigation**: Page, Layout, Card, Tabs for organized content structure
+- **Data Display**: DataTable, Badge, DisplayText, DescriptionList for clear information presentation
+- **Form Controls**: TextField, Checkbox, Select, RangeSlider, ButtonGroup for user interactions
+- **Feedback**: Banner, Modal, Tooltip, ProgressBar for user feedback and guidance
+- **Actions**: Button, Pagination, Filters for user actions and navigation
+- **Visual Elements**: Icon, Divider, EmptyState for enhanced visual hierarchy
 
-**Expected Outcome:** Professional embedded Shopify app dashboard providing complete pricing management interface with real-time status, error handling, and configuration controls.
+**Expected Outcome:** Professional embedded Shopify app dashboard fully leveraging Polaris design system for consistent, accessible, and beautiful user interface matching Shopify's design standards.
 
 ### Sprint 25: Collection Sorting by Product Metafields (Planned - 6 SP)
 **Goal:** Implement automated collection sorting system based on product metafields, enabling intelligent product ordering across all collections.
