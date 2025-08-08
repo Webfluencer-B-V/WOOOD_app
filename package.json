@@ -1,10 +1,9 @@
 {
   "name": "woood-app",
-  "version": "2.0.0",
-  "description": "WOOOD Delivery Date Picker - Modern Shopify Checkout Extension with React Query, itty-router, and webhook-based architecture powered by Cloudflare Workers for global performance",
-  "private": true,
+  "version": "1.0.0",
+  "description": "WOOOD App - Modern Shopify Checkout Extension with React Query, itty-router, and webhook-based architecture powered by Cloudflare Workers and Shopify Polaris",
+  "main": "index.js",
   "scripts": {
-    "build": "yarn build:workers && yarn build:extensions",
     "build:workers": "cd workers && wrangler build",
     "build:extensions": "cd extensions/date-picker && yarn build && cd ../shipping-method && yarn build",
     "deploy:staging": "yarn build && yarn deploy:workers:staging && yarn deploy:shopify:staging",
@@ -16,49 +15,37 @@
     "logs:staging": "cd workers && wrangler tail --env staging",
     "logs:production": "cd workers && wrangler tail --env production",
     "clean": "rm -rf node_modules && cd workers && rm -rf node_modules && cd ../extensions/date-picker && rm -rf node_modules && cd ../shipping-method && rm -rf node_modules",
-    "install": "yarn install"
+    "install": "yarn install",
+    "dev": "remix dev",
+    "build": "remix build",
+    "start": "remix-serve build",
+    "typecheck": "tsc",
+    "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
+    "lint:fix": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint . --fix"
   },
-  "workspaces": [
-    "workers",
-    "extensions/date-picker",
-    "extensions/shipping-method",
-    "frontend"
-  ],
-  "keywords": [
-    "shopify",
-    "checkout",
-    "extension",
-    "delivery",
-    "date-picker",
-    "woood",
-    "cloudflare",
-    "workers",
-    "react-query",
-    "itty-router",
-    "webhooks",
-    "modern-architecture"
-  ],
-  "author": "WOOOD Development Team",
-  "license": "UNLICENSED",
   "dependencies": {
     "@shopify/polaris": "^12.0.0",
-    "@shopify/polaris-icons": "^8.0.0",
-    "@shopify/ui-extensions": "2024.10.x",
-    "@shopify/ui-extensions-react": "^2024.10.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@shopify/app-bridge": "^3.7.0",
+    "@shopify/app-bridge-react": "^3.7.0",
+    "@shopify/shopify-app-remix": "^3.8.5",
+    "@shopify/shopify-app-session-storage": "^2.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "remix": "^2.17.0",
+    "remix-serve": "^1.0.3"
   },
   "devDependencies": {
-    "@shopify/app": "^3.58.2",
-    "@shopify/cli": "^3.60.0",
-    "@types/node": "^20.17.7",
-    "@types/react": "^18.0.28",
-    "@types/react-dom": "^18.0.11",
+    "@remix-run/dev": "^2.17.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "eslint-plugin-remix": "^1.0.0",
     "typescript": "^5.0.0"
   },
-  "packageManager": "yarn@1.22.22",
-  "resolutions": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  }
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "sideEffects": false
 }

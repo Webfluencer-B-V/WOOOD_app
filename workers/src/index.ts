@@ -1040,12 +1040,12 @@ async function fetchExperienceCenterData(env: Env): Promise<{data: any[], total:
 
   const rawData = await response.json() as any;
   const allData = Array.isArray(rawData) ? rawData : rawData.data || [];
-  
+
   // Filter for only Experience Center products with EAN codes
-  const experienceCenterData = allData.filter((item: any) => 
+  const experienceCenterData = allData.filter((item: any) =>
     item.channel === 'EC' && item.ean
   );
-  
+
   return {
     data: experienceCenterData,
     total: experienceCenterData.length // Only count EC products as total
