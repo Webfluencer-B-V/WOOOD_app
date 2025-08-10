@@ -34,6 +34,9 @@ export default {
 	async scheduled(event: any, _env: any, _ctx: any): Promise<void> {
 		// No-op scheduled handler to satisfy Cloudflare cron triggers
 		// You can route cron work to routes or queues from here if needed
-		console.log("server.scheduled", { cron: event.cron, scheduledTime: event.scheduledTime });
-	}
+		console.log("server.scheduled", {
+			cron: event.cron,
+			scheduledTime: event.scheduledTime,
+		});
+	},
 } satisfies ExportedHandler<Env, WebhookQueueMessage>;

@@ -1,22 +1,22 @@
-# Dependencies
-node_modules/
+.DS_Store
 **/node_modules/
 
-# Build outputs
-dist/
-build/
-**/dist/
-**/build/
+# Cloudflare
+/.wrangler
+/dist/
+
+# React Router
+/.react-router/
+/build/
+.shopify
+
+# Vitest
+**/__screenshots__/*
 
 # Environment variables
 .env
 .env.*
 !.env.example
-.react-router/
-
-# OS files
-**/.DS_Store
-.DS_Store
 
 # Editor files
 .vscode/

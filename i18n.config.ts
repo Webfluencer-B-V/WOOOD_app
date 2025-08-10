@@ -1,7 +1,8 @@
+import type { Options } from "vite-plugin-i18next-loader";
+
 export default {
-	supportedLngs: ["en"],
-	fallbackLng: "en",
-	defaultNS: "app",
-	react: { useSuspense: false },
-	paths: ["./app/i18n/en"],
-};
+	include: ["**/*.json"],
+	logLevel: "warn",
+	namespaceResolution: "basename",
+	paths: ["./app/i18n"],
+} satisfies Options;

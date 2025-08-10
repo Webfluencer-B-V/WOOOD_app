@@ -115,7 +115,7 @@ export const useDeliveryDates = (
 		refetchInterval: finalOptions.refetchInterval,
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: true,
-  retry: (failureCount: number, error: unknown) => {
+		retry: (failureCount: number, error: unknown) => {
 			// Don't retry on 4xx errors (client errors)
 			if (error instanceof Error && error.message.includes("HTTP 4")) {
 				return false;
@@ -123,7 +123,8 @@ export const useDeliveryDates = (
 			// Retry up to 3 times with exponential backoff
 			return failureCount < 3;
 		},
-  retryDelay: (attemptIndex: number) => Math.min(1000 * 2 ** attemptIndex, 30000),
+		retryDelay: (attemptIndex: number) =>
+			Math.min(1000 * 2 ** attemptIndex, 30000),
 	});
 
 	const {
