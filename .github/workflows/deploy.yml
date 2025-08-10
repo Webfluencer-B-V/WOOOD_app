@@ -30,7 +30,10 @@ jobs:
           NPM_CONFIG_FUND: false
           NPM_CONFIG_PROGRESS: false
 
-      - name: Build project
+      - name: Build web (ensures build/server/wrangler.json exists)
+        run: npm run build:web
+
+      - name: Build project (extensions)
         run: npm run build
 
       - name: Deploy to Cloudflare Workers
