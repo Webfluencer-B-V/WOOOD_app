@@ -7,5 +7,5 @@ export interface WebhookQueueMessage {
 		hmac: string;
 		topic: string;
 		webhookId: string;
-	}
+	};
 }

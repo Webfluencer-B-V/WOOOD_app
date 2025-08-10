@@ -1,152 +1,158 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export interface DeliveryDate {
-  date: string;
-  displayName: string;
+	date: string;
+	displayName: string;
 }
 
 export interface ApiResponse {
-  success: boolean;
-  data?: DeliveryDate[];
-  error?: string;
-  message?: string;
-  metadata?: {
-    mockDataEnabled: boolean;
-    cacheHit: boolean;
-    responseTime: number;
-  };
+	success: boolean;
+	data?: DeliveryDate[];
+	error?: string;
+	message?: string;
+	metadata?: {
+		mockDataEnabled: boolean;
+		cacheHit: boolean;
+		responseTime: number;
+	};
 }
 
 export interface UseDeliveryDatesOptions {
-  enabled?: boolean;
-  staleTime?: number;
-  cacheTime?: number;
-  retry?: number;
-  retryDelay?: (attemptIndex: number) => number;
+	enabled?: boolean;
+	staleTime?: number;
+	cacheTime?: number;
+	retry?: number;
+	retryDelay?: (attemptIndex: number) => number;
 }
 
-const QUERY_KEY = ['delivery-dates'] as const;
+const QUERY_KEY = ["delivery-dates"] as const;
 
 /**
  * Fetch delivery dates from the API with proper error handling and timeout
  */
-async function fetchDeliveryDates(apiBaseUrl: string, shopDomain: string): Promise<{
-  data: DeliveryDate[];
-  metadata?: ApiResponse['metadata'];
+async function fetchDeliveryDates(
+	apiBaseUrl: string,
+	shopDomain: string,
+): Promise<{
+	data: DeliveryDate[];
+	metadata?: ApiResponse["metadata"];
 }> {
-  const url = `${apiBaseUrl}/api/delivery-dates`;
+	const url = `${apiBaseUrl}/api/delivery-dates`;
 
-  console.log('🌐 Fetching delivery dates from:', url);
+	console.log("🌐 Fetching delivery dates from:", url);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    controller.abort();
-  }, 15000); // 15 second timeout
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => {
+		controller.abort();
+	}, 15000); // 15 second timeout
 
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-      signal: controller.signal
-    });
+	try {
+		const response = await fetch(url, {
+			method: "GET",
+			headers: {
+				Accept: "application/json",
+			},
+			signal: controller.signal,
+		});
 
-    clearTimeout(timeoutId);
+		clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+		}
 
-    const responseData: ApiResponse = await response.json();
+		const responseData: ApiResponse = await response.json();
 
-    // Handle both direct array response and wrapped response
-    let data: DeliveryDate[];
-    let metadata = responseData.metadata;
+		// Handle both direct array response and wrapped response
+		let data: DeliveryDate[];
+		const metadata = responseData.metadata;
 
-    if (responseData.success && Array.isArray(responseData.data)) {
-      data = responseData.data;
-    } else if (Array.isArray(responseData)) {
-      data = responseData;
-    } else {
-      throw new Error('Invalid response format: expected array of delivery dates');
-    }
+		if (responseData.success && Array.isArray(responseData.data)) {
+			data = responseData.data;
+		} else if (Array.isArray(responseData)) {
+			data = responseData;
+		} else {
+			throw new Error(
+				"Invalid response format: expected array of delivery dates",
+			);
+		}
 
-    // console.log(`✅ Fetched ${data.length} delivery dates`);
-    return { data, metadata };
+		// console.log(`✅ Fetched ${data.length} delivery dates`);
+		return { data, metadata };
+	} catch (error: any) {
+		clearTimeout(timeoutId);
 
-  } catch (error: any) {
-    clearTimeout(timeoutId);
+		if (error.name === "AbortError") {
+			throw new Error("Request timed out after 15 seconds");
+		}
 
-    if (error.name === 'AbortError') {
-      throw new Error('Request timed out after 15 seconds');
-    }
-
-    console.error('❌ Failed to fetch delivery dates:', error.message);
-    throw error;
-  }
+		console.error("❌ Failed to fetch delivery dates:", error.message);
+		throw error;
+	}
 }
 
 /**
  * React Query hook for fetching delivery dates with caching and retry logic
  */
 export function useDeliveryDates(
-  apiBaseUrl: string,
-  enableMockMode: boolean,
-  shopDomain: string
+	apiBaseUrl: string,
+	enableMockMode: boolean,
+	shopDomain: string,
 ): {
-  deliveryDates: DeliveryDate[];
-  loading: boolean;
-  error: string | null;
-  refetch: () => void;
+	deliveryDates: DeliveryDate[];
+	loading: boolean;
+	error: string | null;
+	refetch: () => void;
 } {
-  const queryResult = useQuery({
-    queryKey: [...QUERY_KEY, apiBaseUrl, shopDomain],
-    queryFn: () => fetchDeliveryDates(apiBaseUrl, shopDomain),
-    enabled: true,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
-    retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-    select: (response) => ({
-      deliveryDates: response.data,
-      metadata: response.metadata
-    })
-  });
+	const queryResult = useQuery({
+		queryKey: [...QUERY_KEY, apiBaseUrl, shopDomain],
+		queryFn: () => fetchDeliveryDates(apiBaseUrl, shopDomain),
+		enabled: true,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+		gcTime: 10 * 60 * 1000, // 10 minutes (renamed from cacheTime)
+		retry: 3,
+		retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+		select: (response) => ({
+			deliveryDates: response.data,
+			metadata: response.metadata,
+		}),
+	});
 
-  return {
-    deliveryDates: queryResult.data?.deliveryDates || [],
-    loading: queryResult.isLoading,
-    error: queryResult.error as string | null,
-    refetch: queryResult.refetch,
-  };
+	return {
+		deliveryDates: queryResult.data?.deliveryDates || [],
+		loading: queryResult.isLoading,
+		error: queryResult.error as string | null,
+		refetch: queryResult.refetch,
+	};
 }
 
 /**
  * Helper functions for cache management
  */
 export function useDeliveryDatesCache() {
-  const queryClient = useQueryClient();
+	const queryClient = useQueryClient();
 
-  const invalidateDeliveryDates = () => {
-    queryClient.invalidateQueries({ queryKey: QUERY_KEY });
-  };
+	const invalidateDeliveryDates = () => {
+		queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+	};
 
-  const prefetchDeliveryDates = (apiBaseUrl: string) => {
-    queryClient.prefetchQuery({
-      queryKey: [...QUERY_KEY, apiBaseUrl],
-      queryFn: () => fetchDeliveryDates(apiBaseUrl, ''),
-      staleTime: 5 * 60 * 1000,
-    });
-  };
+	const prefetchDeliveryDates = (apiBaseUrl: string) => {
+		queryClient.prefetchQuery({
+			queryKey: [...QUERY_KEY, apiBaseUrl],
+			queryFn: () => fetchDeliveryDates(apiBaseUrl, ""),
+			staleTime: 5 * 60 * 1000,
+		});
+	};
 
-  const getCachedDeliveryDates = (apiBaseUrl: string): DeliveryDate[] | undefined => {
-    return queryClient.getQueryData([...QUERY_KEY, apiBaseUrl]);
-  };
+	const getCachedDeliveryDates = (
+		apiBaseUrl: string,
+	): DeliveryDate[] | undefined => {
+		return queryClient.getQueryData([...QUERY_KEY, apiBaseUrl]);
+	};
 
-  return {
-    invalidateDeliveryDates,
-    prefetchDeliveryDates,
-    getCachedDeliveryDates,
-  };
+	return {
+		invalidateDeliveryDates,
+		prefetchDeliveryDates,
+		getCachedDeliveryDates,
+	};
 }
