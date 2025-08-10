@@ -1,0 +1,51 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "woood-staging",
+	"compatibility_date": "2025-06-17",
+	"main": "./worker.ts",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": "./build/client"
+	},
+	"dev": {
+		"ip": "0.0.0.0",
+		"port": 8080
+	},
+	"kv_namespaces": [
+		{
+			"binding": "SESSION_STORAGE",
+			"id": "ec5919b68f374a97b4d5aa12e1bae064"
+		}
+	],
+	"logpush": true,
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"invocation_logs": false
+		}
+	},
+	"placement": {
+		"mode": "smart"
+	},
+	"queues": {
+		"producers": [
+			{
+				"queue": "woood",
+				"binding": "WEBHOOK_QUEUE"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "woood"
+			}
+		]
+	},
+	"upload_source_maps": true,
+	"vars": {
+		"NODE_VERSION": 22,
+		"SHOPIFY_API_KEY": "1c7701d2e09d4ede7616f35e13d472ef",
+		"SHOPIFY_APP_URL": "https://woood-staging.leander-4e0.workers.dev",
+		"SHOPIFY_APP_HANDLE": "woood-2",
+		"SHOPIFY_APP_LOG_LEVEL": "debug"
+	}
+}
