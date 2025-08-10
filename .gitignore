@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 !.env.example
+.react-router/
 
 # OS files
 **/.DS_Store
