@@ -188,11 +188,11 @@ export function createShopify(context: AppLoadContext) {
 			}
 		}
 
-		const accessTokenResponse = await response.json<{
-			access_token: string;
-			expires_in?: number;
-			scope: string;
-		}>();
+        const accessTokenResponse = (await response.json()) as {
+            access_token: string;
+            expires_in?: number;
+            scope: string;
+        };
 		await session.set({
 			id: shop,
 			shop,

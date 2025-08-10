@@ -5,8 +5,6 @@
 	"type": "module",
 	"scripts": {
 		"build": "shopify app build",
-		"build:web": "react-router build",
-		"dev:web": "react-router dev",
 		"check": "concurrently 'npm:check:*'",
 		"check:actions": "if command -v actionlint 2>&1 >/dev/null; then actionlint; fi",
 		"check:code": "(biome check --write || echo 'Biome not available, skipping code check')",

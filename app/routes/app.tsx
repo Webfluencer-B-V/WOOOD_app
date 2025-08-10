@@ -109,11 +109,19 @@ export function headers({
 		return errorHeaders;
 	}
 
-	return new Headers([
-		...(parentHeaders ? Array.from(parentHeaders.entries()) : []),
-		...(loaderHeaders ? Array.from(loaderHeaders.entries()) : []),
-		...(actionHeaders ? Array.from(actionHeaders.entries()) : []),
-	]);
+  const headers = new Headers();
+
+  if (parentHeaders) {
+    for (const [key, value] of parentHeaders.entries()) headers.append(key, value);
+  }
+  if (loaderHeaders) {
+    for (const [key, value] of loaderHeaders.entries()) headers.append(key, value);
+  }
+  if (actionHeaders) {
+    for (const [key, value] of actionHeaders.entries()) headers.append(key, value);
+  }
+
+  return headers;
 }
 
 function LinkComponent({ url, ...props }: LinkLikeComponentProps) {
