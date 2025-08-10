@@ -1,0 +1,45 @@
+name: Deploy WOOOD App
+
+on:
+  push:
+    branches: [shopflare-integration, main]
+  pull_request:
+    branches: [shopflare-integration, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: '.'
+          command: deploy
+        env:
+          SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
+          DUTCH_FURNITURE_API_KEY: ${{ secrets.DUTCH_FURNITURE_API_KEY }}
+          DUTCHNED_API_CREDENTIALS: ${{ secrets.DUTCHNED_API_CREDENTIALS }}
+          SHOPIFY_APP_CLIENT_SECRET: ${{ secrets.SHOPIFY_APP_CLIENT_SECRET }}
+          SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
+
+      - name: Deploy Shopify App Extensions
+        run: npm run deploy:shopify
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}

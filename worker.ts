@@ -30,4 +30,10 @@ export default {
 			message.ack();
 		}
 	},
+
+	async scheduled(event, env, ctx): Promise<void> {
+		console.log(`server.scheduled: ${event.cron}`);
+		// Handle scheduled events (e.g., store locator sync, experience center updates)
+		// This would delegate to appropriate handlers based on the cron schedule
+	},
 } satisfies ExportedHandler<Env, WebhookQueueMessage>;
