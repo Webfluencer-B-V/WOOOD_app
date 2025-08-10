@@ -1,0 +1,61 @@
+name = "woood-production"
+account_id = "4e020126029f6ed8340dadb04f00c883"
+main = "server.ts"
+compatibility_date = "2024-10-01"
+compatibility_flags = ["nodejs_compat_v2"]
+
+[observability]
+enabled = true
+
+[build]
+command = "npm run build:remix"
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+run_worker_first = true
+
+[env.production]
+name = "woood-production"
+
+[env.production.vars]
+CORS_ORIGINS = "https://*.myshopify.com,https://checkout.shopify.com"
+
+[[env.production.kv_namespaces]]
+binding = "WOOOD_KV"
+id = "17189fd27a034c548fd662aa7ffa8415"
+
+[[env.production.kv_namespaces]]
+binding = "STORE_LOCATOR_STATUS"
+id = "e03ccea949a342ed8ad81e4d0e1b2478"
+
+[env.production.triggers]
+crons = ["0 */6 * * *"]
+
+[env.staging]
+name = "woood-staging"
+
+[env.staging.vars]
+CORS_ORIGINS = "https://*.myshopify.com,https://checkout.shopify.com"
+SHOPIFY_APP_CLIENT_ID = "1c7701d2e09d4ede7616f35e13d472ef"
+SHOPIFY_APP_URL = "https://woood-staging.leander-4e0.workers.dev"
+SCOPES = "read_products,write_products,read_product_listings"
+# Use the portal base for both endpoints (same host for product availability and store locator)
+DUTCH_FURNITURE_BASE_URL = "https://portal.dutchfurniturefulfilment.nl"
+# Use Bearer token (matches Postman)
+DUTCH_FURNITURE_API_KEY = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiZjM5YWJiZDgtMTkwNS00NTAzLTg5NDktYjA0MjMxMzM4ZDFmIiwiSWQiOiJmMzlhYmJkOC0xOTA1LTQ1MDMtODk0OS1iMDQyMzEzMzhkMWYiLCJSb2wiOiJhcGlfYWNjZXNzIiwic3ViIjoiV2ViZmx1ZW5jZXIiLCJqdGkiOiJjODhmNmNlOC0xNDEyLTRhY2YtYTNjZC1hMGMzZDJjMDEyNDQiLCJpYXQiOjE3NDY1MTg4ODcsImlzcyI6IkVudGVyIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo1MDAwLyJ9.wQTphvBjVs-s0NwyLZWX3JprPwpvr_QMxmU0JQ3mdjc"
+PRODUCT_AVAILABILITY_BASE_URL = "https://portal.dutchfurniturefulfilment.nl"
+PRODUCT_AVAILABILITY_API_KEY = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiZjM5YWJiZDgtMTkwNS00NTAzLTg5NDktYjA0MjMxMzM4ZDFmIiwiSWQiOiJmMzlhYmJkOC0xOTA1LTQ1MDMtODk0OS1iMDQyMzEzMzhkMWYiLCJSb2wiOiJhcGlfYWNjZXNzIiwic3ViIjoiV2ViZmx1ZW5jZXIiLCJqdGkiOiJjODhmNmNlOC0xNDEyLTRhY2YtYTNjZC1hMGMzZDJjMDEyNDQiLCJpYXQiOjE3NDY1MTg4ODcsImlzcyI6IkVudGVyIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo1MDAwLyJ9.wQTphvBjVs-s0NwyLZWX3JprPwpvr_QMxmU0JQ3mdjc"
+APP_VERSION = "0.1.0-staging"
+STAGING_TEST_TOKEN = "allow-cli"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "woood_staging"
+database_id = "158365cb-0d03-4e0b-a69c-db8b11129ca4"
+preview_database_id = "158365cb-0d03-4e0b-a69c-db8b11129ca4"
+
+## KV bindings removed (migrated to D1)
+
+[env.staging.triggers]
+crons = ["0 */6 * * *"]

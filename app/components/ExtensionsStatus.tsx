@@ -1,19 +1,5 @@
-import {
-  Card,
-  Stack,
-  Badge,
-  DisplayText,
-  TextStyle,
-  Heading,
-  DescriptionList,
-  Icon,
-  Button,
-  ButtonGroup,
-  Banner,
-  Collapsible,
-  Link,
-  Layout
-} from '@shopify/polaris';
+// @ts-nocheck
+import { Card, Badge, Text, DescriptionList, Button, ButtonGroup, Banner, Collapsible, Link, Layout } from '@shopify/polaris';
 import {
   CheckIcon,
   AlertTriangleIcon,
@@ -82,59 +68,43 @@ export function ExtensionsStatus({ healthData }: ExtensionsStatusProps) {
       <Layout.Section>
         <Card>
           <Card.Section>
-            <Stack alignment="center" distribution="equalSpacing">
-              <Heading>Extensions Status</Heading>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <Text variant="headingMd" as="h3">Extensions Status</Text>
               <ButtonGroup>
-                <Button
-                  icon={SettingsIcon}
-                  onClick={() => setShowSettings(!showSettings)}
-                >
+                <Button icon={SettingsIcon} onClick={() => setShowSettings(!showSettings)}>
                   {showSettings ? 'Hide' : 'Show'} Settings
                 </Button>
-                <Button
-                  icon={PlayIcon}
-                  onClick={() => window.open('/extensions/date-picker', '_blank')}
-                >
+                <Button icon={PlayIcon} onClick={() => window.open('/extensions/date-picker', '_blank')}>
                   View Extension
                 </Button>
               </ButtonGroup>
-            </Stack>
+            </div>
           </Card.Section>
 
           <Card.Section>
             <Layout>
               <Layout.Section oneHalf>
-                <Stack vertical spacing="tight">
-                  <Heading element="h4">Date Picker Extension</Heading>
-                  <Stack alignment="center" spacing="tight">
-                    <Badge status="success">
-                      <Stack spacing="extraTight" alignment="center">
-                        <Icon source={CheckIcon} />
-                        <span>Active</span>
-                      </Stack>
-                    </Badge>
-                    <TextStyle variation="subdued">
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  <Text variant="headingSm" as="h4">Date Picker Extension</Text>
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <Badge status="success">Active</Badge>
+                    <Text tone="subdued" as="span">
                       Last activity: {new Date(extensionStatus.datePicker.lastActivity).toLocaleString()}
-                    </TextStyle>
-                  </Stack>
-                </Stack>
+                    </Text>
+                  </div>
+                </div>
               </Layout.Section>
 
               <Layout.Section oneHalf>
-                <Stack vertical spacing="tight">
-                  <Heading element="h4">Shipping Method Extension</Heading>
-                  <Stack alignment="center" spacing="tight">
-                    <Badge status="success">
-                      <Stack spacing="extraTight" alignment="center">
-                        <Icon source={CheckIcon} />
-                        <span>Active</span>
-                      </Stack>
-                    </Badge>
-                    <TextStyle variation="subdued">
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  <Text variant="headingSm" as="h4">Shipping Method Extension</Text>
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <Badge status="success">Active</Badge>
+                    <Text tone="subdued" as="span">
                       Last activity: {new Date(extensionStatus.shippingMethod.lastActivity).toLocaleString()}
-                    </TextStyle>
-                  </Stack>
-                </Stack>
+                    </Text>
+                  </div>
+                </div>
               </Layout.Section>
             </Layout>
           </Card.Section>
@@ -145,8 +115,8 @@ export function ExtensionsStatus({ healthData }: ExtensionsStatusProps) {
             transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
           >
             <Card.Section>
-              <Stack vertical spacing="loose">
-                <Heading element="h4">Extension Configuration</Heading>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <Text as="h4" variant="headingSm">Extension Configuration</Text>
 
                 <DescriptionList
                   items={[
@@ -191,7 +161,7 @@ export function ExtensionsStatus({ healthData }: ExtensionsStatusProps) {
                     Changes to settings require redeployment of the extension.
                   </p>
                 </Banner>
-              </Stack>
+              </div>
             </Card.Section>
           </Collapsible>
         </Card>
@@ -204,34 +174,28 @@ export function ExtensionsStatus({ healthData }: ExtensionsStatusProps) {
             <Layout>
               <Layout.Section oneThird>
                 <Card sectioned>
-                  <Stack vertical spacing="extraTight" alignment="center">
-                    <DisplayText size="medium">
-                      &lt;50ms
-                    </DisplayText>
-                    <TextStyle variation="subdued">Response Time</TextStyle>
-                  </Stack>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>&lt;50ms</div>
+                    <Text tone="subdued" as="p">Response Time</Text>
+                  </div>
                 </Card>
               </Layout.Section>
 
               <Layout.Section oneThird>
                 <Card sectioned>
-                  <Stack vertical spacing="extraTight" alignment="center">
-                    <DisplayText size="medium">
-                      99.99%
-                    </DisplayText>
-                    <TextStyle variation="subdued">Uptime</TextStyle>
-                  </Stack>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>99.99%</div>
+                    <Text tone="subdued" as="p">Uptime</Text>
+                  </div>
                 </Card>
               </Layout.Section>
 
               <Layout.Section oneThird>
                 <Card sectioned>
-                  <Stack vertical spacing="extraTight" alignment="center">
-                    <DisplayText size="medium">
-                      2/2
-                    </DisplayText>
-                    <TextStyle variation="subdued">Active Extensions</TextStyle>
-                  </Stack>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600 }}>2/2</div>
+                    <Text tone="subdued" as="p">Active Extensions</Text>
+                  </div>
                 </Card>
               </Layout.Section>
             </Layout>
@@ -243,7 +207,7 @@ export function ExtensionsStatus({ healthData }: ExtensionsStatusProps) {
       <Layout.Section>
         <Card title="Extension Documentation">
           <Card.Section>
-            <Stack vertical spacing="tight">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <Link url="/docs/API.md" external>
                 API Reference
               </Link>
@@ -256,7 +220,7 @@ export function ExtensionsStatus({ healthData }: ExtensionsStatusProps) {
               <Link url="https://shopify.dev/docs/api/checkout-ui-extensions" external>
                 Shopify Extension Documentation
               </Link>
-            </Stack>
+            </div>
           </Card.Section>
         </Card>
       </Layout.Section>

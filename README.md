@@ -1,18 +1,90 @@
-# Delivery Date Picker
+# WOOOD App (Remix + Cloudflare Workers + Shopify)
 
-> **🏆 PRODUCTION READY** - Enterprise-grade Shopify checkout extension enabling customers to select delivery dates during checkout, powered by Cloudflare Workers for global performance.
+Enterprise-grade Shopify app with checkout extensions and a Polaris admin dashboard. Runs entirely on Cloudflare Workers with D1, designed for low-latency and reliability.
 
-##  Quick Start
+## ✨ What it does
 
-- **[Complete Setup & Testing Guide](docs/SETUP.md)** - Installation, configuration, testing, and deployment in one comprehensive guide
+- Checkout extensions for delivery date selection powered by DutchNed logistics
+- Admin dashboard (Polaris) for system status, store locator, and experience center
+- Cloudflare Worker backend with D1 (SQL) and KV (legacy) integrations
+- Webhook pipeline from checkout to order metafields
 
-## 📖 Documentation
+## 🔭 System Overview
 
-### 🏗️ Core Documentation
-- **[Complete Setup Guide](docs/SETUP.md)** - Installation, configuration, testing, and deployment
-- **[System Architecture](docs/ARCHITECTURE.md)** - Complete system design, components, and data flow
-- **[API Reference](docs/API.md)** - Complete API documentation with endpoints, authentication, and webhooks
-- **[Development History](docs/CHANGELOG.md)** - Project changelog and sprint history
+```mermaid
+flowchart LR
+  A[Shopify Admin (Embedded)] -->|App Bridge iframe| B[Remix Routes]
+  B --> C[Polaris UI]
+  B --> D[Loaders/Actions]
+  D --> E[Cloudflare Worker Runtime]
+  E --> F[D1 Database]
+  E --> G[KV (legacy)]
+  E --> H[External APIs\nDutchNed, Fulfillment]
+  I[Checkout Extensions] -->|Metafields/Attributes| E
+```
+
+## 🧭 Project Map
+
+- Remix app: `app/` (routes, loaders, Polaris UI)
+- Worker entry + assets: `server.ts`, `public/`
+- Database schema: `drizzle/schema.ts` (single source of truth)
+- Worker scripts/utilities: `workers/`
+- Extensions: `extensions/`
+
+## 🚀 Quick Start
+
+```bash
+# Dev (local Remix, remote Worker URL via CLOUDFLARE_URL)
+npm run dev
+
+# Build
+npm run build
+
+# Deploy (staging)
+npm run deploy:workers:staging
+```
+
+## 🧩 UI Feature Map (Polaris)
+
+```mermaid
+graph TD
+  Tabs[Dashboard Tabs]
+  Tabs --> Health[Health Dashboard]
+  Tabs --> Stores[Store Locator]
+  Tabs --> EC[Experience Center]
+  Tabs --> Future[Future Features]
+
+  Health --> Metrics[Core Metrics\nD1/KV/Counts]
+  Stores --> Status[Status + Manage Dealers]
+  EC --> Products[EC Products + Filters]
+```
+
+## 📚 Core Documentation
+
+- docs/CHANGELOG.md — single source of truth for changes
+- docs/ARCHITECTURE.md — runtime, deployment, request flow
+- docs/API.md — endpoints, authentication, webhooks
+- docs/FRONTEND_FEATURES.md — Polaris UI, components, flows
+
+## 🔐 Auth & Context
+
+- Embedded auth via Shopify + Remix loaders
+- Cloudflare context provides `env.DB` (D1) and configuration
+
+## 🛠 Tech Stack
+
+- Remix, React 18, Shopify Polaris v12
+- Cloudflare Workers, D1, KV
+- Drizzle ORM (D1)
+
+## ✅ Status
+
+- Staging: `https://woood-staging.leander-4e0.workers.dev`
+
+---
+Tips:
+- Use `drizzle/schema.ts` for all tables and types
+- Use `app/services/UnifiedD1Service.ts` for DB access
 
 ## ✅ Current Production Status
 

@@ -6,6 +6,30 @@ The Delivery Date Picker is a streamlined Shopify Checkout Extension powered by 
 
 ## System Architecture
 
+### Request Flow
+
+```mermaid
+sequenceDiagram
+  participant Admin as Shopify Admin (Embedded)
+  participant Remix as Remix Routes
+  participant Worker as Cloudflare Worker
+  participant D1 as D1 Database
+  participant Ext as External APIs
+
+  Admin->>Remix: GET /app (embedded)
+  Remix->>Worker: loader() uses env.DB
+  Worker->>D1: SELECT status, products
+  Worker-->>Remix: JSON data
+  Remix-->>Admin: Polaris UI
+
+  Admin->>Remix: POST actions (triggers)
+  Remix->>Worker: trigger store locator / experience center
+  Worker->>Ext: Fetch data
+  Worker->>D1: UPSERT rows
+  Worker-->>Remix: Status
+  Remix-->>Admin: Banner/Toast
+```
+
 ### High-Level Architecture
 
 ```

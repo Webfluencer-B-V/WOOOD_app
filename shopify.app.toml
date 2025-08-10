@@ -3,11 +3,14 @@
 client_id = "10a8926387f7ea9e09395b64b1f798c2"
 name = "woood"
 handle = "woood"
-application_url = "https://woood-production.leander-4e0.workers.dev/"
-embedded = false
+application_url = "https://strips-insured-love-potentially.trycloudflare.com"
+embedded = true
 
 [build]
 include_config_on_deploy = true
+dev_store_url = "webfluencer-panda.myshopify.com"
+scope = "read_products,write_products,write_checkouts,write_delivery_customizations,write_orders"
+automatically_update_urls_on_dev = true
 
 [webhooks]
 api_version = "2025-04"
@@ -17,6 +20,4 @@ api_version = "2025-04"
 scopes = "read_products,write_products,write_checkouts,write_delivery_customizations,write_orders"
 
 [auth]
-redirect_urls = [
-  "https://woood-production.leander-4e0.workers.dev/auth/callback"
-]
+redirect_urls = ["https://strips-insured-love-potentially.trycloudflare.com/auth/callback", "https://strips-insured-love-potentially.trycloudflare.com/auth/shopify/callback", "https://strips-insured-love-potentially.trycloudflare.com/api/auth/callback"]

@@ -16,6 +16,7 @@ build/
 # OS files
 **/.DS_Store
 .DS_Store
+.cache
 
 # Editor files
 .vscode/
@@ -27,9 +28,6 @@ build/
 extensions/**/dist
 extensions/**/generated
 shopify.app.*.toml
-
-# Backend specific
-backend/dist/
 
 # Logs
 logs
@@ -49,4 +47,7 @@ coverage/
 
 # Temporary folders
 tmp/
-temp/workers/.dev.vars
+temp/
+
+# Backup files
+*.backup

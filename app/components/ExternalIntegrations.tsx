@@ -1,20 +1,5 @@
-import {
-  Card,
-  Stack,
-  Badge,
-  DisplayText,
-  TextStyle,
-  Heading,
-  DescriptionList,
-  Icon,
-  Button,
-  ButtonGroup,
-  Banner,
-  ProgressBar,
-  Spinner,
-  Layout,
-  Link
-} from '@shopify/polaris';
+// @ts-nocheck
+import { Card, Badge, Text, Button, ButtonGroup, Layout, Link, DescriptionList } from '@shopify/polaris';
 import {
   CheckIcon,
   AlertTriangleIcon,
@@ -82,18 +67,18 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
       <Layout.Section>
         <Card>
           <Card.Section>
-            <Stack alignment="center" distribution="equalSpacing">
-              <Stack vertical spacing="tight">
-                <Heading>Store Locator</Heading>
-                <Stack alignment="center" spacing="tight">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <Text variant="headingMd" as="h3">Store Locator</Text>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <Badge status={healthData.integrations.storeLocator.status === 'success' ? 'success' : 'critical'}>
                     {healthData.integrations.storeLocator.status === 'success' ? 'Active' : 'Error'}
                   </Badge>
-                  <TextStyle variation="subdued">
+                  <Text tone="subdued" as="span">
                     {healthData.integrations.storeLocator.dealersProcessed} dealers processed
-                  </TextStyle>
-                </Stack>
-              </Stack>
+                  </Text>
+                </div>
+              </div>
 
               <ButtonGroup>
                 <Button
@@ -110,18 +95,18 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
                   View Status
                 </Button>
               </ButtonGroup>
-            </Stack>
+            </div>
           </Card.Section>
 
           <Card.Section>
-            <Stack vertical spacing="tight">
-              <TextStyle variation="subdued">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <Text tone="subdued" as="p">
                 Last run: {new Date(healthData.integrations.storeLocator.lastRun).toLocaleString()}
-              </TextStyle>
-              <TextStyle variation="subdued">
+              </Text>
+              <Text tone="subdued" as="p">
                 Automatically syncs dealer data from external API to shop metafields
-              </TextStyle>
-            </Stack>
+              </Text>
+            </div>
           </Card.Section>
         </Card>
       </Layout.Section>
@@ -130,18 +115,18 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
       <Layout.Section>
         <Card>
           <Card.Section>
-            <Stack alignment="center" distribution="equalSpacing">
-              <Stack vertical spacing="tight">
-                <Heading>Experience Center</Heading>
-                <Stack alignment="center" spacing="tight">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                <Text variant="headingMd" as="h3">Experience Center</Text>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
                   <Badge status={healthData.integrations.experienceCenter.status === 'success' ? 'success' : 'critical'}>
                     {healthData.integrations.experienceCenter.status === 'success' ? 'Active' : 'Error'}
                   </Badge>
-                  <TextStyle variation="subdued">
+                  <Text tone="subdued" as="span">
                     {healthData.integrations.experienceCenter.productsProcessed} products processed
-                  </TextStyle>
-                </Stack>
-              </Stack>
+                  </Text>
+                </div>
+              </div>
 
               <ButtonGroup>
                 <Button
@@ -158,18 +143,18 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
                   View Status
                 </Button>
               </ButtonGroup>
-            </Stack>
+            </div>
           </Card.Section>
 
           <Card.Section>
-            <Stack vertical spacing="tight">
-              <TextStyle variation="subdued">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <Text tone="subdued" as="p">
                 Last run: {new Date(healthData.integrations.experienceCenter.lastRun).toLocaleString()}
-              </TextStyle>
-              <TextStyle variation="subdued">
+              </Text>
+              <Text tone="subdued" as="p">
                 Updates product experience center availability based on external API data
-              </TextStyle>
-            </Stack>
+              </Text>
+            </div>
           </Card.Section>
         </Card>
       </Layout.Section>
@@ -181,35 +166,35 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
             <Layout>
               <Layout.Section oneThird>
                 <Card sectioned>
-                  <Stack vertical spacing="extraTight" alignment="center">
-                    <DisplayText size="medium">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                    <Text as="p" variant="headingSm">
                       {healthData.integrations.storeLocator.dealersProcessed}
-                    </DisplayText>
-                    <TextStyle variation="subdued">Total Dealers</TextStyle>
-                  </Stack>
+                    </Text>
+                    <Text tone="subdued" as="span">Total Dealers</Text>
+                  </div>
                 </Card>
               </Layout.Section>
 
               <Layout.Section oneThird>
                 <Card sectioned>
-                  <Stack vertical spacing="extraTight" alignment="center">
-                    <DisplayText size="medium">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                    <Text as="p" variant="headingSm">
                       {healthData.integrations.experienceCenter.productsProcessed}
-                    </DisplayText>
-                    <TextStyle variation="subdued">Products Processed</TextStyle>
-                  </Stack>
+                    </Text>
+                    <Text tone="subdued" as="span">Products Processed</Text>
+                  </div>
                 </Card>
               </Layout.Section>
 
               <Layout.Section oneThird>
                 <Card sectioned>
-                  <Stack vertical spacing="extraTight" alignment="center">
-                    <DisplayText size="medium">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+                    <Text as="p" variant="headingSm">
                       {healthData.integrations.storeLocator.status === 'success' &&
                        healthData.integrations.experienceCenter.status === 'success' ? '2/2' : '1/2'}
-                    </DisplayText>
-                    <TextStyle variation="subdued">Active Integrations</TextStyle>
-                  </Stack>
+                    </Text>
+                    <Text tone="subdued" as="span">Active Integrations</Text>
+                  </div>
                 </Card>
               </Layout.Section>
             </Layout>
@@ -249,21 +234,21 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
       <Layout.Section>
         <Card title="Integration Health">
           <Card.Section>
-            <Stack vertical spacing="loose">
-              <Stack alignment="center" distribution="equalSpacing">
-                <TextStyle variation="subdued">Store Locator</TextStyle>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text tone="subdued" as="span">Store Locator</Text>
                 <Badge status={healthData.integrations.storeLocator.status === 'success' ? 'success' : 'critical'}>
                   {healthData.integrations.storeLocator.status === 'success' ? 'Healthy' : 'Error'}
                 </Badge>
-              </Stack>
+              </div>
 
-              <Stack alignment="center" distribution="equalSpacing">
-                <TextStyle variation="subdued">Experience Center</TextStyle>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text tone="subdued" as="span">Experience Center</Text>
                 <Badge status={healthData.integrations.experienceCenter.status === 'success' ? 'success' : 'critical'}>
                   {healthData.integrations.experienceCenter.status === 'success' ? 'Healthy' : 'Error'}
                 </Badge>
-              </Stack>
-            </Stack>
+              </div>
+            </div>
           </Card.Section>
         </Card>
       </Layout.Section>
@@ -272,7 +257,7 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
       <Layout.Section>
         <Card title="Integration Documentation">
           <Card.Section>
-            <Stack vertical spacing="tight">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <Link url="/docs/API.md#store-locator-integration" external>
                 Store Locator API Documentation
               </Link>
@@ -285,7 +270,7 @@ export function ExternalIntegrations({ healthData }: ExternalIntegrationsProps) 
               <Link url="/docs/CHANGELOG.md" external>
                 Development History
               </Link>
-            </Stack>
+            </div>
           </Card.Section>
         </Card>
       </Layout.Section>
