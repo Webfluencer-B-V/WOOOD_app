@@ -27,6 +27,11 @@ automatically_update_urls_on_dev = false
 dev_store_url = "webfluencer-panda.myshopify.com"
 include_config_on_deploy = true
 
+[web]
+directory = "app"
+build_command = "npm run build:web"
+dev_command = "npm run dev:web"
+
 [webhooks]
 api_version = "2025-07"
   [[webhooks.subscriptions]]
