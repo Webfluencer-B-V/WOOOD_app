@@ -48,26 +48,30 @@ describe("utils", () => {
 		expect(utils.sanitizeShop("test.example.com")).toBe(null);
 	});
 
-  test("validateHmac", async () => {
-    const data = "123";
-    const encoding = "base64" as const;
+	test("validateHmac", async () => {
+		const data = "123";
+		const encoding = "base64" as const;
 
-    // Compute HMAC using the same secret as the code under test
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(env.SHOPIFY_API_SECRET_KEY),
-      { name: "HMAC", hash: "SHA-256" },
-      true,
-      ["sign"],
-    );
-    const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(data));
-    const hmac = btoa(String.fromCharCode(...new Uint8Array(signature)));
+		// Compute HMAC using the same secret as the code under test
+		const encoder = new TextEncoder();
+		const key = await crypto.subtle.importKey(
+			"raw",
+			encoder.encode(env.SHOPIFY_API_SECRET_KEY),
+			{ name: "HMAC", hash: "SHA-256" },
+			true,
+			["sign"],
+		);
+		const signature = await crypto.subtle.sign(
+			"HMAC",
+			key,
+			encoder.encode(data),
+		);
+		const hmac = btoa(String.fromCharCode(...new Uint8Array(signature)));
 
-    expect.assertions(2);
-    expect(await utils.validateHmac(data, hmac, encoding)).toBeUndefined();
-    await expect(utils.validateHmac("124", hmac, encoding)).rejects.toThrow(
-      "Invalid hmac",
-    );
-  });
+		expect.assertions(2);
+		expect(await utils.validateHmac(data, hmac, encoding)).toBeUndefined();
+		await expect(utils.validateHmac("124", hmac, encoding)).rejects.toThrow(
+			"Invalid hmac",
+		);
+	});
 });

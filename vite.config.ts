@@ -8,7 +8,8 @@ import i18nextLoaderOptions from "./i18n.config.js";
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), "");
-	const app = new URL(env.HOST ?? env.SHOPIFY_APP_URL);
+	const rawBaseUrl = env.HOST ?? env.SHOPIFY_APP_URL;
+	const app = rawBaseUrl ? new URL(rawBaseUrl) : null;
 
 	// Determine Cloudflare environment
 	const cloudflareEnv = env.APP_ENV || mode;
@@ -16,7 +17,7 @@ export default defineConfig(({ mode }) => {
 	const isProduction = cloudflareEnv === "production";
 
 	return {
-		base: app.href,
+		base: rawBaseUrl ?? "/",
 		clearScreen: false,
 		plugins: [
 			i18nextLoader(i18nextLoaderOptions),
@@ -29,15 +30,17 @@ export default defineConfig(({ mode }) => {
 		resolve: {
 			mainFields: ["browser", "module", "main"],
 		},
-		server: {
-			allowedHosts: [app.hostname],
-			cors: {
-				origin: true,
-				preflightContinue: true,
-			},
-			origin: app.origin,
-			port: Number(env.PORT || 8080),
-		},
+		server: app
+			? {
+					allowedHosts: [app.hostname],
+					cors: { origin: true, preflightContinue: true },
+					origin: app.origin,
+					port: Number(env.PORT || 8080),
+				}
+			: {
+					cors: { origin: true, preflightContinue: true },
+					port: Number(env.PORT || 8080),
+				},
 		ssr: {
 			resolve: {
 				conditions: ["workerd", "worker", "browser"],
