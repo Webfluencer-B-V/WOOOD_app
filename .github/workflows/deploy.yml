@@ -40,8 +40,8 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          workingDirectory: 'workers'
-          command: deploy --env staging
+          workingDirectory: '.'
+          command: deploy
         env:
           SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
           DUTCH_FURNITURE_API_KEY: ${{ secrets.DUTCH_FURNITURE_API_KEY }}

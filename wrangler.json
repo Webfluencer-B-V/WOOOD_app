@@ -1,6 +1,7 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "woood-staging",
+	"account_id": "4e020126029f6ed8340dadb04f00c883",
 	"compatibility_date": "2025-06-17",
 	"main": "./worker.ts",
 	"assets": {
@@ -15,6 +16,18 @@
 		{
 			"binding": "SESSION_STORAGE",
 			"id": "ec5919b68f374a97b4d5aa12e1bae064"
+		},
+		{
+			"binding": "WOOOD_KV",
+			"id": "51fa115a98f44c4d896d3fd99d942d17"
+		},
+		{
+			"binding": "STORE_LOCATOR_STATUS",
+			"id": "e03ccea949a342ed8ad81e4d0e1b2478"
+		},
+		{
+			"binding": "EXPERIENCE_CENTER_STATUS",
+			"id": "fc265ea8b60f4e3aa8b2c3ac3e89eb69"
 		}
 	],
 	"logpush": true,
@@ -39,6 +52,9 @@
 				"queue": "woood"
 			}
 		]
+	},
+	"triggers": {
+		"crons": ["0 */6 * * *"]
 	},
 	"upload_source_maps": true,
 	"vars": {

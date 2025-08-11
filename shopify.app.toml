@@ -20,7 +20,7 @@ subpath = "woood"
 prefix = "apps"
 
 [auth]
-redirect_urls = [ "https://woood-staging.leander-4e0.workers.dev/shopify/auth/callback" ]
+redirect_urls = ["https://woood-staging.leander-4e0.workers.dev/auth/callback", "https://woood-staging.leander-4e0.workers.dev/auth/shopify/callback", "https://woood-staging.leander-4e0.workers.dev/api/auth/callback"]
 
 [build]
 automatically_update_urls_on_dev = false

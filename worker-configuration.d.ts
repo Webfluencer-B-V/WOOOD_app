@@ -1,4 +1,4 @@
-// Minimal Cloudflare types used by the app
+// Cloudflare shims (global)
 
 interface KVNamespace {
   get<TValue = unknown>(key: string, type?: "text" | "json" | "arrayBuffer" | "stream"): Promise<TValue | null>;
@@ -20,13 +20,9 @@ interface ScheduledEvent {
 
 interface ExportedHandlerEnv {}
 
-// Project Env shape (extend as needed)
-type Env = ExportedHandlerEnv;
-
 interface ExportedHandler<Env = ExportedHandlerEnv, QueueMessage = unknown> {
   fetch?: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
   queue?: (batch: { messages: Array<{ ack: () => void }> }, env: Env, ctx: ExecutionContext) => Promise<void> | void;
   scheduled?: (event: ScheduledEvent, env: Env, ctx: ExecutionContext) => Promise<void> | void;
 }
-
 

@@ -97,6 +97,12 @@
 
 **Expected Outcome:** ✅ **ACHIEVED** - Enterprise-scale Experience Center processing with zero subrequest limits, accurate success counting, EAN match tracking, and simplified architecture using bulk operations as the main and only flow.
 
+### Worker Update (January 2025)
+- ✅ Migrated Experience Center bulk operations into consolidated `worker.ts` (JSONL parsing, 25-item metafield batches, EAN match tracking, multi-shop runner)
+- ✅ Migrated webhook processing and registration into consolidated `worker.ts` (`/api/webhooks?action=order` and `/api/webhooks?action=test`)
+- ✅ Store Locator and Delivery Dates previously integrated; all primary features now live in single worker
+- ⚠️ Prerequisite: provision an offline Admin API token per shop for reliable metafield processing (stored in KV alongside shop tokens)
+
 ### Sprint 23: Experience Center Integration & Cloudflare Workers Scaling (COMPLETED - 8 SP) ✅
 **Goal:** Implement comprehensive Experience Center (EC) product integration with external Dutch Furniture API and optimize for large-scale processing across multiple Shopify stores.
 

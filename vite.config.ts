@@ -4,18 +4,25 @@ import { defineConfig, loadEnv } from "vite";
 import i18nextLoader from "vite-plugin-i18next-loader";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-import i18nextLoaderOptions from "./i18n.config";
+import i18nextLoaderOptions from "./i18n.config.js";
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), "");
 	const app = new URL(env.HOST ?? env.SHOPIFY_APP_URL);
+
+	// Determine Cloudflare environment
+	const cloudflareEnv = env.APP_ENV || mode;
+	const isStaging = cloudflareEnv === "staging";
+	const isProduction = cloudflareEnv === "production";
 
 	return {
 		base: app.href,
 		clearScreen: false,
 		plugins: [
 			i18nextLoader(i18nextLoaderOptions),
-			cloudflare({ viteEnvironment: { name: "ssr" } }),
+			cloudflare({
+				viteEnvironment: { name: "ssr" },
+			}),
 			reactRouter(),
 			tsconfigPaths(),
 		],
@@ -35,6 +42,10 @@ export default defineConfig(({ mode }) => {
 			resolve: {
 				conditions: ["workerd", "worker", "browser"],
 			},
+		},
+		// Environment-specific configuration
+		define: {
+			__CLOUDFLARE_ENV__: JSON.stringify(cloudflareEnv),
 		},
 	};
 });
