@@ -5,7 +5,7 @@ const appUrl = env.HOST ?? env.SHOPIFY_APP_URL;
 
 export default defineConfig({
 	outputDir: "node_modules/.playwright",
-	testDir: "./tests",
+  testDir: "./tests",
 	testMatch: /.*\.e2e.test.ts/,
 	use: {
 		baseURL: appUrl,
@@ -16,10 +16,5 @@ export default defineConfig({
 		locale: "en",
 		serviceWorkers: "allow",
 	},
-	webServer: {
-		command: "npm run dev:tunnel",
-		reuseExistingServer: true,
-		timeout: 10 * 1000,
-		url: appUrl,
-	},
+  // keep minimal server usage; using env-provided URL
 });
