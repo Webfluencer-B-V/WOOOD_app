@@ -45,11 +45,19 @@
 			{
 				"queue": "woood",
 				"binding": "WEBHOOK_QUEUE"
+			},
+			{
+				"queue": "woood-scheduled",
+				"binding": "SCHEDULED_QUEUE"
 			}
 		],
 		"consumers": [
 			{
 				"queue": "woood"
+			},
+			{
+				"queue": "woood-scheduled",
+				"max_batch_size": 1
 			}
 		]
 	},

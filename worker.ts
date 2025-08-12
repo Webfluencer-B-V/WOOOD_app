@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 import { createRequestHandler } from "react-router";
-import type { WebhookQueueMessage } from "./app/types/app";
+import type { QueueMessage, ScheduledJobMessage } from "./app/types/app";
 import {
 	DEFAULT_FEATURE_FLAGS,
 	type Env,
@@ -9,15 +9,17 @@ import {
 	isFeatureEnabled,
 } from "./src/utils/consolidation";
 import {
+	type ExperienceCenterApiConfig,
 	fetchExperienceCenterData,
-	getInstalledShops,
-	processExperienceCenterUpdateAllShops,
+	processExperienceCenterWithBulkOperations,
 } from "./src/utils/experienceCenter";
 import {
+	type DealerApiConfig,
 	fetchAndTransformDealers,
 	upsertShopMetafield,
 } from "./src/utils/storeLocator";
-import { handleOrderWebhook, registerWebhooks } from "./src/utils/webhooks";
+
+// Webhook processing is handled in app routes; worker enqueues and scheduled jobs only
 
 const FEATURE_FLAGS: FeatureFlags = DEFAULT_FEATURE_FLAGS;
 
@@ -31,29 +33,10 @@ declare module "react-router" {
 }
 
 const requestHandler = createRequestHandler(
+	// virtual module injected by build tool
 	() => import("virtual:react-router/server-build"),
-	import.meta.env.MODE,
+	"production",
 );
-
-async function cleanupOldTokens(env: Env): Promise<void> {
-	if (!env.WOOOD_KV) return;
-	const keys = await env.WOOOD_KV.list({ prefix: "shop_token:" });
-	for (const key of keys.keys) {
-		const shop = key.name.replace("shop_token:", "");
-		try {
-			const tokenRecord = (await env.WOOOD_KV.get(key.name, "json")) as any;
-			if (tokenRecord?.accessToken) {
-				const response = await fetch(
-					`https://${shop}/admin/api/2023-10/shop.json`,
-					{ headers: { "X-Shopify-Access-Token": tokenRecord.accessToken } },
-				);
-				if (!response.ok) await env.WOOOD_KV.delete(key.name);
-			}
-		} catch {
-			await env.WOOOD_KV.delete(key.name);
-		}
-	}
-}
 
 function generateMockDates(): Array<{ date: string; displayName: string }> {
 	const dates: Array<{ date: string; displayName: string }> = [];
@@ -71,6 +54,38 @@ function generateMockDates(): Array<{ date: string; displayName: string }> {
 		dates.push({ date: formattedDate, displayName });
 	}
 	return dates;
+}
+
+// Helper: create a Shopify Admin client for a given shop using offline token from KV
+async function createAdminClientForShop(shop: string, env: Env) {
+	const record = (await env.WOOOD_KV?.get(`shop_token:${shop}`, "json")) as {
+		accessToken?: string;
+	} | null;
+	const accessToken = record?.accessToken;
+	if (!accessToken) throw new Error(`No access token for shop ${shop}`);
+
+	return {
+		request: async (query: string, variables?: Record<string, unknown>) => {
+			const response = await fetch(
+				`https://${shop}/admin/api/2023-10/graphql.json`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-Shopify-Access-Token": accessToken,
+					},
+					body: JSON.stringify({ query, variables }),
+				},
+			);
+			const json = await response.json();
+			if (!response.ok) {
+				throw new Error(
+					`GraphQL error ${response.status}: ${JSON.stringify(json)}`,
+				);
+			}
+			return json;
+		},
+	};
 }
 
 async function handleDeliveryDates(
@@ -91,9 +106,10 @@ async function handleDeliveryDates(
 		}
 		let accessToken: string | null = null;
 		if (env.WOOOD_KV) {
-			const tokenRecord = (await env.WOOOD_KV.get(`shop_token:${shop}`, {
-				type: "json",
-			} as any)) as any;
+			const tokenRecord = (await env.WOOOD_KV.get(
+				`shop_token:${shop}`,
+				"json",
+			)) as { accessToken?: string } | null;
 			accessToken = tokenRecord?.accessToken || null;
 		}
 		if (!accessToken) {
@@ -145,12 +161,23 @@ async function handleStoreLocator(
 		const action = url.searchParams.get("action");
 		if (action === "upsert") {
 			try {
-				const dealers = await fetchAndTransformDealers(env);
-				const shops = await getInstalledShops(env);
-				const results: any[] = [];
+				const dealers = await fetchAndTransformDealers({
+					baseUrl: env.DUTCH_FURNITURE_BASE_URL || "",
+					apiKey: env.DUTCH_FURNITURE_API_KEY || "",
+				});
+				const keys = await env.WOOOD_KV?.list({ prefix: "shop_token:" });
+				const shops =
+					keys?.keys?.map((k) => k.name.replace("shop_token:", "")) || [];
+				const results: Array<{
+					shop: string;
+					success?: boolean;
+					error?: string;
+					[key: string]: unknown;
+				}> = [];
 				for (const shop of shops) {
 					try {
-						const result = await upsertShopMetafield(env, dealers, shop);
+						const adminClient = await createAdminClientForShop(shop, env);
+						const result = await upsertShopMetafield(adminClient, dealers);
 						results.push({ shop, ...result });
 					} catch (error) {
 						const message =
@@ -188,51 +215,12 @@ async function handleStoreLocator(
 			}
 		}
 		if (action === "status") {
-			// Prefer persisted status if available
-			let persistedStatus: any = null;
-			if (env.STORE_LOCATOR_STATUS) {
-				persistedStatus = await env.STORE_LOCATOR_STATUS.get(
-					"store_locator_last_sync",
-					{ type: "json" } as any,
-				);
-			}
-
-			if (persistedStatus) {
-				return new Response(JSON.stringify(persistedStatus), {
-					headers: { "Content-Type": "application/json" },
-				});
-			}
-
-			// Fall back to a live status snapshot so the endpoint is still useful
-			try {
-				const [dealers, shops] = await Promise.all([
-					fetchAndTransformDealers(env).catch(() => null),
-					getInstalledShops(env).catch(() => [] as string[]),
-				]);
-
-				const snapshot = {
-					service: "store-locator",
-					status: "idle",
-					lastSync: null as string | null,
-					shopsInstalled: Array.isArray(shops) ? shops.length : 0,
-					dealersCount: Array.isArray(dealers) ? dealers.length : null,
-					message: "No persisted sync status available",
-				};
-
-				return new Response(JSON.stringify(snapshot), {
-					headers: { "Content-Type": "application/json" },
-				});
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				return new Response(
-					JSON.stringify({
-						service: "store-locator",
-						status: "unknown",
-						error: message,
-					}),
-					{ headers: { "Content-Type": "application/json" } },
-				);
-			}
+			return new Response(
+				JSON.stringify({
+					error: "Deprecated. Use app action status in dashboard.",
+				}),
+				{ status: 410, headers: { "Content-Type": "application/json" } },
+			);
 		}
 		return new Response(JSON.stringify({ error: "Invalid action parameter" }), {
 			status: 400,
@@ -259,16 +247,31 @@ async function handleExperienceCenter(
 		const action = url.searchParams.get("action");
 		if (action === "trigger") {
 			try {
-				const result = await processExperienceCenterUpdateAllShops(env);
-				if (env.EXPERIENCE_CENTER_STATUS) {
-					await env.EXPERIENCE_CENTER_STATUS.put(
-						"experience_center_last_sync",
-						JSON.stringify(result),
-					);
+				// Enqueue per-shop jobs instead of processing inline
+				const keys = await env.WOOOD_KV?.list({ prefix: "shop_token:" });
+				const shops =
+					keys?.keys?.map((k) => k.name.replace("shop_token:", "")) || [];
+				for (const shop of shops) {
+					await (
+						env as unknown as {
+							SCHEDULED_QUEUE?: {
+								send: (m: {
+									type: string;
+									shop?: string;
+									scheduledAt: string;
+								}) => Promise<void>;
+							};
+						}
+					).SCHEDULED_QUEUE?.send({
+						type: "experience-center-sync",
+						shop,
+						scheduledAt: new Date().toISOString(),
+					});
 				}
-				return new Response(JSON.stringify(result), {
-					headers: { "Content-Type": "application/json" },
-				});
+				return new Response(
+					JSON.stringify({ success: true, enqueued: shops.length }),
+					{ headers: { "Content-Type": "application/json" } },
+				);
 			} catch (error) {
 				const err = {
 					success: false,
@@ -289,7 +292,7 @@ async function handleExperienceCenter(
 		}
 		if (action === "status") {
 			try {
-				let statusData: any = null;
+				let statusData: { timestamp?: string } | null = null;
 				if (env.EXPERIENCE_CENTER_STATUS) {
 					const status = await env.EXPERIENCE_CENTER_STATUS.get(
 						"experience_center_last_sync",
@@ -300,11 +303,14 @@ async function handleExperienceCenter(
 				}
 
 				// Include a live probe to the EC upstream for quick visibility
-				let totals: any = null;
+				let totals: { total: number } | null = null;
 				try {
-					const ec = await fetchExperienceCenterData(env);
+					const ec = await fetchExperienceCenterData({
+						baseUrl: env.DUTCH_FURNITURE_BASE_URL || "",
+						apiKey: env.DUTCH_FURNITURE_API_KEY || "",
+					});
 					totals = { total: ec.total };
-				} catch (error) {
+				} catch (_error) {
 					// ignore live probe failures; expose as unavailable
 				}
 
@@ -323,18 +329,12 @@ async function handleExperienceCenter(
 					);
 				}
 
-				// No persisted status; still return a meaningful snapshot
+				// Deprecated endpoint behavior
 				return new Response(
 					JSON.stringify({
-						service: "experience-center",
-						status: "idle",
-						lastRun: null,
-						woodApi: totals
-							? { status: "available", totals }
-							: { status: "unavailable" },
-						message: "No persisted status available",
+						error: "Deprecated. Use app action status in dashboard.",
 					}),
-					{ headers: { "Content-Type": "application/json" } },
+					{ status: 410, headers: { "Content-Type": "application/json" } },
 				);
 			} catch (error) {
 				const message =
@@ -362,51 +362,14 @@ async function handleExperienceCenter(
 	}
 }
 
-async function handleWebhooks(request: Request, env: Env): Promise<Response> {
-	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_WEBHOOKS")) {
-		return new Response("Webhooks API disabled", { status: 503 });
-	}
-	try {
-		const topic = (request.headers.get("X-Shopify-Topic") || "").toLowerCase();
-		if (topic === "app/uninstalled") {
-			// app/uninstalled must use signature validation + cleanup
-			const { handleAppUninstalled } = await import("./src/utils/webhooks");
-			return handleAppUninstalled(request, env);
-		}
-		const url = new URL(request.url);
-		const action = url.searchParams.get("action");
-		if (action === "order" && request.method === "POST") {
-			return handleOrderWebhook(request, env);
-		}
-		if (action === "test" && request.method === "POST") {
-			const body = (await request.json().catch(() => ({}))) as any;
-			const shop = (body.shop || "").toString();
-			const accessToken = (body.accessToken || "").toString();
-			if (!shop || !accessToken) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						error: "shop and accessToken required",
-					}),
-					{ status: 400, headers: { "Content-Type": "application/json" } },
-				);
-			}
-			await registerWebhooks(shop, accessToken, env);
-			return new Response(JSON.stringify({ success: true }), {
-				headers: { "Content-Type": "application/json" },
-			});
-		}
-		return new Response(JSON.stringify({ error: "Invalid action parameter" }), {
-			status: 400,
-			headers: { "Content-Type": "application/json" },
-		});
-	} catch (error) {
-		console.error("Webhooks API error:", error);
-		return new Response(JSON.stringify({ error: "Internal server error" }), {
-			status: 500,
-			headers: { "Content-Type": "application/json" },
-		});
-	}
+async function handleWebhooks(_request: Request, _env: Env): Promise<Response> {
+	// Deprecated: Webhooks intake is handled by app route `app/routes/shopify.webhooks.tsx`
+	return new Response(
+		JSON.stringify({
+			error: "Deprecated. Use app route /shopify.webhooks.",
+		}),
+		{ status: 410, headers: { "Content-Type": "application/json" } },
+	);
 }
 
 async function handleHealth(_request: Request, env: Env): Promise<Response> {
@@ -440,56 +403,167 @@ export default {
 		return requestHandler(request, { cloudflare: { env, ctx } });
 	},
 
-	async queue(batch, _env, _ctx): Promise<void> {
-		for (const message of batch.messages) message.ack();
+	// Strongly-typed minimal queue batch type compatible with Workers
+	// without relying on external type packages
+	async queue(
+		batch: { messages: Array<{ ack: () => void }> },
+		env: Env,
+		_ctx: ExecutionContext,
+	): Promise<void> {
+		for (const message of batch.messages) {
+			try {
+				const body = (message as unknown as { body?: QueueMessage }).body as
+					| ScheduledJobMessage
+					| undefined;
+
+				if (!body || !("type" in body)) {
+					// Not a scheduled job, ack (webhook queue is handled by app route)
+					message.ack();
+					continue;
+				}
+
+				switch (body.type) {
+					case "experience-center-sync": {
+						if (!body.shop) throw new Error("Missing shop for EC job");
+						const adminClient = await createAdminClientForShop(body.shop, env);
+						const config: ExperienceCenterApiConfig = {
+							baseUrl: env.DUTCH_FURNITURE_BASE_URL || "",
+							apiKey: env.DUTCH_FURNITURE_API_KEY || "",
+						};
+						const ec = await fetchExperienceCenterData(config);
+						const availableEans = new Set(
+							ec.data
+								.map((i: { ean?: string }) => i.ean)
+								.filter(
+									(ean): ean is string =>
+										typeof ean === "string" && ean.length > 0,
+								),
+						);
+						const result = await processExperienceCenterWithBulkOperations(
+							adminClient,
+							availableEans,
+						);
+						await env.EXPERIENCE_CENTER_STATUS?.put(
+							`ec_last_sync:${body.shop}`,
+							JSON.stringify({
+								timestamp: new Date().toISOString(),
+								success: true,
+								summary: result,
+								shop: body.shop,
+								cron: true,
+							}),
+						);
+						message.ack();
+						break;
+					}
+					case "store-locator-sync": {
+						if (!body.shop) throw new Error("Missing shop for SL job");
+						const adminClient = await createAdminClientForShop(body.shop, env);
+						const config: DealerApiConfig = {
+							baseUrl: env.DUTCH_FURNITURE_BASE_URL || "",
+							apiKey: env.DUTCH_FURNITURE_API_KEY || "",
+						};
+						const dealers = await fetchAndTransformDealers(config);
+						await upsertShopMetafield(adminClient, dealers);
+						await env.STORE_LOCATOR_STATUS?.put(
+							`sl_last_sync:${body.shop}`,
+							JSON.stringify({
+								timestamp: new Date().toISOString(),
+								success: true,
+								count: dealers.length,
+								shop: body.shop,
+								cron: true,
+							}),
+						);
+						message.ack();
+						break;
+					}
+					case "token-cleanup": {
+						// Legacy no-op: token cleanup handled by app flows
+						message.ack();
+						break;
+					}
+				}
+			} catch (error) {
+				console.error("Queue job failed", error);
+				const maybeRetry = (message as unknown as { retry?: () => void }).retry;
+				if (typeof maybeRetry === "function") maybeRetry();
+				else message.ack();
+			}
+		}
 	},
 
-	async scheduled(event: any, env: Env, _ctx: any): Promise<void> {
-		// Store locator sync (every 6 hours)
+	async scheduled(
+		event: { cron?: string },
+		env: Env,
+		_ctx: ExecutionContext,
+	): Promise<void> {
+		// Enqueue jobs instead of executing inline
+		const keys = await env.WOOOD_KV?.list({ prefix: "shop_token:" });
+		const shops =
+			keys?.keys?.map((k) => k.name.replace("shop_token:", "")) || [];
+
 		if (
 			isFeatureEnabled(FEATURE_FLAGS, "ENABLE_STORE_LOCATOR") &&
 			event.cron === "0 */6 * * *"
 		) {
-			try {
-				const dealers = await fetchAndTransformDealers(env);
-				const shops = await getInstalledShops(env);
-				for (const shop of shops) {
-					try {
-						await upsertShopMetafield(env, dealers, shop);
-					} catch {}
-				}
-				if (env.STORE_LOCATOR_STATUS) {
-					await env.STORE_LOCATOR_STATUS.put(
-						"store_locator_last_sync",
-						JSON.stringify({
-							lastSync: new Date().toISOString(),
-							shopsProcessed: shops.length,
-							success: true,
-						}),
-					);
-				}
-			} catch {}
+			for (const shop of shops) {
+				await (
+					env as unknown as {
+						SCHEDULED_QUEUE?: {
+							send: (m: {
+								type: string;
+								shop?: string;
+								scheduledAt: string;
+							}) => Promise<void>;
+						};
+					}
+				).SCHEDULED_QUEUE?.send({
+					type: "store-locator-sync",
+					shop,
+					scheduledAt: new Date().toISOString(),
+				});
+			}
 		}
 
-		// Experience center bulk operations (every 6h or daily at 04:00)
 		if (
 			isFeatureEnabled(FEATURE_FLAGS, "ENABLE_EXPERIENCE_CENTER") &&
 			(event.cron === "0 */6 * * *" || event.cron === "0 4 * * *")
 		) {
-			try {
-				const result = await processExperienceCenterUpdateAllShops(env);
-				if (env.EXPERIENCE_CENTER_STATUS) {
-					await env.EXPERIENCE_CENTER_STATUS.put(
-						"experience_center_last_sync",
-						JSON.stringify(result),
-					);
-				}
-			} catch {}
+			for (const shop of shops) {
+				await (
+					env as unknown as {
+						SCHEDULED_QUEUE?: {
+							send: (m: {
+								type: string;
+								shop?: string;
+								scheduledAt: string;
+							}) => Promise<void>;
+						};
+					}
+				).SCHEDULED_QUEUE?.send({
+					type: "experience-center-sync",
+					shop,
+					scheduledAt: new Date().toISOString(),
+				});
+			}
 		}
 
-		// Token cleanup daily at 02:00
 		if (event.cron === "0 2 * * *") {
-			await cleanupOldTokens(env);
+			await (
+				env as unknown as {
+					SCHEDULED_QUEUE?: {
+						send: (m: {
+							type: string;
+							shop?: string;
+							scheduledAt: string;
+						}) => Promise<void>;
+					};
+				}
+			).SCHEDULED_QUEUE?.send({
+				type: "token-cleanup",
+				scheduledAt: new Date().toISOString(),
+			});
 		}
 	},
-} satisfies ExportedHandler<Env, WebhookQueueMessage>;
+} satisfies ExportedHandler<Env, QueueMessage>;
