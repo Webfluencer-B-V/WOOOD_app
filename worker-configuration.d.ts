@@ -20,6 +20,9 @@ interface ScheduledEvent {
 
 interface ExportedHandlerEnv {}
 
+// Use app/types/app.WorkerEnv as Env across the app
+type Env = import("./app/types/app").WorkerEnv;
+
 interface ExportedHandler<Env = ExportedHandlerEnv, QueueMessage = unknown> {
   fetch?: (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response> | Response;
   queue?: (batch: { messages: Array<{ ack: () => void }> }, env: Env, ctx: ExecutionContext) => Promise<void> | void;

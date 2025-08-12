@@ -1,12 +1,13 @@
-import type { Env } from "./consolidation";
-
 export interface DealerApiConfig {
 	baseUrl: string;
 	apiKey: string;
 }
 
 export interface ShopifyAdminClient {
-	request: (query: string, variables?: any) => Promise<any>;
+	request: (
+		query: string,
+		variables?: Record<string, unknown>,
+	) => Promise<unknown>;
 }
 
 const EXCLUSIVITY_MAP: Record<string, string> = {
@@ -20,7 +21,7 @@ const EXCLUSIVITY_MAP: Record<string, string> = {
 	"vt wonen dealers only": "vtwonen",
 };
 
-function mapExclusives(exclusivityData: any): string[] {
+function mapExclusives(exclusivityData: unknown): string[] {
 	if (!exclusivityData) return [];
 	let descriptions: string[] = [];
 	if (Array.isArray(exclusivityData)) {
@@ -43,7 +44,7 @@ function mapExclusives(exclusivityData: any): string[] {
 
 export async function fetchAndTransformDealers(
 	config: DealerApiConfig,
-): Promise<any[]> {
+): Promise<Array<Record<string, unknown>>> {
 	const { baseUrl, apiKey } = config;
 	if (!baseUrl || !apiKey) {
 		throw new Error("Missing dealer API configuration (baseUrl or apiKey)");
@@ -75,11 +76,11 @@ export async function fetchAndTransformDealers(
 		})
 		.map((dealer) => {
 			const {
-				accountmanager,
-				dealerActivationPortal,
-				vatNumber,
-				shopfinderExclusives,
-				accountStatus,
+				accountmanager: _a,
+				dealerActivationPortal: _dap,
+				vatNumber: _v,
+				shopfinderExclusives: _sfe,
+				accountStatus: _as,
 				...rest
 			} = dealer;
 			const exclusivityRaw =
@@ -95,11 +96,18 @@ export async function fetchAndTransformDealers(
 
 export async function upsertShopMetafield(
 	adminClient: ShopifyAdminClient,
-	dealers: any[],
-): Promise<any> {
+	dealers: Array<Record<string, unknown>>,
+): Promise<{
+	success: boolean;
+	timestamp: string;
+	count: number;
+	upsertResult: unknown;
+}> {
 	const shopQuery = `query { shop { id } }`;
-	const shopResult = await adminClient.request(shopQuery);
-	const shopId = shopResult?.data?.shop?.id;
+	const shopResult = (await adminClient.request(shopQuery)) as {
+		data?: { shop?: { id?: string } };
+	};
+	const shopId = shopResult.data?.shop?.id;
 	if (!shopId) throw new Error("Could not fetch shop ID");
 
 	const mutation = `

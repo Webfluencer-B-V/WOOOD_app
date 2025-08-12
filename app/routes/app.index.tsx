@@ -1,21 +1,16 @@
-import { SaveBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
 	Badge,
 	Banner,
 	Button,
-	ButtonGroup,
 	Card,
 	InlineStack,
 	Layout,
 	Page,
-	ProgressBar,
 	Text,
 } from "@shopify/polaris";
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { data, Form, useActionData, useNavigation } from "react-router";
+import { data, Form, useNavigation } from "react-router";
 
-import { API_VERSION } from "~/const";
 import { createShopify, ShopifyException } from "~/shopify.server";
 
 // Minimal shape for the Shop query result to avoid strict coupling to generated types
@@ -89,7 +84,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			experienceCenterStatus,
 			storeLocatorStatus,
 		};
-	} catch (error: any) {
+	} catch (error: unknown) {
 		shopify.utils.log.error("app.index.loader.error", error);
 
 		if (error instanceof ShopifyException) {
@@ -125,18 +120,18 @@ export default function AppIndex({
 	actionData,
 	loaderData,
 }: Route.ComponentProps) {
-	const { data, errors } = (loaderData ?? {}) as ShopInfoResponse;
-	const experienceCenterStatus = (loaderData as any)
-		?.experienceCenterStatus as {
-		timestamp?: string;
-		success?: boolean;
+	type StatusSummary = { timestamp?: string; success?: boolean };
+	type ExperienceCenterStatus = StatusSummary & {
 		summary?: { successful: number; failed: number };
-	} | null;
-	const storeLocatorStatus = (loaderData as any)?.storeLocatorStatus as {
-		timestamp?: string;
-		success?: boolean;
-		count?: number;
-	} | null;
+	};
+	type StoreLocatorStatus = StatusSummary & { count?: number };
+	type IndexLoaderData = ShopInfoResponse & {
+		experienceCenterStatus?: ExperienceCenterStatus | null;
+		storeLocatorStatus?: StoreLocatorStatus | null;
+	};
+
+	const { data, errors, experienceCenterStatus, storeLocatorStatus } =
+		(loaderData ?? {}) as IndexLoaderData;
 	const navigation = useNavigation();
 	const { t } = useTranslation();
 
@@ -148,7 +143,7 @@ export default function AppIndex({
 		return new Date(timestamp).toLocaleString();
 	};
 
-	const getStatusBadge = (status: any) => {
+	const getStatusBadge = (status: { success?: boolean } | null | undefined) => {
 		if (!status) return <Badge tone="warning">No sync yet</Badge>;
 		if (status.success) return <Badge tone="success">Success</Badge>;
 		return <Badge tone="critical">Failed</Badge>;
@@ -332,7 +327,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 
 	// Create admin client adapter for our utility functions
 	const adminClientAdapter: ShopifyAdminClient = {
-		request: async (query: string, variables?: any) => {
+		request: async (query: string, variables?: Record<string, unknown>) => {
 			return await client.request(query, { variables });
 		},
 	};
@@ -348,7 +343,11 @@ export async function action({ context, request }: Route.ActionArgs) {
 				// Fetch experience center data
 				const experienceCenterData = await fetchExperienceCenterData(config);
 				const availableEans = new Set(
-					experienceCenterData.data.map((item: any) => item.ean),
+					experienceCenterData.data
+						.map((item) => item.ean)
+						.filter(
+							(ean): ean is string => typeof ean === "string" && ean.length > 0,
+						),
 				);
 
 				// Process experience center for current shop
@@ -412,9 +411,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 			}
 
 			case "register-webhooks": {
-				const cfUrl = (context.cloudflare.env as any).CLOUDFLARE_URL as
-					| string
-					| undefined;
+				const cfUrl = (context.cloudflare.env as { CLOUDFLARE_URL?: string })
+					.CLOUDFLARE_URL;
 				const webhookEndpoint = `${cfUrl || context.cloudflare.env.SHOPIFY_APP_URL}/api/webhooks/orders`;
 
 				await registerWebhooks(adminClientAdapter, webhookEndpoint);

@@ -1,5 +1,3 @@
-import type { Env } from "./consolidation";
-
 function safeEqual(a: string, b: string): boolean {
 	if (a.length !== b.length) return false;
 	let result = 0;
@@ -29,7 +27,10 @@ export async function validateWebhookSignature(
 }
 
 export interface ShopifyAdminClient {
-	request: (query: string, variables?: any) => Promise<any>;
+	request: (
+		query: string,
+		variables?: Record<string, unknown>,
+	) => Promise<unknown>;
 }
 
 export interface WebhookStorage {
@@ -39,13 +40,13 @@ export interface WebhookStorage {
 export async function handleOrderWebhook(
 	request: Request,
 	secret: string,
-): Promise<{ valid: boolean; shop: string; topic: string; payload: any }> {
+): Promise<{ valid: boolean; shop: string; topic: string; payload: unknown }> {
 	const signature = request.headers.get("X-Shopify-Hmac-Sha256") || "";
 	const shop = (request.headers.get("X-Shopify-Shop-Domain") || "").trim();
 	const topic = request.headers.get("X-Shopify-Topic") || "";
 	const bodyText = await request.text();
 	const valid = await validateWebhookSignature(bodyText, signature, secret);
-	let payload: any = {};
+	let payload: unknown = {};
 	try {
 		payload = JSON.parse(bodyText);
 	} catch {}
@@ -104,8 +105,15 @@ export async function registerWebhooks(
 					format: "JSON",
 				},
 			};
-			const result = await adminClient.request(mutation, variables);
-			if (result.data?.webhookSubscriptionCreate?.userErrors?.length > 0) {
+			const result = (await adminClient.request(mutation, variables)) as {
+				data?: {
+					webhookSubscriptionCreate?: {
+						webhookSubscription?: { id?: string };
+						userErrors?: Array<{ field?: string; message?: string }>;
+					};
+				};
+			};
+			if (result.data?.webhookSubscriptionCreate?.userErrors?.length) {
 				console.error("Webhook registration failed", {
 					errors: result.data.webhookSubscriptionCreate.userErrors,
 					webhook,

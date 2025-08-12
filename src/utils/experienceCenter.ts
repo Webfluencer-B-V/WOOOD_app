@@ -1,13 +1,18 @@
-import type { Env } from "./consolidation";
-
 export interface ExperienceCenterApiConfig {
 	baseUrl: string;
 	apiKey: string;
 }
 
+export interface ExperienceCenterRecord {
+	ean?: string;
+	channel?: string;
+	itemcode?: string;
+	[key: string]: unknown;
+}
+
 export async function fetchExperienceCenterData(
 	config: ExperienceCenterApiConfig,
-): Promise<{ data: any[]; total: number }> {
+): Promise<{ data: ExperienceCenterRecord[]; total: number }> {
 	const { baseUrl, apiKey } = config;
 	if (!baseUrl || !apiKey) {
 		throw new Error("Missing baseUrl or apiKey for Experience Center API");
@@ -26,12 +31,21 @@ export async function fetchExperienceCenterData(
 		);
 	}
 
-	const rawData = (await response.json()) as any;
-	const allData = Array.isArray(rawData) ? rawData : rawData.data || [];
+	const rawData: unknown = await response.json();
+	const allData: unknown[] = Array.isArray(rawData)
+		? rawData
+		: typeof rawData === "object" &&
+				rawData !== null &&
+				Array.isArray((rawData as { data?: unknown[] }).data)
+			? (rawData as { data: unknown[] }).data
+			: [];
 
-	const experienceCenterData = allData.filter(
-		(item: any) => item.channel === "EC" && item.ean,
-	);
+	const experienceCenterData = allData
+		.filter(
+			(item): item is ExperienceCenterRecord =>
+				typeof item === "object" && item !== null,
+		)
+		.filter((item) => item.channel === "EC" && !!item.ean);
 
 	return {
 		data: experienceCenterData,
@@ -44,8 +58,13 @@ function delay(ms: number): Promise<void> {
 }
 
 export interface ShopifyAdminClient {
-	request: (query: string, variables?: any) => Promise<any>;
+	request: (
+		query: string,
+		variables?: Record<string, unknown>,
+	) => Promise<unknown>;
 }
+
+type GraphQLResponse<TData> = { data?: TData; errors?: unknown };
 
 export async function processExperienceCenterWithBulkOperations(
 	adminClient: ShopifyAdminClient,
@@ -90,8 +109,15 @@ export async function processExperienceCenterWithBulkOperations(
     }
   `;
 
-	const createResult = await adminClient.request(createBulkOperationMutation);
-	const userErrors = createResult.data?.bulkOperationRunQuery?.userErrors || [];
+	const createResult = (await adminClient.request(
+		createBulkOperationMutation,
+	)) as GraphQLResponse<{
+		bulkOperationRunQuery?: {
+			bulkOperation?: { id?: string };
+			userErrors?: Array<{ field?: string; message?: string }>;
+		};
+	}>;
+	const userErrors = createResult.data?.bulkOperationRunQuery?.userErrors ?? [];
 	if (userErrors.length > 0) {
 		throw new Error(
 			`Bulk operation creation failed: ${JSON.stringify(userErrors)}`,
@@ -117,11 +143,19 @@ export async function processExperienceCenterWithBulkOperations(
 		const statusQuery = `
       query { node(id: "${bulkOperationId}") { ... on BulkOperation { id status errorCode objectCount fileSize url partialDataUrl } } }
     `;
-		const statusResult = await adminClient.request(statusQuery);
+		const statusResult = (await adminClient.request(
+			statusQuery,
+		)) as GraphQLResponse<{
+			node?: { status?: string; errorCode?: string; url?: string };
+		}>;
 		const node = statusResult.data?.node;
 		if (!node) throw new Error("Could not retrieve bulk operation status");
-		status = node.status;
-		downloadUrl = node.url;
+		if (typeof node.status === "string") {
+			status = node.status;
+		}
+		if (typeof node.url === "string") {
+			downloadUrl = node.url;
+		}
 		if (status === "FAILED")
 			throw new Error(`Bulk operation failed: ${node.errorCode || "Unknown"}`);
 		if (status === "CANCELED") throw new Error("Bulk operation was canceled");
@@ -134,7 +168,7 @@ export async function processExperienceCenterWithBulkOperations(
 		throw new Error(
 			`Failed to download bulk operation data: ${downloadResponse.status} ${downloadResponse.statusText}`,
 		);
-	const jsonlData = await downloadResponse.text();
+	const jsonlData: string = await downloadResponse.text();
 	const lines = jsonlData.trim().split("\n");
 
 	const products = new Map<
@@ -234,15 +268,25 @@ export async function setProductExperienceCenterMetafieldsBulk(
 		ownerId: productId,
 	}));
 
-	const result = await adminClient.request(mutation, {
+	const result = (await adminClient.request(mutation, {
 		metafields: metafieldsInput,
-	});
-	const userErrors = result.data?.metafieldsSet?.userErrors || [];
-	const successfulMetafields = result.data?.metafieldsSet?.metafields || [];
+	})) as {
+		data?: {
+			metafieldsSet?: {
+				userErrors?: Array<{ field?: string; message?: string }>;
+				metafields?: unknown[];
+			};
+		};
+	};
+	const userErrors = (result.data?.metafieldsSet?.userErrors ?? []) as Array<{
+		field?: string;
+		message?: string;
+	}>;
+	const successfulMetafields = result.data?.metafieldsSet?.metafields ?? [];
 	return {
 		successful: successfulMetafields.length,
 		failed: metafields.length - successfulMetafields.length,
-		errors: userErrors.map((e: any) => `${e.field}: ${e.message}`),
+		errors: userErrors.map((e) => `${e.field}: ${e.message}`),
 	};
 }
 
@@ -264,13 +308,37 @@ export async function processExperienceCenterUpdateAllShops(
 	config: ExperienceCenterApiConfig,
 	storage: TokenStorage,
 	clientFactory: ShopifyAdminClientFactory,
-): Promise<any> {
+): Promise<{
+	success: boolean;
+	timestamp: string;
+	results: Array<{
+		shop: string;
+		success: boolean;
+		summary?: unknown;
+		error?: string;
+	}>;
+	summary: {
+		totalShops: number;
+		successfulShops: number;
+		failedShops: number;
+		totalProducts: number;
+		successfulProducts: number;
+		failedProducts: number;
+	};
+}> {
 	const experienceCenterData = await fetchExperienceCenterData(config);
 	const availableEans = new Set(
-		experienceCenterData.data.map((item: any) => item.ean),
+		experienceCenterData.data
+			.map((item) => item.ean as string | undefined)
+			.filter((e): e is string => typeof e === "string" && e.length > 0),
 	);
 	const installedShops = await getInstalledShops(storage);
-	const results: any[] = [];
+	const results: Array<{
+		shop: string;
+		success: boolean;
+		summary?: unknown;
+		error?: string;
+	}> = [];
 	let totalSuccessful = 0;
 	let totalFailed = 0;
 	for (const shop of installedShops) {

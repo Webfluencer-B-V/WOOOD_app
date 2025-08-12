@@ -151,9 +151,53 @@ Post‑validation TODO (after E2E passes on Polaris v12)
 - Add idempotent webhook registration check (query existing subscriptions to avoid duplicates) and surface userErrors in results for logging.
 - Unit tests for `validateWebhookSignature` and `registerWebhooks` (mock Admin client and error paths).
 
-### src/utils/consolidation.ts
-
 - Add scheduler gating keys to `Env` and document usage:
   - `SCHEDULER_LEADER_SHOP?: string` (maps to KV `scheduler:leaderShop`).
   - `SCHEDULER_ENABLED_SHOPS?: string` (JSON list; maps to KV `scheduler:enabledShops`).
 - In Worker, read these keys from KV and no‑op cron enqueue if not leader/not enabled. Documented here; implementation pending post‑validation.
+
+## Upcoming: API Endpoints (Consolidated Worker)
+
+- Standardize endpoints (feature‑flagged):
+  - `GET /api/delivery-dates?shop=<shop-domain>`
+  - `POST /api/store-locator?action=upsert`
+  - `POST /api/experience-center?action=trigger`
+  - `GET /api/experience-center?action=status`
+  - `GET /health`
+- Deprecations (return 410 with guidance):
+  - Any legacy `/api/*` not listed above
+  - `/api/webhooks/*` on Worker (webhooks live at `app/routes/shopify.webhooks.tsx`)
+- App routes remain UI + webhook intake; Worker handles automation/cron/queues.
+
+### Feature Flags (no‑break rollout)
+
+- `ENABLE_DELIVERY_DATES_API` gates `/api/delivery-dates`
+- `ENABLE_STORE_LOCATOR` gates `/api/store-locator`
+- `ENABLE_EXPERIENCE_CENTER` gates `/api/experience-center`
+- `ENABLE_WEBHOOKS` reserved (intake handled by app)
+
+## Deprecation Plan
+
+- Environment files for Worker: deprecate `.env*` reads. Source of truth:
+  - Cloudflare `wrangler.json` `vars` and `wrangler secret`
+  - Shopify CLI config for app build/dev
+- `src/utils/consolidation.ts`: remove after types/flags are migrated:
+  - Move `Env` to `app/types/app.ts` and extend via `worker-configuration.d.ts`
+  - Move flags to `src/config/flags.ts` with typed defaults
+  - Move shared domain types to `src/types/*`
+
+### One Deployment Source
+
+- Single workflow `.github/workflows/deploy.yml`:
+  - Install deps, `npm run build:web`, then `npm run build`
+  - Deploy Worker via `cloudflare/wrangler-action@v3` using root `wrangler.json`
+  - Deploy Shopify extensions via `npm run deploy:shopify` (optional)
+- Remove `workers/` package as deployable unit post‑validation.
+
+### Timeline
+
+1. Document standardized endpoints and enable flags on staging
+2. Migrate secrets/env to Cloudflare vars/secrets; stop Worker `.env*` reads
+3. Move `Env`/flags/types; delete `src/utils/consolidation.ts` and `/docs/CONSOLIDATION.md`
+4. Remove legacy `workers/` folder; verify CI green
+5. Do not keep 410 deprecated endpoints for two releases

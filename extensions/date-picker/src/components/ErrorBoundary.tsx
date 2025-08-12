@@ -9,14 +9,14 @@ import React, { Component, type ReactNode } from "react";
 interface ErrorBoundaryState {
 	hasError: boolean;
 	error?: Error;
-	errorInfo?: any;
+	errorInfo?: React.ErrorInfo;
 	errorId: string;
 }
 
 interface ErrorBoundaryProps {
 	children: ReactNode;
 	fallback?: ReactNode;
-	onError?: (error: Error, errorInfo: any) => void;
+	onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
 }
 
 export class ErrorBoundary extends Component<
@@ -44,7 +44,7 @@ export class ErrorBoundary extends Component<
 		};
 	}
 
-	componentDidCatch(error: Error, errorInfo: any) {
+	componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
 		this.setState({
 			error,
 			errorInfo,
@@ -59,7 +59,7 @@ export class ErrorBoundary extends Component<
 		}
 	}
 
-	private logError(error: Error, errorInfo: any) {
+	private logError(error: Error, errorInfo: React.ErrorInfo) {
 		const errorData = {
 			errorId: this.state.errorId,
 			name: error.name,
@@ -80,27 +80,7 @@ export class ErrorBoundary extends Component<
 		console.error("Extension Error Boundary caught an error:", errorData);
 	}
 
-	private async sendErrorToService(errorData: any): Promise<void> {
-		try {
-			// This would be configured to point to your error tracking endpoint
-			const apiBaseUrl = "https://localhost:3000"; // Default for development
-
-			await fetch(`${apiBaseUrl}/api/errors/track`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					...errorData,
-					source: "date-picker-extension",
-					environment: "development", // Hardcoded for extension compatibility
-				}),
-			});
-		} catch (error) {
-			// Silently fail to avoid infinite error loops
-			console.debug("Error tracking failed:", error);
-		}
-	}
+	// sendErrorToService intentionally removed to avoid unused private member
 
 	private handleRetry = () => {
 		this.setState({
@@ -172,31 +152,34 @@ export class ErrorBoundary extends Component<
 
 // Hook-based error boundary for functional components
 export const useErrorHandler = () => {
-	const handleError = React.useCallback((error: Error, errorInfo?: any) => {
-		const errorId =
-			Math.random().toString(36).substring(2) + Date.now().toString(36);
+	const handleError = React.useCallback(
+		(error: Error, errorInfo?: Partial<React.ErrorInfo>) => {
+			const errorId =
+				Math.random().toString(36).substring(2) + Date.now().toString(36);
 
-		const errorData = {
-			errorId,
-			name: error.name,
-			message: error.message,
-			stack: error.stack,
-			timestamp: new Date().toISOString(),
-			userAgent:
-				typeof navigator !== "undefined"
-					? navigator.userAgent
-					: "checkout-extension",
-			url:
-				typeof window !== "undefined"
-					? window.location?.href
-					: "checkout-extension-context",
-			...errorInfo,
-		};
+			const errorData = {
+				errorId,
+				name: error.name,
+				message: error.message,
+				stack: error.stack,
+				timestamp: new Date().toISOString(),
+				userAgent:
+					typeof navigator !== "undefined"
+						? navigator.userAgent
+						: "checkout-extension",
+				url:
+					typeof window !== "undefined"
+						? window.location?.href
+						: "checkout-extension-context",
+				...errorInfo,
+			};
 
-		console.error("Manual error handling:", errorData);
+			console.error("Manual error handling:", errorData);
 
-		return errorId;
-	}, []);
+			return errorId;
+		},
+		[],
+	);
 
 	return { handleError };
 };

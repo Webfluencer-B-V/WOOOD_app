@@ -32,7 +32,7 @@ const QUERY_KEY = ["delivery-dates"] as const;
  */
 async function fetchDeliveryDates(
 	apiBaseUrl: string,
-	shopDomain: string,
+	_shopDomain: string,
 ): Promise<{
 	data: DeliveryDate[];
 	metadata?: ApiResponse["metadata"];
@@ -79,15 +79,16 @@ async function fetchDeliveryDates(
 
 		// console.log(`✅ Fetched ${data.length} delivery dates`);
 		return { data, metadata };
-	} catch (error: any) {
+	} catch (error: unknown) {
 		clearTimeout(timeoutId);
 
-		if (error.name === "AbortError") {
+		if ((error as { name?: string }).name === "AbortError") {
 			throw new Error("Request timed out after 15 seconds");
 		}
 
-		console.error("❌ Failed to fetch delivery dates:", error.message);
-		throw error;
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("❌ Failed to fetch delivery dates:", message);
+		throw new Error(message);
 	}
 }
 
@@ -96,7 +97,7 @@ async function fetchDeliveryDates(
  */
 export function useDeliveryDates(
 	apiBaseUrl: string,
-	enableMockMode: boolean,
+	_enableMockMode: boolean,
 	shopDomain: string,
 ): {
 	deliveryDates: DeliveryDate[];
