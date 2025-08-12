@@ -2,9 +2,9 @@ name: Deploy WOOOD App
 
 on:
   push:
-    branches: [shopflare-integration, main]
+    branches: [WOOOD-integration, main]
   pull_request:
-    branches: [shopflare-integration, main]
+    branches: [WOOOD-integration, main]
 
 jobs:
   deploy:

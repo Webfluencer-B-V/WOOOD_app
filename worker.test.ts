@@ -5,7 +5,7 @@ import {
 	waitOnExecutionContext,
 } from "cloudflare:test";
 import { afterEach, expect, test, vi } from "vitest";
-
+import type { Env } from "./src/utils/consolidation";
 import worker from "./worker";
 
 afterEach(() => {
@@ -14,7 +14,7 @@ afterEach(() => {
 
 test("fetch", async () => {
 	const response = await SELF.fetch("http://example.com");
-	expect(await response.text()).toContain("<title>ShopFlare</title>");
+	expect(await response.text()).toContain("<title>WOOOD</title>");
 	expect(response.status).toBe(200);
 });
 
@@ -27,17 +27,20 @@ const kvStub = {
 	async put() {},
 	async delete() {},
 	async list() {
-		return { keys: [], list_complete: true } as any;
+		return {
+			keys: [] as Array<{ name: string }>,
+			list_complete: true,
+			cursor: undefined,
+		};
 	},
-} as any;
+} satisfies KVNamespace;
 
 test.skip("worker", async () => {
 	const request = new Request("http://example.com");
 	const ctx = createExecutionContext();
-	const enrichedEnv = { ...(env as any), SESSION_STORAGE: kvStub } as any;
-	// biome-ignore lint/suspicious/noExplicitAny: upstream
-	const response = await worker.fetch(request as any, enrichedEnv, ctx);
+	const enrichedEnv = { ...env, SESSION_STORAGE: kvStub } as unknown as Env;
+	const response = await worker.fetch(request, enrichedEnv, ctx);
 	await waitOnExecutionContext(ctx);
-	expect(await response.text()).toContain("<title>ShopFlare</title>");
+	expect(await response.text()).toContain("<title>WOOOD</title>");
 	expect(response.status).toBe(200);
 });

@@ -76,6 +76,6 @@ export function Layout({ children }: PropsWithChildren) {
 }
 
 export const meta: Route.MetaFunction = () => [
-	{ title: "ShopFlare" },
+	{ title: "WOOOD" },
 	{ name: "description", content: "..." },
 ];

@@ -4,7 +4,7 @@ const shop = process.env.SHOP || "webfluencer-panda.myshopify.com";
 const handle = process.env.SHOPIFY_APP_HANDLE || "woood-2";
 
 // Use an Admin session only for this file's tests with anti-detection settings
-export const test = base.extend({
+const test = base.extend({
 	storageState: "playwright/.auth/admin.json",
 	// Try to bypass Cloudflare detection
 	context: async ({ browser }, use) => {
@@ -27,7 +27,7 @@ export const test = base.extend({
 		await context.close();
 	},
 });
-export { expect };
+// no-op to avoid exports; use imported expect directly
 
 test.skip(!shop || !handle, "Requires SHOP and SHOPIFY_APP_HANDLE");
 
@@ -101,7 +101,7 @@ test("try to bypass cloudflare and reach embedded app", async ({ page }) => {
 		try {
 			await page.click("body");
 			await randomDelay();
-		} catch (e) {
+		} catch (_e) {
 			console.log("Could not interact with page");
 		}
 
@@ -126,7 +126,7 @@ test("try to bypass cloudflare and reach embedded app", async ({ page }) => {
 				path: "embedded-app-success.png",
 				fullPage: true,
 			});
-		} catch (e) {
+		} catch (_e) {
 			console.log("⚠️  Cloudflare challenge did not complete within timeout");
 			await page.screenshot({ path: "cloudflare-timeout.png", fullPage: true });
 		}
@@ -163,7 +163,7 @@ test("try to bypass cloudflare and reach embedded app", async ({ page }) => {
 	}
 });
 
-test("direct app URL loads ShopFlare content", async ({ page }) => {
+test("direct app URL loads WOOOD content", async ({ page }) => {
 	// Test the app URL directly without going through Shopify Admin
 	const appUrl =
 		process.env.SHOPIFY_APP_URL ||
@@ -178,11 +178,11 @@ test("direct app URL loads ShopFlare content", async ({ page }) => {
 	const title = await page.title();
 	console.log(`App title: ${title}`);
 
-	// Look for ShopFlare content
-	const hasShopFlare = await page.locator("body").textContent();
-	if (hasShopFlare?.includes("ShopFlare")) {
-		console.log("✅ App loads successfully with ShopFlare content");
-		await expect(page.locator("body")).toContainText("ShopFlare");
+	// Look for WOOOD content
+	const hasWOOOD = await page.locator("body").textContent();
+	if (hasWOOOD?.includes("WOOOD")) {
+		console.log("✅ App loads successfully with WOOOD content");
+		await expect(page.locator("body")).toContainText("WOOOD");
 	} else {
 		console.log("⚠️  App loads but may need authentication/shop context");
 		// This is still a success - the app is responding

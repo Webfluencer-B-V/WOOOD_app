@@ -23,7 +23,7 @@ export default function Index() {
 				width: "100vw",
 			}}
 		>
-			<h1 data-testid="h1">ShopFlare</h1>
+			<h1 data-testid="h1">WOOOD</h1>
 		</div>
 	);
 }

@@ -17,5 +17,5 @@ test.skip("embedded simulation renders app", async ({ page }) => {
 		window.shopify = { environment: { embedded: true, development: true } };
 	});
 
-	await expect(page.locator("body")).toContainText("ShopFlare");
+	await expect(page.locator("body")).toContainText("WOOOD");
 });

@@ -1,5 +1,5 @@
 {
-	"name": "@chr33s/shopflare",
+	"name": "@Webfluencer-B-V/WOOOD_app",
 	"version": "2.9.25",
 	"private": true,
 	"type": "module",
@@ -76,7 +76,7 @@
 	},
 	"packageManager": "npm@10.0.0",
 	"bin": {
-		"shopflare": "./bin.sh"
+		"WOOOD": "./bin.sh"
 	},
 	"resolutions": {
 		"react": "19.1.1",
