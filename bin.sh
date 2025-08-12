@@ -17,7 +17,7 @@ function addGitHook() {
 }
 
 function help() {
-	echo "npx shopflare [addGitHook,triggerWebhook,triggerWorkflow,update,version]"
+	echo "npx WOOOD [addGitHook,triggerWebhook,triggerWorkflow,update,version]"
 }
 
 function triggerWebhook() {
@@ -48,7 +48,7 @@ function update() {
 
 	curl \
 		--location \
-		--silent https://api.github.com/repos/chr33s/shopflare/tarball \
+		--silent https://api.github.com/repos/Webfluencer-B-V/WOOOD_app/tarball \
 		| tar \
 		--directory=. \
 		--exclude={.dev.vars,.github/act,.gitignore,extensions,public,LICENSE.md,package-lock.json,README.md,SECURITY.md} \
