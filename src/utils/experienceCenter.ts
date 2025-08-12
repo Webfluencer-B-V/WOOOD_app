@@ -1,21 +1,24 @@
 import type { Env } from "./consolidation";
 
+export interface ExperienceCenterApiConfig {
+	baseUrl: string;
+	apiKey: string;
+}
+
 export async function fetchExperienceCenterData(
-	env: Env,
+	config: ExperienceCenterApiConfig,
 ): Promise<{ data: any[]; total: number }> {
-	const { DUTCH_FURNITURE_BASE_URL, DUTCH_FURNITURE_API_KEY } = env;
-	if (!DUTCH_FURNITURE_BASE_URL || !DUTCH_FURNITURE_API_KEY) {
-		throw new Error(
-			"Missing DUTCH_FURNITURE_BASE_URL or DUTCH_FURNITURE_API_KEY",
-		);
+	const { baseUrl, apiKey } = config;
+	if (!baseUrl || !apiKey) {
+		throw new Error("Missing baseUrl or apiKey for Experience Center API");
 	}
 
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
-		Authorization: `Bearer ${DUTCH_FURNITURE_API_KEY}`,
+		Authorization: `Bearer ${apiKey}`,
 	};
 
-	const experienceCenterUrl = `${DUTCH_FURNITURE_BASE_URL}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
+	const experienceCenterUrl = `${baseUrl}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
 	const response = await fetch(experienceCenterUrl, { headers });
 	if (!response.ok) {
 		throw new Error(
@@ -40,21 +43,12 @@ function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function getShopAccessToken(
-	env: Env,
-	shop: string,
-): Promise<string | null> {
-	if (!env.WOOOD_KV) return null;
-	const tokenRecord = (await env.WOOOD_KV.get(
-		`shop_token:${shop}`,
-		"json",
-	)) as any;
-	return tokenRecord?.accessToken || null;
+export interface ShopifyAdminClient {
+	request: (query: string, variables?: any) => Promise<any>;
 }
 
 export async function processExperienceCenterWithBulkOperations(
-	env: Env,
-	shop: string,
+	adminClient: ShopifyAdminClient,
 	availableEans: Set<string>,
 ): Promise<{
 	successful: number;
@@ -63,11 +57,6 @@ export async function processExperienceCenterWithBulkOperations(
 	eanMatches: number;
 	totalProducts: number;
 }> {
-	const accessToken = await getShopAccessToken(env, shop);
-	if (!accessToken) {
-		throw new Error(`No access token found for shop: ${shop}`);
-	}
-
 	const bulkQuery = `
     {
       products {
@@ -101,23 +90,7 @@ export async function processExperienceCenterWithBulkOperations(
     }
   `;
 
-	const createResponse = await fetch(
-		`https://${shop}/admin/api/2023-10/graphql.json`,
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Shopify-Access-Token": accessToken,
-			},
-			body: JSON.stringify({ query: createBulkOperationMutation }),
-		},
-	);
-	if (!createResponse.ok) {
-		throw new Error(
-			`Failed to create bulk operation: ${createResponse.status} ${createResponse.statusText}`,
-		);
-	}
-	const createResult = (await createResponse.json()) as any;
+	const createResult = await adminClient.request(createBulkOperationMutation);
 	const userErrors = createResult.data?.bulkOperationRunQuery?.userErrors || [];
 	if (userErrors.length > 0) {
 		throw new Error(
@@ -144,22 +117,7 @@ export async function processExperienceCenterWithBulkOperations(
 		const statusQuery = `
       query { node(id: "${bulkOperationId}") { ... on BulkOperation { id status errorCode objectCount fileSize url partialDataUrl } } }
     `;
-		const statusResponse = await fetch(
-			`https://${shop}/admin/api/2023-10/graphql.json`,
-			{
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					"X-Shopify-Access-Token": accessToken,
-				},
-				body: JSON.stringify({ query: statusQuery }),
-			},
-		);
-		if (!statusResponse.ok)
-			throw new Error(
-				`Failed to check bulk operation status: ${statusResponse.status} ${statusResponse.statusText}`,
-			);
-		const statusResult = (await statusResponse.json()) as any;
+		const statusResult = await adminClient.request(statusQuery);
 		const node = statusResult.data?.node;
 		if (!node) throw new Error("Could not retrieve bulk operation status");
 		status = node.status;
@@ -227,8 +185,7 @@ export async function processExperienceCenterWithBulkOperations(
 		const batch = metafieldsToUpdate.slice(i, i + batchSize);
 		try {
 			const result = await setProductExperienceCenterMetafieldsBulk(
-				env,
-				shop,
+				adminClient,
 				batch,
 			);
 			totalSuccessful += result.successful;
@@ -252,8 +209,7 @@ export async function processExperienceCenterWithBulkOperations(
 }
 
 export async function setProductExperienceCenterMetafieldsBulk(
-	env: Env,
-	shop: string,
+	adminClient: ShopifyAdminClient,
 	metafields: Array<{ productId: string; experienceCenter: boolean }>,
 ): Promise<{ successful: number; failed: number; errors: string[] }> {
 	if (metafields.length > 25) {
@@ -261,8 +217,6 @@ export async function setProductExperienceCenterMetafieldsBulk(
 			`Batch size too large: ${metafields.length}. Maximum allowed: 25 for Shopify metafields API`,
 		);
 	}
-	const accessToken = await getShopAccessToken(env, shop);
-	if (!accessToken) throw new Error(`No access token found for shop: ${shop}`);
 
 	const mutation = `
     mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
@@ -279,25 +233,10 @@ export async function setProductExperienceCenterMetafieldsBulk(
 		type: "boolean",
 		ownerId: productId,
 	}));
-	const response = await fetch(
-		`https://${shop}/admin/api/2023-10/graphql.json`,
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Shopify-Access-Token": accessToken,
-			},
-			body: JSON.stringify({
-				query: mutation,
-				variables: { metafields: metafieldsInput },
-			}),
-		},
-	);
-	if (!response.ok)
-		throw new Error(
-			`Failed to set experience center metafields: ${response.status} ${response.statusText}`,
-		);
-	const result = (await response.json()) as any;
+
+	const result = await adminClient.request(mutation, {
+		metafields: metafieldsInput,
+	});
 	const userErrors = result.data?.metafieldsSet?.userErrors || [];
 	const successfulMetafields = result.data?.metafieldsSet?.metafields || [];
 	return {
@@ -307,28 +246,38 @@ export async function setProductExperienceCenterMetafieldsBulk(
 	};
 }
 
-export async function getInstalledShops(env: Env): Promise<string[]> {
-	if (!env.WOOOD_KV) return [];
-	const keys = await env.WOOOD_KV.list({ prefix: "shop_token:" });
-	return keys.keys.map((key: any) => key.name.replace("shop_token:", ""));
+export interface TokenStorage {
+	getShopTokens: () => Promise<string[]>;
+}
+
+export async function getInstalledShops(
+	storage: TokenStorage,
+): Promise<string[]> {
+	return await storage.getShopTokens();
+}
+
+export interface ShopifyAdminClientFactory {
+	createClient: (shop: string) => Promise<ShopifyAdminClient>;
 }
 
 export async function processExperienceCenterUpdateAllShops(
-	env: Env,
+	config: ExperienceCenterApiConfig,
+	storage: TokenStorage,
+	clientFactory: ShopifyAdminClientFactory,
 ): Promise<any> {
-	const experienceCenterData = await fetchExperienceCenterData(env);
+	const experienceCenterData = await fetchExperienceCenterData(config);
 	const availableEans = new Set(
 		experienceCenterData.data.map((item: any) => item.ean),
 	);
-	const installedShops = await getInstalledShops(env);
+	const installedShops = await getInstalledShops(storage);
 	const results: any[] = [];
 	let totalSuccessful = 0;
 	let totalFailed = 0;
 	for (const shop of installedShops) {
 		try {
+			const adminClient = await clientFactory.createClient(shop);
 			const result = await processExperienceCenterWithBulkOperations(
-				env,
-				shop,
+				adminClient,
 				availableEans,
 			);
 			results.push({ shop, success: true, summary: result });

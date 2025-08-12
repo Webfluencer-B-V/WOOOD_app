@@ -12,9 +12,8 @@ function safeEqual(a: string, b: string): boolean {
 export async function validateWebhookSignature(
 	body: string,
 	signature: string,
-	env: Env,
+	secret: string,
 ): Promise<boolean> {
-	const secret = env.SHOPIFY_API_SECRET_KEY;
 	if (!secret) return false;
 	const encoder = new TextEncoder();
 	const key = await crypto.subtle.importKey(
@@ -29,30 +28,36 @@ export async function validateWebhookSignature(
 	return safeEqual(computed, signature);
 }
 
+export interface ShopifyAdminClient {
+	request: (query: string, variables?: any) => Promise<any>;
+}
+
+export interface WebhookStorage {
+	deleteShopToken: (shop: string) => Promise<void>;
+}
+
 export async function handleOrderWebhook(
 	request: Request,
-	env: Env,
-): Promise<Response> {
+	secret: string,
+): Promise<{ valid: boolean; shop: string; topic: string; payload: any }> {
 	const signature = request.headers.get("X-Shopify-Hmac-Sha256") || "";
 	const shop = (request.headers.get("X-Shopify-Shop-Domain") || "").trim();
 	const topic = request.headers.get("X-Shopify-Topic") || "";
 	const bodyText = await request.text();
-	const valid = await validateWebhookSignature(bodyText, signature, env);
-	if (!valid) return new Response("Invalid signature", { status: 401 });
+	const valid = await validateWebhookSignature(bodyText, signature, secret);
 	let payload: any = {};
 	try {
 		payload = JSON.parse(bodyText);
 	} catch {}
-	console.log(`Webhook received: ${topic}`, { shop, id: payload?.id });
-	return new Response("OK");
+	return { valid, shop, topic, payload };
 }
 
 export async function deleteShopInstallation(
-	env: Env,
+	storage: WebhookStorage,
 	shop: string,
 ): Promise<void> {
 	try {
-		await env.WOOOD_KV?.delete(`shop_token:${shop}`);
+		await storage.deleteShopToken(shop);
 		console.log(`🧹 Deleted shop token for ${shop}`);
 	} catch (error) {
 		console.error("Failed to delete shop token", { shop, error });
@@ -61,48 +66,48 @@ export async function deleteShopInstallation(
 
 export async function handleAppUninstalled(
 	request: Request,
-	env: Env,
-): Promise<Response> {
-	const signature = request.headers.get("X-Shopify-Hmac-Sha256") || "";
-	const shop = (request.headers.get("X-Shopify-Shop-Domain") || "").trim();
-	const topic = request.headers.get("X-Shopify-Topic") || "";
-	const bodyText = await request.text();
-	const valid = await validateWebhookSignature(bodyText, signature, env);
-	if (!valid) return new Response("Invalid signature", { status: 401 });
-	await deleteShopInstallation(env, shop);
+	secret: string,
+	storage: WebhookStorage,
+): Promise<{ success: boolean; shop: string }> {
+	const { valid, shop, topic } = await handleOrderWebhook(request, secret);
+	if (!valid) return { success: false, shop: "" };
+	await deleteShopInstallation(storage, shop);
 	console.log(`🚪 App uninstalled processed for ${shop}`, { topic });
-	return new Response("OK");
+	return { success: true, shop };
 }
 
 export async function registerWebhooks(
-	shop: string,
-	accessToken: string,
-	env: Env,
+	adminClient: ShopifyAdminClient,
+	webhookEndpoint: string,
 ): Promise<void> {
-	const endpoint = `${env.SHOPIFY_APP_URL}/api/webhooks`;
 	const webhooks = [
-		{ topic: "orders/paid", address: endpoint },
-		{ topic: "orders/create", address: endpoint },
-		{ topic: "app/uninstalled", address: endpoint },
+		{ topic: "orders/paid", address: webhookEndpoint },
+		{ topic: "orders/create", address: webhookEndpoint },
+		{ topic: "app/uninstalled", address: webhookEndpoint },
 	];
 	for (const webhook of webhooks) {
 		try {
-			const response = await fetch(
-				`https://${shop}/admin/api/2024-10/webhooks.json`,
-				{
-					method: "POST",
-					headers: {
-						"X-Shopify-Access-Token": accessToken,
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({ webhook }),
+			// Note: webhook registration via REST API needs to be handled differently
+			// This would typically be done via GraphQL webhookSubscriptionCreate mutation
+			const mutation = `
+				mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
+					webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
+						webhookSubscription { id }
+						userErrors { field message }
+					}
+				}
+			`;
+			const variables = {
+				topic: webhook.topic.toUpperCase().replace("/", "_"),
+				webhookSubscription: {
+					callbackUrl: webhook.address,
+					format: "JSON",
 				},
-			);
-			if (!response.ok) {
-				const errorText = await response.text();
+			};
+			const result = await adminClient.request(mutation, variables);
+			if (result.data?.webhookSubscriptionCreate?.userErrors?.length > 0) {
 				console.error("Webhook registration failed", {
-					status: response.status,
-					error: errorText,
+					errors: result.data.webhookSubscriptionCreate.userErrors,
 					webhook,
 				});
 			}

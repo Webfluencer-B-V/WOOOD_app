@@ -1,5 +1,14 @@
 import type { Env } from "./consolidation";
 
+export interface DealerApiConfig {
+	baseUrl: string;
+	apiKey: string;
+}
+
+export interface ShopifyAdminClient {
+	request: (query: string, variables?: any) => Promise<any>;
+}
+
 const EXCLUSIVITY_MAP: Record<string, string> = {
 	"woood essentials": "WOOOD Essentials",
 	essentials: "WOOOD Essentials",
@@ -32,27 +41,18 @@ function mapExclusives(exclusivityData: any): string[] {
 	return [...new Set(mapped)];
 }
 
-async function getShopAccessToken(
-	env: Env,
-	shop: string,
-): Promise<string | null> {
-	if (!env.WOOOD_KV) return null;
-	const tokenRecord = (await env.WOOOD_KV.get(
-		`shop_token:${shop}`,
-		"json",
-	)) as any;
-	return tokenRecord?.accessToken || null;
-}
-
-export async function fetchAndTransformDealers(env: Env): Promise<any[]> {
-	if (!env.DUTCH_FURNITURE_BASE_URL || !env.DUTCH_FURNITURE_API_KEY) {
-		throw new Error("Missing Dutch Furniture API configuration");
+export async function fetchAndTransformDealers(
+	config: DealerApiConfig,
+): Promise<any[]> {
+	const { baseUrl, apiKey } = config;
+	if (!baseUrl || !apiKey) {
+		throw new Error("Missing dealer API configuration (baseUrl or apiKey)");
 	}
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
-		Authorization: `Bearer ${env.DUTCH_FURNITURE_API_KEY}`,
+		Authorization: `Bearer ${apiKey}`,
 	};
-	const response = await fetch(`${env.DUTCH_FURNITURE_BASE_URL}/dealers`, {
+	const response = await fetch(`${baseUrl}/dealers`, {
 		headers,
 	});
 	if (!response.ok) {
@@ -94,29 +94,14 @@ export async function fetchAndTransformDealers(env: Env): Promise<any[]> {
 }
 
 export async function upsertShopMetafield(
-	env: Env,
+	adminClient: ShopifyAdminClient,
 	dealers: any[],
-	shop: string,
 ): Promise<any> {
-	const accessToken = await getShopAccessToken(env, shop);
-	if (!accessToken) throw new Error(`No access token found for shop: ${shop}`);
 	const shopQuery = `query { shop { id } }`;
-	const shopResponse = await fetch(
-		`https://${shop}/admin/api/2023-10/graphql.json`,
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Shopify-Access-Token": accessToken,
-			},
-			body: JSON.stringify({ query: shopQuery }),
-		},
-	);
-	const shopResult = (await shopResponse.json()) as {
-		data?: { shop?: { id?: string } };
-	};
+	const shopResult = await adminClient.request(shopQuery);
 	const shopId = shopResult?.data?.shop?.id;
 	if (!shopId) throw new Error("Could not fetch shop ID");
+
 	const mutation = `
 		mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
 			metafieldsSet(metafields: $metafields) {
@@ -136,18 +121,8 @@ export async function upsertShopMetafield(
 			},
 		],
 	};
-	const upsertResponse = await fetch(
-		`https://${shop}/admin/api/2023-10/graphql.json`,
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"X-Shopify-Access-Token": accessToken,
-			},
-			body: JSON.stringify({ query: mutation, variables }),
-		},
-	);
-	const upsertResult = await upsertResponse.json();
+
+	const upsertResult = await adminClient.request(mutation, variables);
 	return {
 		success: true,
 		timestamp: new Date().toISOString(),

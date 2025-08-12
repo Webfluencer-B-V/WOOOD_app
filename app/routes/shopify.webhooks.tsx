@@ -27,6 +27,18 @@ export async function action({ context, request }: Route.ActionArgs) {
 					});
 				}
 				break;
+
+			case "ORDERS_PAID":
+			case "ORDERS_CREATE":
+			case "ORDERS_UPDATED":
+			case "ORDERS_CANCELLED":
+				// Order webhooks are enqueued for processing by the worker
+				// No immediate action needed here, just log the webhook
+				shopify.utils.log.debug(`Order webhook received: ${webhook.topic}`, {
+					shop: webhook.domain,
+					orderId: payload?.id,
+				});
+				break;
 		}
 
 		await context.cloudflare.env.WEBHOOK_QUEUE?.send(

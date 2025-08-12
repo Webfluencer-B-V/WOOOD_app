@@ -1,12 +1,42 @@
 import { SaveBar, useAppBridge } from "@shopify/app-bridge-react";
-import { Button, Page, Text } from "@shopify/polaris";
-import { useEffect } from "react";
+import {
+	Badge,
+	Banner,
+	Button,
+	ButtonGroup,
+	Card,
+	InlineStack,
+	Layout,
+	Page,
+	ProgressBar,
+	Text,
+} from "@shopify/polaris";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { data } from "react-router";
+import { data, Form, useActionData, useNavigation } from "react-router";
 
 import { API_VERSION } from "~/const";
 import { createShopify, ShopifyException } from "~/shopify.server";
-import type { ShopQuery } from "~/types/admin.generated";
+
+// Minimal shape for the Shop query result to avoid strict coupling to generated types
+type ShopInfoResponse = {
+	data?: { shop?: { name?: string; myshopifyDomain?: string } };
+	errors?: Array<{ message: string }>;
+};
+
+// Import our pure utility functions
+import {
+	type ExperienceCenterApiConfig,
+	fetchExperienceCenterData,
+	processExperienceCenterWithBulkOperations,
+	type ShopifyAdminClient,
+} from "../../src/utils/experienceCenter";
+import {
+	type DealerApiConfig,
+	fetchAndTransformDealers,
+	upsertShopMetafield,
+} from "../../src/utils/storeLocator";
+import { registerWebhooks } from "../../src/utils/webhooks";
 import type { Route } from "./+types/app.index";
 
 export async function loader({ context, request }: Route.LoaderArgs) {
@@ -16,19 +46,50 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 	const client = await shopify.admin(request);
 
 	try {
-		const { data, errors } = await client.request<ShopQuery>(/* GraphQL */ `
+		const { data, errors } = (await client.request(/* GraphQL */ `
 			#graphql
 			query Shop {
 				shop {
 					name
+					myshopifyDomain
 				}
 			}
-		`);
+    `)) as ShopInfoResponse;
+
+		// Get status information from KV storage
+		const shopDomain = data?.shop?.myshopifyDomain;
+		let experienceCenterStatus = null;
+		let storeLocatorStatus = null;
+
+		if (shopDomain) {
+			try {
+				experienceCenterStatus =
+					await context.cloudflare.env.EXPERIENCE_CENTER_STATUS?.get(
+						`ec_last_sync:${shopDomain}`,
+						"json",
+					);
+			} catch (e) {
+				console.warn("Failed to get experience center status", e);
+			}
+
+			try {
+				storeLocatorStatus =
+					await context.cloudflare.env.STORE_LOCATOR_STATUS?.get(
+						`sl_last_sync:${shopDomain}`,
+						"json",
+					);
+			} catch (e) {
+				console.warn("Failed to get store locator status", e);
+			}
+		}
+
 		return {
 			data,
 			errors,
+			experienceCenterStatus,
+			storeLocatorStatus,
 		};
-	} catch (error) {
+	} catch (error: any) {
 		shopify.utils.log.error("app.index.loader.error", error);
 
 		if (error instanceof ShopifyException) {
@@ -47,6 +108,8 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			{
 				data: undefined,
 				errors: [{ message: "Unknown Error" }],
+				experienceCenterStatus: null,
+				storeLocatorStatus: null,
 			},
 			500,
 		);
@@ -62,53 +125,184 @@ export default function AppIndex({
 	actionData,
 	loaderData,
 }: Route.ComponentProps) {
-	const { data, errors } = loaderData ?? actionData ?? {};
-	console.log("app.index", data);
-
+	const { data, errors } = (loaderData ?? {}) as ShopInfoResponse;
+	const experienceCenterStatus = (loaderData as any)
+		?.experienceCenterStatus as {
+		timestamp?: string;
+		success?: boolean;
+		summary?: { successful: number; failed: number };
+	} | null;
+	const storeLocatorStatus = (loaderData as any)?.storeLocatorStatus as {
+		timestamp?: string;
+		success?: boolean;
+		count?: number;
+	} | null;
+	const navigation = useNavigation();
 	const { t } = useTranslation();
 
-	useEffect(() => {
-		const controller = new AbortController();
+	const isSubmitting = navigation.state === "submitting";
+	const actionType = navigation.formData?.get("action");
 
-		fetch(`shopify:admin/api/${API_VERSION}/graphql.json`, {
-			body: JSON.stringify({
-				query: /* GraphQL */ `
-					#graphql
-					query Shop {
-						shop {
-							name
-						}
-					}
-				`,
-				variables: {},
-			}),
-			method: "POST",
-			signal: controller.signal,
-		})
-			.then<{ data: ShopQuery }>((res) => res.json())
-			.then((res) => console.log("app.index.useEffect", res))
-			.catch((err) => console.error("app.index.useEffect.error", err));
+	const formatTimestamp = (timestamp: string | null | undefined) => {
+		if (!timestamp) return "Never";
+		return new Date(timestamp).toLocaleString();
+	};
 
-		return () => controller.abort();
-	}, []);
-
-	const shopify = useAppBridge();
+	const getStatusBadge = (status: any) => {
+		if (!status) return <Badge tone="warning">No sync yet</Badge>;
+		if (status.success) return <Badge tone="success">Success</Badge>;
+		return <Badge tone="critical">Failed</Badge>;
+	};
 
 	return (
 		<Page title={t("app")}>
-			<SaveBar id="savebar">
-				<button onClick={() => shopify.saveBar.hide("savebar")} type="reset" />
-				<button
-					onClick={() => console.log("savebar.click.primary")}
-					type="submit"
-					variant="primary"
-				/>
-			</SaveBar>
+			{errors && (
+				<Banner tone="critical" title="Error">
+					{JSON.stringify(errors, null, 2)}
+				</Banner>
+			)}
 
-			<Text as="p">
-				{errors ? JSON.stringify(errors, null, 2) : data?.shop?.name}
-			</Text>
-			<Button onClick={() => shopify.saveBar.show("savebar")}>click</Button>
+			{actionData?.success === false && (
+				<Banner tone="critical" title="Action Failed">
+					{actionData.message}
+				</Banner>
+			)}
+
+			{actionData?.success === true && (
+				<Banner tone="success" title="Action Completed">
+					{actionData.message}
+				</Banner>
+			)}
+
+			<Layout>
+				<Layout.Section>
+					<Card>
+						<Text variant="headingMd" as="h2">
+							Welcome to WOOOD App - {data?.shop?.name}
+						</Text>
+						<Text as="p" tone="subdued">
+							Manage your Experience Center and Store Locator data sync
+						</Text>
+					</Card>
+				</Layout.Section>
+
+				<Layout.Section>
+					<Card>
+						<Text variant="headingMd" as="h2">
+							Experience Center Sync
+						</Text>
+						<Text as="p" tone="subdued">
+							Sync product availability data from the Experience Center API
+						</Text>
+
+						<div style={{ marginTop: "16px" }}>
+							<InlineStack gap="400" align="space-between">
+								<div>
+									<Text as="p">
+										<strong>Status:</strong>{" "}
+										{getStatusBadge(experienceCenterStatus)}
+									</Text>
+									<Text as="p" tone="subdued">
+										Last sync:{" "}
+										{formatTimestamp(experienceCenterStatus?.timestamp)}
+									</Text>
+									{experienceCenterStatus?.summary && (
+										<Text as="p" tone="subdued">
+											Products: {experienceCenterStatus.summary.successful}{" "}
+											successful, {experienceCenterStatus.summary.failed} failed
+										</Text>
+									)}
+								</div>
+								<Form method="post">
+									<input
+										type="hidden"
+										name="action"
+										value="sync-experience-center"
+									/>
+									<Button
+										variant="primary"
+										submit
+										loading={
+											isSubmitting && actionType === "sync-experience-center"
+										}
+									>
+										Sync Experience Center
+									</Button>
+								</Form>
+							</InlineStack>
+						</div>
+					</Card>
+				</Layout.Section>
+
+				<Layout.Section>
+					<Card>
+						<Text variant="headingMd" as="h2">
+							Store Locator Sync
+						</Text>
+						<Text as="p" tone="subdued">
+							Update store locator data from the dealers API
+						</Text>
+
+						<div style={{ marginTop: "16px" }}>
+							<InlineStack gap="400" align="space-between">
+								<div>
+									<Text as="p">
+										<strong>Status:</strong>{" "}
+										{getStatusBadge(storeLocatorStatus)}
+									</Text>
+									<Text as="p" tone="subdued">
+										Last sync: {formatTimestamp(storeLocatorStatus?.timestamp)}
+									</Text>
+									{storeLocatorStatus?.count && (
+										<Text as="p" tone="subdued">
+											Dealers: {storeLocatorStatus.count}
+										</Text>
+									)}
+								</div>
+								<Form method="post">
+									<input
+										type="hidden"
+										name="action"
+										value="sync-store-locator"
+									/>
+									<Button
+										variant="primary"
+										submit
+										loading={
+											isSubmitting && actionType === "sync-store-locator"
+										}
+									>
+										Update Store Locator
+									</Button>
+								</Form>
+							</InlineStack>
+						</div>
+					</Card>
+				</Layout.Section>
+
+				<Layout.Section>
+					<Card>
+						<Text variant="headingMd" as="h2">
+							Webhook Management
+						</Text>
+						<Text as="p" tone="subdued">
+							Register webhooks for order processing
+						</Text>
+
+						<div style={{ marginTop: "16px" }}>
+							<Form method="post">
+								<input type="hidden" name="action" value="register-webhooks" />
+								<Button
+									submit
+									loading={isSubmitting && actionType === "register-webhooks"}
+								>
+									Register Webhooks
+								</Button>
+							</Form>
+						</div>
+					</Card>
+				</Layout.Section>
+			</Layout>
 		</Page>
 	);
 }
@@ -118,9 +312,158 @@ export async function clientAction({ serverAction }: Route.ClientActionArgs) {
 	return data;
 }
 
-export async function action(_: Route.ActionArgs) {
-	const data = {};
-	return { data };
+export async function action({ context, request }: Route.ActionArgs) {
+	const shopify = createShopify(context);
+	const formData = await request.formData();
+	const actionType = formData.get("action");
+
+	const client = await shopify.admin(request);
+
+	// Get shop domain for status tracking
+	const { data: shopData } = (await client.request(/* GraphQL */ `
+		#graphql
+		query Shop {
+			shop {
+				myshopifyDomain
+			}
+		}
+    `)) as ShopInfoResponse;
+	const shopDomain = shopData?.shop?.myshopifyDomain;
+
+	// Create admin client adapter for our utility functions
+	const adminClientAdapter: ShopifyAdminClient = {
+		request: async (query: string, variables?: any) => {
+			return await client.request(query, { variables });
+		},
+	};
+
+	try {
+		switch (actionType) {
+			case "sync-experience-center": {
+				const config: ExperienceCenterApiConfig = {
+					baseUrl: context.cloudflare.env.DUTCH_FURNITURE_BASE_URL || "",
+					apiKey: context.cloudflare.env.DUTCH_FURNITURE_API_KEY || "",
+				};
+
+				// Fetch experience center data
+				const experienceCenterData = await fetchExperienceCenterData(config);
+				const availableEans = new Set(
+					experienceCenterData.data.map((item: any) => item.ean),
+				);
+
+				// Process experience center for current shop
+				const result = await processExperienceCenterWithBulkOperations(
+					adminClientAdapter,
+					availableEans,
+				);
+
+				// Store status in KV
+				if (shopDomain) {
+					const status = {
+						timestamp: new Date().toISOString(),
+						success: true,
+						summary: result,
+						shop: shopDomain,
+					};
+					await context.cloudflare.env.EXPERIENCE_CENTER_STATUS?.put(
+						`ec_last_sync:${shopDomain}`,
+						JSON.stringify(status),
+					);
+				}
+
+				return {
+					success: true,
+					message: `Experience Center sync completed. ${result.successful} products updated successfully, ${result.failed} failed.`,
+					result,
+				};
+			}
+
+			case "sync-store-locator": {
+				const config: DealerApiConfig = {
+					baseUrl: context.cloudflare.env.DUTCH_FURNITURE_BASE_URL || "",
+					apiKey: context.cloudflare.env.DUTCH_FURNITURE_API_KEY || "",
+				};
+
+				// Fetch and transform dealers
+				const dealers = await fetchAndTransformDealers(config);
+
+				// Upsert shop metafield
+				const result = await upsertShopMetafield(adminClientAdapter, dealers);
+
+				// Store status in KV
+				if (shopDomain) {
+					const status = {
+						timestamp: new Date().toISOString(),
+						success: true,
+						count: dealers.length,
+						shop: shopDomain,
+					};
+					await context.cloudflare.env.STORE_LOCATOR_STATUS?.put(
+						`sl_last_sync:${shopDomain}`,
+						JSON.stringify(status),
+					);
+				}
+
+				return {
+					success: true,
+					message: `Store Locator sync completed. ${dealers.length} dealers updated.`,
+					result,
+				};
+			}
+
+			case "register-webhooks": {
+				const cfUrl = (context.cloudflare.env as any).CLOUDFLARE_URL as
+					| string
+					| undefined;
+				const webhookEndpoint = `${cfUrl || context.cloudflare.env.SHOPIFY_APP_URL}/api/webhooks/orders`;
+
+				await registerWebhooks(adminClientAdapter, webhookEndpoint);
+
+				return {
+					success: true,
+					message: "Webhooks registered successfully.",
+				};
+			}
+
+			default:
+				return {
+					success: false,
+					message: "Unknown action",
+				};
+		}
+	} catch (error) {
+		shopify.utils.log.error("app.index.action.error", error);
+		const message = error instanceof Error ? error.message : String(error);
+
+		// Store error status in KV
+		if (
+			shopDomain &&
+			(actionType === "sync-experience-center" ||
+				actionType === "sync-store-locator")
+		) {
+			const statusKey =
+				actionType === "sync-experience-center"
+					? `ec_last_sync:${shopDomain}`
+					: `sl_last_sync:${shopDomain}`;
+			const kvStore =
+				actionType === "sync-experience-center"
+					? context.cloudflare.env.EXPERIENCE_CENTER_STATUS
+					: context.cloudflare.env.STORE_LOCATOR_STATUS;
+
+			const errorStatus = {
+				timestamp: new Date().toISOString(),
+				success: false,
+				error: message,
+				shop: shopDomain,
+			};
+			await kvStore?.put(statusKey, JSON.stringify(errorStatus));
+		}
+
+		return {
+			success: false,
+			message: `Action failed: ${message}`,
+		};
+	}
 }
 
 export { headers } from "./app";
