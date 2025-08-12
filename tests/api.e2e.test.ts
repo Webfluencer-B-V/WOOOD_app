@@ -22,20 +22,20 @@ test.describe("API endpoints", () => {
 		expect(json).toBeTruthy();
 	});
 
-	test("/api/store-locator status endpoint responds", async ({ request }) => {
-		const response = await request.get(
-			`${appUrl}/api/store-locator?action=status`,
-		);
-		// When status KV not present, service returns 503 or a valid JSON message
-		expect([200, 503].includes(response.status())).toBeTruthy();
-	});
-
-	test("/api/experience-center status endpoint responds", async ({
+	test("store locator and experience center are now managed via app actions", async ({
 		request,
 	}) => {
-		const response = await request.get(
+		// Note: Store locator and experience center functionality has been moved to app actions
+		// These endpoints should no longer exist at the Worker level
+		const storeLocatorResponse = await request.get(
+			`${appUrl}/api/store-locator?action=status`,
+		);
+		const experienceCenterResponse = await request.get(
 			`${appUrl}/api/experience-center?action=status`,
 		);
-		expect([200, 500].includes(response.status())).toBeTruthy();
+
+		// These endpoints must be removed or deprecated (no 5xx fallback)
+		expect([404, 410].includes(storeLocatorResponse.status())).toBeTruthy();
+		expect([404, 410].includes(experienceCenterResponse.status())).toBeTruthy();
 	});
 });
