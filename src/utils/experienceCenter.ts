@@ -92,6 +92,8 @@ export async function processExperienceCenterWithBulkOperations(
 	errors: string[];
 	eanMatches: number;
 	totalProducts: number;
+	setTrue: number;
+	setFalse: number;
 }> {
 	const bulkQuery = `
 {
@@ -242,21 +244,49 @@ export async function processExperienceCenterWithBulkOperations(
 	const batchSize = 25;
 	let totalSuccessful = 0;
 	let totalFailed = 0;
+	let successfulTrue = 0;
+	let successfulFalse = 0;
 	const allErrors: string[] = [];
-	for (let i = 0; i < metafieldsToUpdate.length; i += batchSize) {
-		const batch = metafieldsToUpdate.slice(i, i + batchSize);
+
+	const trueUpdates = metafieldsToUpdate.filter((m) => m.experienceCenter);
+	const falseUpdates = metafieldsToUpdate.filter((m) => !m.experienceCenter);
+
+	// Process TRUE updates in batches to measure per-state success
+	for (let i = 0; i < trueUpdates.length; i += batchSize) {
+		const batch = trueUpdates.slice(i, i + batchSize);
 		try {
 			const result = await setProductExperienceCenterMetafieldsBulk(
 				adminClient,
 				batch,
 			);
+			successfulTrue += result.successful;
 			totalSuccessful += result.successful;
 			totalFailed += result.failed;
 			allErrors.push(...result.errors);
-			if (i + batchSize < metafieldsToUpdate.length) await delay(1000);
+			if (i + batchSize < trueUpdates.length) await delay(1000);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			allErrors.push(`Batch error: ${message}`);
+			allErrors.push(`Batch error (true): ${message}`);
+			totalFailed += batch.length;
+		}
+	}
+
+	// Process FALSE updates in batches to measure per-state success
+	for (let i = 0; i < falseUpdates.length; i += batchSize) {
+		const batch = falseUpdates.slice(i, i + batchSize);
+		try {
+			const result = await setProductExperienceCenterMetafieldsBulk(
+				adminClient,
+				batch,
+			);
+			successfulFalse += result.successful;
+			totalSuccessful += result.successful;
+			totalFailed += result.failed;
+			allErrors.push(...result.errors);
+			if (i + batchSize < falseUpdates.length) await delay(1000);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			allErrors.push(`Batch error (false): ${message}`);
 			totalFailed += batch.length;
 		}
 	}
@@ -267,6 +297,8 @@ export async function processExperienceCenterWithBulkOperations(
 		errors: allErrors.slice(0, 20),
 		eanMatches,
 		totalProducts: processedProducts,
+		setTrue: successfulTrue,
+		setFalse: successfulFalse,
 	};
 }
 

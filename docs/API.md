@@ -29,7 +29,7 @@ The delivery date picker extension provides simplified settings for merchants:
 ### Built-in Features (Always Active)
 
 - ✅ **Inventory Check**: Real-time stock verification from Shopify Admin API
-- ✅ **CORS Security**: Proper cross-origin headers for secure API communication  
+- ✅ **CORS Security**: Proper cross-origin headers for secure API communication
 - ✅ **Error Handling**: Graceful fallbacks when APIs fail
 - ✅ **Comprehensive Logging**: Detailed console logs for debugging
 

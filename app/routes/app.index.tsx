@@ -122,7 +122,15 @@ export default function AppIndex({
 }: Route.ComponentProps) {
 	type StatusSummary = { timestamp?: string; success?: boolean };
 	type ExperienceCenterStatus = StatusSummary & {
-		summary?: { successful: number; failed: number };
+		summary?: {
+			successful: number;
+			failed: number;
+			eanMatches?: number;
+			totalProducts?: number;
+			setTrue?: number;
+			setFalse?: number;
+			sourceTotal?: number;
+		};
 	};
 	type StoreLocatorStatus = StatusSummary & { count?: number };
 	type IndexLoaderData = ShopInfoResponse & {
@@ -202,10 +210,46 @@ export default function AppIndex({
 										{formatTimestamp(experienceCenterStatus?.timestamp)}
 									</Text>
 									{experienceCenterStatus?.summary && (
-										<Text as="p" tone="subdued">
-											Products: {experienceCenterStatus.summary.successful}{" "}
-											successful, {experienceCenterStatus.summary.failed} failed
-										</Text>
+										<div>
+											<Text as="p" tone="subdued">
+												Products: {experienceCenterStatus.summary.successful}{" "}
+												successful, {experienceCenterStatus.summary.failed}{" "}
+												failed
+											</Text>
+											{typeof experienceCenterStatus.summary.sourceTotal ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Source total:{" "}
+													{experienceCenterStatus.summary.sourceTotal}
+												</Text>
+											)}
+											{typeof experienceCenterStatus.summary.totalProducts ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Processed products:{" "}
+													{experienceCenterStatus.summary.totalProducts}
+												</Text>
+											)}
+											{typeof experienceCenterStatus.summary.eanMatches ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													EAN matches:{" "}
+													{experienceCenterStatus.summary.eanMatches}
+												</Text>
+											)}
+											{typeof experienceCenterStatus.summary.setTrue ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Set true: {experienceCenterStatus.summary.setTrue}
+												</Text>
+											)}
+											{typeof experienceCenterStatus.summary.setFalse ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Set false: {experienceCenterStatus.summary.setFalse}
+												</Text>
+											)}
+										</div>
 									)}
 								</div>
 								<Form method="post">
@@ -361,7 +405,10 @@ export async function action({ context, request }: Route.ActionArgs) {
 					const status = {
 						timestamp: new Date().toISOString(),
 						success: true,
-						summary: result,
+						summary: {
+							...result,
+							sourceTotal: experienceCenterData.total,
+						},
 						shop: shopDomain,
 					};
 					await context.cloudflare.env.EXPERIENCE_CENTER_STATUS?.put(

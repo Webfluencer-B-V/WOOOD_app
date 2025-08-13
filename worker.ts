@@ -448,7 +448,10 @@ export default {
 							JSON.stringify({
 								timestamp: new Date().toISOString(),
 								success: true,
-								summary: result,
+								summary: {
+									...result,
+									sourceTotal: ec.total,
+								},
 								shop: body.shop,
 								cron: true,
 							}),
