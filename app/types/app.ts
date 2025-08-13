@@ -95,6 +95,11 @@ export interface OmniaPricingStatus {
       newPrice: number;
       newCompareAtPrice: number;
       priceChange: number;
+      productTitle?: string;
+      productHandle?: string;
+      productFeaturedImageUrl?: string;
+      variantSku?: string;
+      variantImageUrl?: string;
     }>;
     invalidSamples?: Array<{
       productId: string;

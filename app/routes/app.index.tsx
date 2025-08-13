@@ -426,20 +426,56 @@ export default function AppIndex({
 													0 && (
 													<div style={{ marginTop: "8px" }}>
 														<Text as="p" tone="subdued">
-															Recent updates (by variant):
+															Recent updates (by product):
 														</Text>
 														<ul style={{ paddingLeft: 16 }}>
 															{omniaPricingStatus.summary.updatedSamples
 																.slice(0, 10)
-																.map((u) => (
-																	<li key={u.variantId}>
-																		<Text as="span" tone="subdued">
-																			{u.ean || u.variantId}: €
-																			{u.oldPrice.toFixed(2)} → €
-																			{u.newPrice.toFixed(2)}
-																		</Text>
-																	</li>
-																))}
+																.map((u) => {
+																	const productHandle = u.productHandle;
+																	const productTitle =
+																		u.productTitle ||
+																		`Product ${u.productId.split("/").pop()}`;
+																	const shopDomain =
+																		data?.shop?.myshopifyDomain;
+
+																	return (
+																		<li key={u.variantId}>
+																			<Text as="span" tone="subdued">
+																				{productHandle && shopDomain ? (
+																					<a
+																						href={`https://${shopDomain}/admin/products/${u.productId.split("/").pop()}`}
+																						target="_blank"
+																						rel="noopener noreferrer"
+																						style={{
+																							textDecoration: "none",
+																							color: "#2563eb",
+																						}}
+																					>
+																						{productTitle}
+																					</a>
+																				) : (
+																					productTitle
+																				)}
+																				{u.variantSku && ` (${u.variantSku})`}:
+																				€{u.oldPrice.toFixed(2)} → €
+																				{u.newPrice.toFixed(2)}
+																				{u.priceChange !== 0 && (
+																					<span
+																						style={{
+																							color:
+																								u.priceChange > 0
+																									? "#dc2626"
+																									: "#059669",
+																						}}
+																					>
+																						{` (${u.priceChange > 0 ? "+" : ""}€${u.priceChange.toFixed(2)})`}
+																					</span>
+																				)}
+																			</Text>
+																		</li>
+																	);
+																})}
 														</ul>
 													</div>
 												)}
@@ -461,6 +497,23 @@ export default function AppIndex({
 											}
 										>
 											Sync Omnia Pricing
+										</Button>
+									</Form>
+
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="sync-omnia-pricing"
+										/>
+										<input type="hidden" name="limit" value="3" />
+										<Button
+											submit
+											loading={
+												isSubmitting && actionType === "sync-omnia-pricing"
+											}
+										>
+											Test 3 Updates
 										</Button>
 									</Form>
 
@@ -681,16 +734,30 @@ export async function action({ context, request }: Route.ActionArgs) {
 					maxPriceThreshold: 10000,
 				};
 
+				// Check if this is a test run with limited products
+				const limitParam = formData.get("limit");
+				const testLimit = limitParam ? parseInt(limitParam.toString()) : null;
+
 				// Fetch Omnia feed data
 				const feedData = await fetchOmniaFeedData(config);
+
+				// Apply test limit if specified
+				let productsToProcess = feedData.products;
+				if (testLimit && testLimit > 0) {
+					productsToProcess = feedData.products.slice(0, testLimit);
+					console.log(
+						`🧪 Test mode: Processing only ${testLimit} products out of ${feedData.products.length}`,
+					);
+				}
 
 				// Process pricing with bulk operations
 				const result = await processOmniaFeedWithBulkOperations(
 					adminClientAdapter,
-					feedData.products,
+					productsToProcess,
 					validationConfig,
 					shopDomain,
 					context.cloudflare.env.OMNIA_PRICING_HISTORY,
+					"manual",
 				);
 
 				// Store status in KV

@@ -1012,7 +1012,7 @@ case "omnia-pricing-sync": {
 ```typescript
 export interface OmniaPricingStatus {
   timestamp: string;
-  success: boolean;
+    success: boolean;
   summary?: {
     successful: number;
     failed: number;
