@@ -48,6 +48,11 @@ export interface ProductUpdateSample {
 	newPrice: number;
 	newCompareAtPrice: number;
 	priceChange: number;
+	productTitle?: string;
+	productHandle?: string;
+	productFeaturedImageUrl?: string;
+	variantSku?: string;
+	variantImageUrl?: string;
 }
 
 export interface ValidationError {
@@ -317,6 +322,7 @@ export async function processOmniaFeedWithBulkOperations(
 	validationConfig?: PricingValidationConfig,
 	shop?: string,
 	historyKV?: KVNamespace,
+	triggeredBy: "manual" | "cron" = "manual",
 ): Promise<{
 	successful: number;
 	failed: number;
@@ -339,6 +345,12 @@ export async function processOmniaFeedWithBulkOperations(
     edges {
       node {
         id
+        title
+        handle
+        featuredImage {
+          url
+          altText
+        }
         variants(first: 250) {
           edges {
             node {
@@ -346,6 +358,11 @@ export async function processOmniaFeedWithBulkOperations(
               barcode
               price
               compareAtPrice
+              sku
+              image {
+                url
+                altText
+              }
             }
           }
         }
@@ -444,11 +461,16 @@ export async function processOmniaFeedWithBulkOperations(
 		string,
 		{
 			id: string;
+			title?: string;
+			handle?: string;
+			featuredImageUrl?: string;
 			variants: Array<{
 				id: string;
 				barcode: string | null;
 				price: string;
 				compareAtPrice: string | null;
+				sku?: string;
+				imageUrl?: string;
 			}>;
 		}
 	>();
@@ -458,7 +480,13 @@ export async function processOmniaFeedWithBulkOperations(
 		try {
 			const obj = JSON.parse(line);
 			if (obj.id?.includes("/Product/")) {
-				products.set(obj.id, { id: obj.id, variants: [] });
+				products.set(obj.id, {
+					id: obj.id,
+					title: obj.title || undefined,
+					handle: obj.handle || undefined,
+					featuredImageUrl: obj.featuredImage?.url || undefined,
+					variants: [],
+				});
 			} else if (obj.id?.includes("/ProductVariant/") && obj.__parentId) {
 				const product = products.get(obj.__parentId);
 				if (product) {
@@ -467,6 +495,8 @@ export async function processOmniaFeedWithBulkOperations(
 						barcode: obj.barcode || null,
 						price: obj.price || "0",
 						compareAtPrice: obj.compareAtPrice || null,
+						sku: obj.sku || undefined,
+						imageUrl: obj.image?.url || undefined,
 					});
 				}
 			}
@@ -567,6 +597,14 @@ export async function processOmniaFeedWithBulkOperations(
 			for (const variantId of result.successfulVariantIds) {
 				const matched = batch.find((m) => m.variantId === variantId);
 				if (matched) {
+					// Find the product to get title, handle, and images
+					const product = Array.from(products.values()).find(
+						(p) => p.id === matched.productId,
+					);
+					const variant = product?.variants.find(
+						(v) => v.id === matched.variantId,
+					);
+
 					const updateSample = {
 						productId: matched.productId,
 						variantId: matched.variantId,
@@ -576,6 +614,11 @@ export async function processOmniaFeedWithBulkOperations(
 						newPrice: matched.newPrice,
 						newCompareAtPrice: matched.newCompareAtPrice,
 						priceChange: matched.priceChange,
+						productTitle: product?.title,
+						productHandle: product?.handle,
+						productFeaturedImageUrl: product?.featuredImageUrl,
+						variantSku: variant?.sku,
+						variantImageUrl: variant?.imageUrl,
 					};
 					updatedSamples.push(updateSample);
 
@@ -586,7 +629,7 @@ export async function processOmniaFeedWithBulkOperations(
 							...updateSample,
 							timestamp,
 							runId,
-							triggeredBy: "manual" as const,
+							triggeredBy,
 							shop,
 						};
 
@@ -768,6 +811,14 @@ async function updateProductPricesBulk(
 		compareAtPrice: match.newCompareAtPrice.toFixed(2),
 	}));
 
+	// Log the number of variants attempted and first 3 variant IDs
+	console.log(`💰 Attempting to update ${matches.length} product variants:`, {
+		variantIds: matches.slice(0, 3).map((m) => m.variantId),
+		samplePrices: matches
+			.slice(0, 3)
+			.map((m) => `${m.ean}: €${m.currentPrice} → €${m.newPrice}`),
+	});
+
 	const result = (await adminClient.request(mutation, {
 		productVariants,
 	})) as {
@@ -788,6 +839,18 @@ async function updateProductPricesBulk(
 		?.productVariants ?? []) as Array<{
 		id: string;
 	}>;
+
+	// Log results with detailed error information
+	console.log(`💰 Price update batch results:`, {
+		successful: successfulVariants.length,
+		failed: matches.length - successfulVariants.length,
+		userErrors: userErrors.length > 0 ? userErrors : "none",
+		successfulVariantIds: successfulVariants.slice(0, 3).map((v) => v.id),
+	});
+
+	if (userErrors.length > 0) {
+		console.error("❌ Shopify API errors during price update:", userErrors);
+	}
 
 	return {
 		successful: successfulVariants.length,
