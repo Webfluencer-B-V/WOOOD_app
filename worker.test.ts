@@ -5,7 +5,7 @@ import {
 	waitOnExecutionContext,
 } from "cloudflare:test";
 import { afterEach, expect, test, vi } from "vitest";
-import type { Env } from "./src/utils/consolidation";
+import type { WorkerEnv as Env } from "./app/types/app";
 import worker from "./worker";
 
 afterEach(() => {

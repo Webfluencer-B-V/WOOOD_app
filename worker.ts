@@ -1,13 +1,13 @@
 /// <reference types="vite/client" />
 
 import { createRequestHandler } from "react-router";
-import type { QueueMessage, ScheduledJobMessage } from "./app/types/app";
-import {
-	DEFAULT_FEATURE_FLAGS,
-	type Env,
-	type FeatureFlags,
-	isFeatureEnabled,
-} from "./src/utils/consolidation";
+import type {
+	WorkerEnv as Env,
+	FeatureFlags,
+	QueueMessage,
+	ScheduledJobMessage,
+} from "./app/types/app";
+import { DEFAULT_FEATURE_FLAGS, isFeatureEnabled } from "./src/config/flags";
 import {
 	type ExperienceCenterApiConfig,
 	fetchExperienceCenterData,
@@ -118,11 +118,11 @@ async function handleDeliveryDates(
 				headers: { "Content-Type": "application/json" },
 			});
 		}
-		if (env.DUTCHNED_API_URL && env.DUTCHNED_API_CREDENTIALS) {
+		if (env.DUTCHNED_API_URL && env.DUTCHNED_API_KEY) {
 			try {
 				const response = await fetch(`${env.DUTCHNED_API_URL}/delivery-dates`, {
 					headers: {
-						Authorization: `Basic ${env.DUTCHNED_API_CREDENTIALS}`,
+						Authorization: `Basic ${env.DUTCHNED_API_KEY}`,
 						"Content-Type": "application/json",
 					},
 				});

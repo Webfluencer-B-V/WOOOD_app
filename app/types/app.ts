@@ -24,6 +24,13 @@ export interface ScheduledJobMessage {
 
 export type QueueMessage = WebhookQueueMessage | ScheduledJobMessage;
 
+export interface WebhookQueue {
+  send: (
+    message: WebhookQueueMessage,
+    options?: { contentType?: string },
+  ) => Promise<void>;
+}
+
 // Worker Env (migrated from consolidation)
 export interface WorkerEnv {
   ENVIRONMENT?: string;
@@ -33,7 +40,7 @@ export interface WorkerEnv {
   SHOPIFY_APP_HANDLE?: string;
   SHOPIFY_APP_LOG_LEVEL?: string;
   DUTCHNED_API_URL?: string;
-  DUTCHNED_API_CREDENTIALS?: string;
+  DUTCHNED_API_KEY?: string;
   SHOPIFY_ADMIN_API_ACCESS_TOKEN?: string;
   SHOPIFY_STORE_URL?: string;
   DUTCH_FURNITURE_BASE_URL?: string;
@@ -42,7 +49,7 @@ export interface WorkerEnv {
   STORE_LOCATOR_STATUS?: KVNamespace;
   EXPERIENCE_CENTER_STATUS?: KVNamespace;
   SESSION_STORAGE: KVNamespace;
-  WEBHOOK_QUEUE?: unknown;
+  WEBHOOK_QUEUE?: WebhookQueue;
 }
 
 export interface FeatureFlags {

@@ -181,7 +181,7 @@ Post‑validation TODO (after E2E passes on Polaris v12)
 - Environment files for Worker: deprecate `.env*` reads. Source of truth:
   - Cloudflare `wrangler.json` `vars` and `wrangler secret`
   - Shopify CLI config for app build/dev
-- `src/utils/consolidation.ts`: remove after types/flags are migrated:
+- `src/utils/consolidation.ts`: removed; flags moved to `src/config/flags.ts`, types moved to `app/types/app.ts`.
   - Move `Env` to `app/types/app.ts` and extend via `worker-configuration.d.ts`
   - Move flags to `src/config/flags.ts` with typed defaults
   - Move shared domain types to `src/types/*`

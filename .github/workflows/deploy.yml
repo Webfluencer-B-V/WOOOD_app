@@ -45,7 +45,7 @@ jobs:
         env:
           SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
           DUTCH_FURNITURE_API_KEY: ${{ secrets.DUTCH_FURNITURE_API_KEY }}
-          DUTCHNED_API_CREDENTIALS: ${{ secrets.DUTCHNED_API_CREDENTIALS }}
+          DUTCHNED_API_KEY: ${{ secrets.DUTCHNED_API_KEY }}
           SHOPIFY_APP_CLIENT_SECRET: ${{ secrets.SHOPIFY_APP_CLIENT_SECRET }}
           SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
 
