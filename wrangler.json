@@ -32,6 +32,10 @@
 		{
 			"binding": "OMNIA_PRICING_STATUS",
 			"id": "a2ea02194ab5462689a66118ab029517"
+		},
+		{
+			"binding": "OMNIA_PRICING_HISTORY",
+			"id": "47012fe3863f43dc80a2308b61dba43d"
 		}
 	],
 	"logpush": true,
@@ -78,6 +82,10 @@
 		"OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
 		"PRICING_MAX_DISCOUNT_PERCENTAGE": "90",
 		"PRICING_BASE_PRICE_TOLERANCE": "5",
-		"PRICING_ENFORCE_BASE_PRICE_MATCH": "true"
+		"PRICING_ENFORCE_BASE_PRICE_MATCH": "true",
+		"EMAIL_PROVIDER": "cloudflare",
+		"EMAIL_FROM": "noreply@woood-staging.leander-4e0.workers.dev",
+		"OMNIA_EMAIL_RECIPIENTS": "leander@webfluencer.nl",
+		"EMAIL_SUBJECT_PREFIX": "[WOOOD Staging] "
 	}
 }

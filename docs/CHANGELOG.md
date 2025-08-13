@@ -1100,8 +1100,7 @@ Plan an email report for Omnia sync results using Cloudflare Email (MailChannels
 
 – Configuration (wrangler vars/secrets)
   - `EMAIL_PROVIDER = cloudflare`
-  - `EMAIL_FROM = reports@woood.nl` (must be authorized sender)
-  - `OMNIA_EMAIL_RECIPIENTS = "ops@woood.nl,buying@woood.nl"` (CSV)
+  - `OMNIA_EMAIL_RECIPIENTS = "leander@webfluencer.nl"` (CSV)
   - Optional: `EMAIL_SUBJECT_PREFIX = "[Staging]"`
 
 – App action and UI
@@ -1112,7 +1111,7 @@ Plan an email report for Omnia sync results using Cloudflare Email (MailChannels
     ```json
     {
       "personalizations":[{"to":[{"email":"to@example.com"}]}],
-      "from":{"email":"reports@woood.nl"},
+      "from":CLOUDFLARE EMAIL,
       "subject":"<prefix> Omnia pricing sync — <shop> — <timestamp>",
       "content":[{"type":"text/html","value":"<html>…</html>"}]
     }
@@ -1133,7 +1132,7 @@ Plan an email report for Omnia sync results using Cloudflare Email (MailChannels
 Acceptance criteria:
   - Manual send works from the dashboard and returns success/error banner
   - Email contains the same summary metrics shown in the UI and a compact recent updates table
-  - No Mailgun; Cloudflare Email (MailChannels) is used exclusively
+  Cloudflare Email (MailChannels) is used exclusively
 
 **Integration Summary:**
 - **Single Dashboard**: All sync functions (Experience Center, Store Locator, Omnia Pricing) in one unified interface

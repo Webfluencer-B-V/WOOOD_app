@@ -50,10 +50,15 @@ export interface WorkerEnv {
   PRICING_MAX_DISCOUNT_PERCENTAGE?: string;
   PRICING_BASE_PRICE_TOLERANCE?: string;
   PRICING_ENFORCE_BASE_PRICE_MATCH?: string;
+  EMAIL_PROVIDER?: string;
+  EMAIL_FROM?: string;
+  OMNIA_EMAIL_RECIPIENTS?: string;
+  EMAIL_SUBJECT_PREFIX?: string;
   WOOOD_KV?: KVNamespace;
   STORE_LOCATOR_STATUS?: KVNamespace;
   EXPERIENCE_CENTER_STATUS?: KVNamespace;
   OMNIA_PRICING_STATUS?: KVNamespace;
+  OMNIA_PRICING_HISTORY?: KVNamespace;
   SESSION_STORAGE: KVNamespace;
   WEBHOOK_QUEUE?: WebhookQueue;
 }
@@ -69,6 +74,8 @@ export interface FeatureFlags {
 export interface OmniaPricingStatus {
   timestamp: string;
   success: boolean;
+  runId?: string;
+  triggeredBy?: "cron" | "manual";
   summary?: {
     successful: number;
     failed: number;
@@ -108,4 +115,19 @@ export interface OmniaPricingStatus {
   shop: string;
   error?: string;
   cron?: boolean;
+}
+
+export interface OmniaPricingHistoryEntry {
+  productId: string;
+  variantId: string;
+  ean: string;
+  oldPrice: number;
+  oldCompareAtPrice: number | null;
+  newPrice: number;
+  newCompareAtPrice: number;
+  priceChange: number;
+  timestamp: string;
+  runId: string;
+  triggeredBy: "cron" | "manual";
+  shop: string;
 }

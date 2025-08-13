@@ -175,12 +175,148 @@ function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function revertOmniaPricing(
+	adminClient: ShopifyAdminClient,
+	shop: string,
+	runId: string,
+	historyKV: KVNamespace,
+): Promise<{
+	successful: number;
+	failed: number;
+	errors: string[];
+	revertedVariants: string[];
+}> {
+	// Get all history entries for this run
+	const historyKeys = await historyKV.list({ prefix: `omnia:update:${shop}:` });
+	const historyEntries: Array<{
+		key: string;
+		entry: import("app/types/app").OmniaPricingHistoryEntry;
+	}> = [];
+
+	// Filter by runId and fetch entries
+	for (const key of historyKeys.keys) {
+		try {
+			const value = await historyKV.get(key.name, "json");
+			if (
+				value &&
+				typeof value === "object" &&
+				"runId" in value &&
+				value.runId === runId
+			) {
+				historyEntries.push({
+					key: key.name,
+					entry: value as import("app/types/app").OmniaPricingHistoryEntry,
+				});
+			}
+		} catch (error) {
+			console.warn(`Failed to fetch history entry ${key.name}:`, error);
+		}
+	}
+
+	if (historyEntries.length === 0) {
+		throw new Error(`No pricing history found for runId: ${runId}`);
+	}
+
+	console.log(
+		`🔄 Reverting ${historyEntries.length} price changes from runId: ${runId}`,
+	);
+
+	// Revert prices in batches
+	const batchSize = 10;
+	let totalSuccessful = 0;
+	let totalFailed = 0;
+	const allErrors: string[] = [];
+	const revertedVariants: string[] = [];
+
+	for (let i = 0; i < historyEntries.length; i += batchSize) {
+		const batch = historyEntries.slice(i, i + batchSize);
+
+		try {
+			const productVariants = batch.map(({ entry }) => ({
+				id: entry.variantId,
+				price: entry.oldPrice.toFixed(2),
+				compareAtPrice: entry.oldCompareAtPrice?.toFixed(2) || null,
+			}));
+
+			const mutation = `
+				mutation productVariantsBulkUpdate($productVariants: [ProductVariantsBulkInput!]!) {
+					productVariantsBulkUpdate(productVariants: $productVariants) {
+						productVariants {
+							id
+							price
+							compareAtPrice
+						}
+						userErrors {
+							field
+							message
+						}
+					}
+				}
+			`;
+
+			const result = (await adminClient.request(mutation, {
+				productVariants,
+			})) as {
+				data?: {
+					productVariantsBulkUpdate?: {
+						userErrors?: Array<{ field?: string; message?: string }>;
+						productVariants?: Array<{ id: string }>;
+					};
+				};
+			};
+
+			const userErrors =
+				result.data?.productVariantsBulkUpdate?.userErrors ?? [];
+			const successfulVariants =
+				result.data?.productVariantsBulkUpdate?.productVariants ?? [];
+
+			totalSuccessful += successfulVariants.length;
+			totalFailed += batch.length - successfulVariants.length;
+
+			if (userErrors.length > 0) {
+				allErrors.push(...userErrors.map((e) => `${e.field}: ${e.message}`));
+			}
+
+			// Track successfully reverted variants
+			for (const variant of successfulVariants) {
+				revertedVariants.push(variant.id);
+			}
+
+			// Delete successfully reverted history entries
+			for (const { key, entry } of batch) {
+				if (successfulVariants.some((v) => v.id === entry.variantId)) {
+					historyKV
+						.delete(key)
+						.catch((error) =>
+							console.warn(`Failed to delete history entry ${key}:`, error),
+						);
+				}
+			}
+
+			if (i + batchSize < historyEntries.length) await delay(1000);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			allErrors.push(`Batch revert error: ${message}`);
+			totalFailed += batch.length;
+		}
+	}
+
+	return {
+		successful: totalSuccessful,
+		failed: totalFailed,
+		errors: allErrors,
+		revertedVariants,
+	};
+}
+
 type GraphQLResponse<TData> = { data?: TData; errors?: unknown };
 
 export async function processOmniaFeedWithBulkOperations(
 	adminClient: ShopifyAdminClient,
 	omniaProducts: OmniaFeedRow[],
 	validationConfig?: PricingValidationConfig,
+	shop?: string,
+	historyKV?: KVNamespace,
 ): Promise<{
 	successful: number;
 	failed: number;
@@ -194,6 +330,7 @@ export async function processOmniaFeedWithBulkOperations(
 	sourceTotal: number;
 	updatedSamples: ProductUpdateSample[];
 	invalidSamples: ValidationError[];
+	runId: string;
 }> {
 	// Use same bulk operations pattern as Experience Center
 	const bulkQuery = `
@@ -396,6 +533,10 @@ export async function processOmniaFeedWithBulkOperations(
 	const validationResult = validatePriceMatches(matches, config);
 	const validMatches = validationResult.valid;
 
+	// Generate a unique runId for this pricing sync
+	const runId = `omnia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+	const timestamp = new Date().toISOString();
+
 	// Update prices in batches (same pattern as EC)
 	const batchSize = 10; // Conservative for price updates
 	let totalSuccessful = 0;
@@ -422,12 +563,11 @@ export async function processOmniaFeedWithBulkOperations(
 				else priceUnchanged++;
 			}
 
-			// Collect samples for successful variants (cap to 100 entries)
+			// Collect ALL successful samples (no cap) and persist to history
 			for (const variantId of result.successfulVariantIds) {
-				if (updatedSamples.length >= 100) break;
 				const matched = batch.find((m) => m.variantId === variantId);
 				if (matched) {
-					updatedSamples.push({
+					const updateSample = {
 						productId: matched.productId,
 						variantId: matched.variantId,
 						ean: matched.ean,
@@ -436,7 +576,27 @@ export async function processOmniaFeedWithBulkOperations(
 						newPrice: matched.newPrice,
 						newCompareAtPrice: matched.newCompareAtPrice,
 						priceChange: matched.priceChange,
-					});
+					};
+					updatedSamples.push(updateSample);
+
+					// Persist to history KV if available
+					if (historyKV && shop) {
+						const historyKey = `omnia:update:${shop}:${matched.variantId}:${timestamp}`;
+						const historyEntry = {
+							...updateSample,
+							timestamp,
+							runId,
+							triggeredBy: "manual" as const,
+							shop,
+						};
+
+						// Fire and forget - don't block on KV writes
+						historyKV
+							.put(historyKey, JSON.stringify(historyEntry))
+							.catch((error) =>
+								console.warn(`Failed to persist history entry: ${error}`),
+							);
+					}
 				}
 			}
 
@@ -461,6 +621,7 @@ export async function processOmniaFeedWithBulkOperations(
 		sourceTotal: omniaProducts.length,
 		updatedSamples,
 		invalidSamples: validationResult.invalid.slice(0, 50),
+		runId,
 	};
 }
 

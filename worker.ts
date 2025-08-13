@@ -511,25 +511,54 @@ export default {
 							adminClient,
 							feedData.products,
 							validationConfig,
+							body.shop,
+							env.OMNIA_PRICING_HISTORY,
 						);
+
+						const status = {
+							timestamp: new Date().toISOString(),
+							success: true,
+							runId: result.runId,
+							triggeredBy: "cron" as const,
+							summary: {
+								...result,
+								feedStats: {
+									totalRows: feedData.totalRows,
+									validRows: feedData.validRows,
+									invalidRows: feedData.invalidRows,
+								},
+							},
+							shop: body.shop,
+							cron: true,
+						};
 
 						await env.OMNIA_PRICING_STATUS?.put(
 							`omnia_last_sync:${body.shop}`,
-							JSON.stringify({
-								timestamp: new Date().toISOString(),
-								success: true,
-								summary: {
-									...result,
-									feedStats: {
-										totalRows: feedData.totalRows,
-										validRows: feedData.validRows,
-										invalidRows: feedData.invalidRows,
-									},
-								},
-								shop: body.shop,
-								cron: true,
-							}),
+							JSON.stringify(status),
 						);
+
+						// Optionally send email after successful cron sync
+						if (
+							env.EMAIL_PROVIDER === "cloudflare" &&
+							env.OMNIA_EMAIL_RECIPIENTS
+						) {
+							try {
+								const { sendOmniaReportEmail, parseEmailRecipients } =
+									await import("./src/utils/email");
+								const emailConfig = {
+									provider: "cloudflare" as const,
+									from: env.EMAIL_FROM || "noreply@woood.dev",
+									recipients: parseEmailRecipients(env.OMNIA_EMAIL_RECIPIENTS),
+									subjectPrefix: env.EMAIL_SUBJECT_PREFIX || "[WOOOD Cron] ",
+								};
+
+								await sendOmniaReportEmail(status, emailConfig);
+								console.log("📧 Cron email sent successfully");
+							} catch (emailError) {
+								console.warn("Failed to send cron email:", emailError);
+								// Don't fail the job if email fails
+							}
+						}
 						message.ack();
 						break;
 					}

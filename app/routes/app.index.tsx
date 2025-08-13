@@ -19,6 +19,11 @@ type ShopInfoResponse = {
 	errors?: Array<{ message: string }>;
 };
 
+import {
+	type EmailConfig,
+	parseEmailRecipients,
+	sendOmniaReportEmail,
+} from "../../src/utils/email";
 // Import our pure utility functions
 import {
 	type ExperienceCenterApiConfig,
@@ -31,6 +36,7 @@ import {
 	type OmniaFeedApiConfig,
 	type PricingValidationConfig,
 	processOmniaFeedWithBulkOperations,
+	revertOmniaPricing,
 } from "../../src/utils/omniaFeed";
 import {
 	type DealerApiConfig,
@@ -440,22 +446,67 @@ export default function AppIndex({
 										</div>
 									)}
 								</div>
-								<Form method="post">
-									<input
-										type="hidden"
-										name="action"
-										value="sync-omnia-pricing"
-									/>
-									<Button
-										variant="primary"
-										submit
-										loading={
-											isSubmitting && actionType === "sync-omnia-pricing"
-										}
-									>
-										Sync Omnia Pricing
-									</Button>
-								</Form>
+								<InlineStack gap="200">
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="sync-omnia-pricing"
+										/>
+										<Button
+											variant="primary"
+											submit
+											loading={
+												isSubmitting && actionType === "sync-omnia-pricing"
+											}
+										>
+											Sync Omnia Pricing
+										</Button>
+									</Form>
+
+									{omniaPricingStatus?.success && (
+										<Form method="post">
+											<input
+												type="hidden"
+												name="action"
+												value="send-omnia-report-email"
+											/>
+											<Button
+												submit
+												loading={
+													isSubmitting &&
+													actionType === "send-omnia-report-email"
+												}
+											>
+												Send Email
+											</Button>
+										</Form>
+									)}
+
+									{omniaPricingStatus?.runId && (
+										<Form method="post">
+											<input
+												type="hidden"
+												name="action"
+												value="revert-omnia-pricing"
+											/>
+											<input
+												type="hidden"
+												name="runId"
+												value={omniaPricingStatus.runId}
+											/>
+											<Button
+												tone="critical"
+												submit
+												loading={
+													isSubmitting && actionType === "revert-omnia-pricing"
+												}
+											>
+												Revert Prices
+											</Button>
+										</Form>
+									)}
+								</InlineStack>
 							</InlineStack>
 						</div>
 					</Card>
@@ -638,6 +689,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 					adminClientAdapter,
 					feedData.products,
 					validationConfig,
+					shopDomain,
+					context.cloudflare.env.OMNIA_PRICING_HISTORY,
 				);
 
 				// Store status in KV
@@ -645,6 +698,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 					const status: OmniaPricingStatus = {
 						timestamp: new Date().toISOString(),
 						success: true,
+						runId: result.runId,
+						triggeredBy: "manual",
 						summary: {
 							...result,
 							feedStats: {
@@ -665,6 +720,79 @@ export async function action({ context, request }: Route.ActionArgs) {
 					success: true,
 					message: `Omnia pricing sync completed. ${result.successful} products updated successfully, ${result.failed} failed. ${result.totalMatches} total matches, ${result.validMatches} valid updates.`,
 					result,
+				};
+			}
+
+			case "send-omnia-report-email": {
+				if (!shopDomain) {
+					throw new Error("Shop domain required for email sending");
+				}
+
+				// Get the latest Omnia pricing status
+				const statusData =
+					await context.cloudflare.env.OMNIA_PRICING_STATUS?.get(
+						`omnia_last_sync:${shopDomain}`,
+						"json",
+					);
+
+				if (!statusData) {
+					throw new Error("No Omnia pricing sync data found to send in email");
+				}
+
+				const status = statusData as OmniaPricingStatus;
+
+				// Configure email
+				const emailConfig: EmailConfig = {
+					provider: "cloudflare",
+					from: context.cloudflare.env.EMAIL_FROM || "noreply@woood.dev",
+					recipients: parseEmailRecipients(
+						context.cloudflare.env.OMNIA_EMAIL_RECIPIENTS ||
+							"leander@webfluencer.nl",
+					),
+					subjectPrefix:
+						context.cloudflare.env.EMAIL_SUBJECT_PREFIX || "[WOOOD] ",
+				};
+
+				// Send email
+				const emailResult = await sendOmniaReportEmail(status, emailConfig);
+
+				if (!emailResult.success) {
+					throw new Error(`Email send failed: ${emailResult.error}`);
+				}
+
+				return {
+					success: true,
+					message: `Omnia report email sent successfully to ${emailConfig.recipients.length} recipient(s)`,
+				};
+			}
+
+			case "revert-omnia-pricing": {
+				if (!shopDomain) {
+					throw new Error("Shop domain required for price reversion");
+				}
+
+				const runIdParam = formData.get("runId");
+				if (!runIdParam || typeof runIdParam !== "string") {
+					throw new Error("RunId required for price reversion");
+				}
+
+				const historyKV = context.cloudflare.env.OMNIA_PRICING_HISTORY;
+				if (!historyKV) {
+					throw new Error("Pricing history not available");
+				}
+
+				// Revert the pricing changes
+				const revertResult = await revertOmniaPricing(
+					adminClientAdapter,
+					shopDomain,
+					runIdParam,
+					historyKV,
+				);
+
+				return {
+					success: true,
+					message: `Successfully reverted ${revertResult.successful} price changes from runId ${runIdParam}. ${revertResult.failed} failed to revert.`,
+					result: revertResult,
 				};
 			}
 
