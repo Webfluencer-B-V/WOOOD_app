@@ -45,7 +45,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: '.'
-          command: deploy --message "${{ env.DEPLOY_MESSAGE }}"
+          command: deploy --keep-vars --var DEPLOY_MESSAGE='${{ env.DEPLOY_MESSAGE }}' --var DUTCH_FURNITURE_BASE_URL='${{ vars.DUTCH_FURNITURE_BASE_URL }}' --var DUTCHNED_API_URL='${{ vars.DUTCHNED_API_URL }}'
         env:
           SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
           DUTCH_FURNITURE_BASE_URL: ${{ vars.DUTCH_FURNITURE_BASE_URL }}
