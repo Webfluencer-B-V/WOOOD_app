@@ -51,7 +51,6 @@ jobs:
           SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
 
       - name: Deploy Shopify App Extensions (non-interactive)
-        if: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN != '' }}
         run: npm run deploy:shopify -- --force
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
