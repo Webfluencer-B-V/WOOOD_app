@@ -23,14 +23,25 @@ export async function fetchExperienceCenterData(
 		Authorization: `Bearer ${apiKey}`,
 	};
 
-	const experienceCenterUrl = `${baseUrl}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
+	// Normalize base URL: strip trailing slashes and any trailing /api
+	const trimmed = baseUrl.replace(/\/+$/, "");
+	const baseWithoutApi = trimmed.endsWith("/api")
+		? trimmed.slice(0, -4)
+		: trimmed;
+	const experienceCenterUrl = `${baseWithoutApi}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
 	const response = await fetch(experienceCenterUrl, { headers });
 	if (!response.ok) {
 		throw new Error(
 			`Failed to fetch experience center data: ${response.status} ${response.statusText}`,
 		);
 	}
-
+	const contentType = response.headers.get("content-type") || "";
+	if (!contentType.includes("application/json")) {
+		const textSample = (await response.text()).slice(0, 256);
+		throw new Error(
+			`Experience Center returned non-JSON (content-type=${contentType}). Sample: ${textSample}`,
+		);
+	}
 	const rawData: unknown = await response.json();
 	const allData: unknown[] = Array.isArray(rawData)
 		? rawData
@@ -77,24 +88,23 @@ export async function processExperienceCenterWithBulkOperations(
 	totalProducts: number;
 }> {
 	const bulkQuery = `
-    {
-      products {
+{
+  products(first: 250) {
+    edges {
+      node {
+        id
+        variants(first: 250) {
           edges {
             node {
               id
-            variants {
-                edges {
-                  node {
-                    id
-                    barcode
-                  }
-                }
-              }
+              barcode
             }
           }
         }
       }
-    }`;
+    }
+  }
+}`;
 
 	const createBulkOperationMutation = `
     mutation {

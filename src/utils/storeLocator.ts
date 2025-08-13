@@ -53,12 +53,27 @@ export async function fetchAndTransformDealers(
 		"Content-Type": "application/json",
 		Authorization: `Bearer ${apiKey}`,
 	};
-	const response = await fetch(`${baseUrl}/dealers`, {
-		headers,
-	});
+	// Normalize base URL: strip trailing slashes and any trailing /api
+	const trimmed = baseUrl.replace(/\/+$/, "");
+	const baseWithoutApi = trimmed.endsWith("/api")
+		? trimmed.slice(0, -4)
+		: trimmed;
+	const response = await fetch(
+		`${baseWithoutApi}/api/datasource/wooodshopfinder`,
+		{
+			headers,
+		},
+	);
 	if (!response.ok) {
 		throw new Error(
 			`Failed to fetch dealers: ${response.status} ${response.statusText}`,
+		);
+	}
+	const contentType = response.headers.get("content-type") || "";
+	if (!contentType.includes("application/json")) {
+		const textSample = (await response.text()).slice(0, 256);
+		throw new Error(
+			`Dealers endpoint returned non-JSON (content-type=${contentType}). Sample: ${textSample}`,
 		);
 	}
 	const data = await response.json();
