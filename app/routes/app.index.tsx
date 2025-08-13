@@ -741,10 +741,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 				// Fetch Omnia feed data
 				const feedData = await fetchOmniaFeedData(config);
 
-				// Apply test limit if specified
-				let productsToProcess = feedData.products;
+				// Keep full feed; apply any test limit post-match inside processing
 				if (testLimit && testLimit > 0) {
-					productsToProcess = feedData.products.slice(0, testLimit);
 					console.log(
 						`🧪 Test mode: Processing only ${testLimit} products out of ${feedData.products.length}`,
 					);
@@ -753,11 +751,12 @@ export async function action({ context, request }: Route.ActionArgs) {
 				// Process pricing with bulk operations
 				const result = await processOmniaFeedWithBulkOperations(
 					adminClientAdapter,
-					productsToProcess,
+					feedData.products,
 					validationConfig,
 					shopDomain,
 					context.cloudflare.env.OMNIA_PRICING_HISTORY,
 					"manual",
+					testLimit ?? undefined,
 				);
 
 				// Store status in KV

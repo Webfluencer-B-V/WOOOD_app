@@ -323,6 +323,8 @@ export async function processOmniaFeedWithBulkOperations(
 	shop?: string,
 	historyKV?: KVNamespace,
 	triggeredBy: "manual" | "cron" = "manual",
+	// Optional: when provided, limit the number of valid matches processed (applied post-match)
+	testLimit?: number,
 ): Promise<{
 	successful: number;
 	failed: number;
@@ -561,7 +563,26 @@ export async function processOmniaFeedWithBulkOperations(
 	};
 
 	const validationResult = validatePriceMatches(matches, config);
-	const validMatches = validationResult.valid;
+	let validMatches = validationResult.valid;
+
+	console.log("Omnia valid matches", {
+		totalMatches,
+		valid: validMatches.length,
+		invalid: validationResult.invalid.length,
+	});
+
+	if (typeof testLimit === "number" && testLimit > 0) {
+		const limited = validMatches.slice(0, testLimit);
+		console.log("🧪 Post-match test limit", {
+			taking: limited.length,
+			of: validMatches.length,
+		});
+		validMatches = limited;
+	}
+
+	if (validMatches.length === 0) {
+		console.log("ℹ️ No valid matches - skipping price updates");
+	}
 
 	// Generate a unique runId for this pricing sync
 	const runId = `omnia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
