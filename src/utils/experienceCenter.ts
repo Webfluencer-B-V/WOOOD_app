@@ -206,6 +206,12 @@ export async function processExperienceCenterWithBulkOperations(
 		} catch {}
 	}
 
+	// Debug visibility
+	console.log("EC bulk parsed products", {
+		productsCount: products.size,
+		sample: Array.from(products.values()).slice(0, 3),
+	});
+
 	const metafieldsToUpdate: Array<{
 		productId: string;
 		experienceCenter: boolean;
@@ -226,6 +232,12 @@ export async function processExperienceCenterWithBulkOperations(
 		metafieldsToUpdate.push({ productId: product.id, experienceCenter });
 		processedProducts++;
 	}
+
+	console.log("EC bulk matching summary", {
+		processedProducts,
+		eanMatches,
+		availableEansCount: availableEans.size,
+	});
 
 	const batchSize = 25;
 	let totalSuccessful = 0;
