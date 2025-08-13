@@ -20,6 +20,7 @@ export async function fetchExperienceCenterData(
 
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
+		Accept: "application/json",
 		Authorization: `Bearer ${apiKey}`,
 	};
 
@@ -31,8 +32,13 @@ export async function fetchExperienceCenterData(
 	const experienceCenterUrl = `${baseWithoutApi}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
 	const response = await fetch(experienceCenterUrl, { headers });
 	if (!response.ok) {
+		let extra = "";
+		try {
+			const text = await response.text();
+			extra = `; body: ${text.slice(0, 256)}`;
+		} catch {}
 		throw new Error(
-			`Failed to fetch experience center data: ${response.status} ${response.statusText}`,
+			`Failed to fetch experience center data: ${response.status} ${response.statusText}${extra}`,
 		);
 	}
 	const contentType = response.headers.get("content-type") || "";
