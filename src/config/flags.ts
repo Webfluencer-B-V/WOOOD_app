@@ -5,6 +5,7 @@ export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
 	ENABLE_STORE_LOCATOR: true,
 	ENABLE_EXPERIENCE_CENTER: true,
 	ENABLE_WEBHOOKS: true,
+	ENABLE_OMNIA_PRICING: true,
 };
 
 export function isFeatureEnabled(

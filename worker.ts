@@ -14,6 +14,12 @@ import {
 	processExperienceCenterWithBulkOperations,
 } from "./src/utils/experienceCenter";
 import {
+	fetchOmniaFeedData,
+	type OmniaFeedApiConfig,
+	type PricingValidationConfig,
+	processOmniaFeedWithBulkOperations,
+} from "./src/utils/omniaFeed";
+import {
 	type DealerApiConfig,
 	fetchAndTransformDealers,
 	upsertShopMetafield,
@@ -481,6 +487,52 @@ export default {
 						message.ack();
 						break;
 					}
+					case "omnia-pricing-sync": {
+						if (!body.shop)
+							throw new Error("Missing shop for Omnia pricing job");
+						const adminClient = await createAdminClientForShop(body.shop, env);
+						const config: OmniaFeedApiConfig = {
+							feedUrl: env.OMNIA_FEED_URL || "",
+							userAgent: "WOOOD-Shopify-Integration/1.0",
+						};
+
+						const validationConfig: PricingValidationConfig = {
+							maxDiscountPercentage:
+								Number(env.PRICING_MAX_DISCOUNT_PERCENTAGE) || 90,
+							enforceBasePriceMatch:
+								env.PRICING_ENFORCE_BASE_PRICE_MATCH !== "false",
+							basePriceTolerance: Number(env.PRICING_BASE_PRICE_TOLERANCE) || 5,
+							minPriceThreshold: 0.01,
+							maxPriceThreshold: 10000,
+						};
+
+						const feedData = await fetchOmniaFeedData(config);
+						const result = await processOmniaFeedWithBulkOperations(
+							adminClient,
+							feedData.products,
+							validationConfig,
+						);
+
+						await env.OMNIA_PRICING_STATUS?.put(
+							`omnia_last_sync:${body.shop}`,
+							JSON.stringify({
+								timestamp: new Date().toISOString(),
+								success: true,
+								summary: {
+									...result,
+									feedStats: {
+										totalRows: feedData.totalRows,
+										validRows: feedData.validRows,
+										invalidRows: feedData.invalidRows,
+									},
+								},
+								shop: body.shop,
+								cron: true,
+							}),
+						);
+						message.ack();
+						break;
+					}
 					case "token-cleanup": {
 						// Legacy no-op: token cleanup handled by app flows
 						message.ack();
@@ -546,6 +598,29 @@ export default {
 					}
 				).SCHEDULED_QUEUE?.send({
 					type: "experience-center-sync",
+					shop,
+					scheduledAt: new Date().toISOString(),
+				});
+			}
+		}
+
+		if (
+			isFeatureEnabled(FEATURE_FLAGS, "ENABLE_OMNIA_PRICING") &&
+			event.cron === "0 4 * * *"
+		) {
+			for (const shop of shops) {
+				await (
+					env as unknown as {
+						SCHEDULED_QUEUE?: {
+							send: (m: {
+								type: string;
+								shop?: string;
+								scheduledAt: string;
+							}) => Promise<void>;
+						};
+					}
+				).SCHEDULED_QUEUE?.send({
+					type: "omnia-pricing-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
 				});

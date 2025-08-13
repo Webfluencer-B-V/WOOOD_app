@@ -27,11 +27,18 @@ import {
 	type ShopifyAdminClient,
 } from "../../src/utils/experienceCenter";
 import {
+	fetchOmniaFeedData,
+	type OmniaFeedApiConfig,
+	type PricingValidationConfig,
+	processOmniaFeedWithBulkOperations,
+} from "../../src/utils/omniaFeed";
+import {
 	type DealerApiConfig,
 	fetchAndTransformDealers,
 	upsertShopMetafield,
 } from "../../src/utils/storeLocator";
 import { registerWebhooks } from "../../src/utils/webhooks";
+import type { OmniaPricingStatus } from "../types/app";
 import type { Route } from "./+types/app.index";
 
 export async function loader({ context, request }: Route.LoaderArgs) {
@@ -55,6 +62,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 		const shopDomain = data?.shop?.myshopifyDomain;
 		let experienceCenterStatus = null;
 		let storeLocatorStatus = null;
+		let omniaPricingStatus = null;
 
 		if (shopDomain) {
 			try {
@@ -76,6 +84,16 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			} catch (e) {
 				console.warn("Failed to get store locator status", e);
 			}
+
+			try {
+				omniaPricingStatus =
+					await context.cloudflare.env.OMNIA_PRICING_STATUS?.get(
+						`omnia_last_sync:${shopDomain}`,
+						"json",
+					);
+			} catch (e) {
+				console.warn("Failed to get Omnia pricing status", e);
+			}
 		}
 
 		return {
@@ -83,6 +101,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			errors,
 			experienceCenterStatus,
 			storeLocatorStatus,
+			omniaPricingStatus,
 		};
 	} catch (error: unknown) {
 		shopify.utils.log.error("app.index.loader.error", error);
@@ -105,6 +124,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 				errors: [{ message: "Unknown Error" }],
 				experienceCenterStatus: null,
 				storeLocatorStatus: null,
+				omniaPricingStatus: null,
 			},
 			500,
 		);
@@ -136,10 +156,16 @@ export default function AppIndex({
 	type IndexLoaderData = ShopInfoResponse & {
 		experienceCenterStatus?: ExperienceCenterStatus | null;
 		storeLocatorStatus?: StoreLocatorStatus | null;
+		omniaPricingStatus?: OmniaPricingStatus | null;
 	};
 
-	const { data, errors, experienceCenterStatus, storeLocatorStatus } =
-		(loaderData ?? {}) as IndexLoaderData;
+	const {
+		data,
+		errors,
+		experienceCenterStatus,
+		storeLocatorStatus,
+		omniaPricingStatus,
+	} = (loaderData ?? {}) as IndexLoaderData;
 	const navigation = useNavigation();
 	const { t } = useTranslation();
 
@@ -322,6 +348,98 @@ export default function AppIndex({
 				<Layout.Section>
 					<Card>
 						<Text variant="headingMd" as="h2">
+							Omnia Pricing Sync
+						</Text>
+						<Text as="p" tone="subdued">
+							Sync product pricing from Omnia feed with validation
+						</Text>
+
+						<div style={{ marginTop: "16px" }}>
+							<InlineStack gap="400" align="space-between">
+								<div>
+									<Text as="p">
+										<strong>Status:</strong>{" "}
+										{getStatusBadge(omniaPricingStatus)}
+									</Text>
+									<Text as="p" tone="subdued">
+										Last sync: {formatTimestamp(omniaPricingStatus?.timestamp)}
+									</Text>
+									{omniaPricingStatus?.summary && (
+										<div>
+											<Text as="p" tone="subdued">
+												Products: {omniaPricingStatus.summary.successful}{" "}
+												successful, {omniaPricingStatus.summary.failed} failed
+											</Text>
+											{typeof omniaPricingStatus.summary.sourceTotal ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Feed total: {omniaPricingStatus.summary.sourceTotal}
+												</Text>
+											)}
+											{typeof omniaPricingStatus.summary.totalMatches ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Product matches:{" "}
+													{omniaPricingStatus.summary.totalMatches}
+												</Text>
+											)}
+											{typeof omniaPricingStatus.summary.validMatches ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Valid updates:{" "}
+													{omniaPricingStatus.summary.validMatches}
+												</Text>
+											)}
+											{typeof omniaPricingStatus.summary.priceIncreases ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Price increases:{" "}
+													{omniaPricingStatus.summary.priceIncreases}
+												</Text>
+											)}
+											{typeof omniaPricingStatus.summary.priceDecreases ===
+												"number" && (
+												<Text as="p" tone="subdued">
+													Price decreases:{" "}
+													{omniaPricingStatus.summary.priceDecreases}
+												</Text>
+											)}
+											{typeof omniaPricingStatus.summary.feedStats
+												?.totalRows === "number" && (
+												<Text as="p" tone="subdued">
+													Feed rows:{" "}
+													{omniaPricingStatus.summary.feedStats.totalRows}{" "}
+													total,{" "}
+													{omniaPricingStatus.summary.feedStats.validRows} valid
+												</Text>
+											)}
+										</div>
+									)}
+								</div>
+								<Form method="post">
+									<input
+										type="hidden"
+										name="action"
+										value="sync-omnia-pricing"
+									/>
+									<Button
+										variant="primary"
+										submit
+										loading={
+											isSubmitting && actionType === "sync-omnia-pricing"
+										}
+									>
+										Sync Omnia Pricing
+									</Button>
+								</Form>
+							</InlineStack>
+						</div>
+					</Card>
+				</Layout.Section>
+
+				<Layout.Section>
+					<Card>
+						<Text variant="headingMd" as="h2">
 							Webhook Management
 						</Text>
 						<Text as="p" tone="subdued">
@@ -467,6 +585,62 @@ export async function action({ context, request }: Route.ActionArgs) {
 				return {
 					success: true,
 					message: "Webhooks registered successfully.",
+				};
+			}
+
+			case "sync-omnia-pricing": {
+				const config: OmniaFeedApiConfig = {
+					feedUrl: context.cloudflare.env.OMNIA_FEED_URL || "",
+					userAgent: "WOOOD-Shopify-Integration/1.0",
+				};
+
+				const validationConfig: PricingValidationConfig = {
+					maxDiscountPercentage:
+						Number(context.cloudflare.env.PRICING_MAX_DISCOUNT_PERCENTAGE) ||
+						90,
+					enforceBasePriceMatch:
+						context.cloudflare.env.PRICING_ENFORCE_BASE_PRICE_MATCH !== "false",
+					basePriceTolerance:
+						Number(context.cloudflare.env.PRICING_BASE_PRICE_TOLERANCE) || 5,
+					minPriceThreshold: 0.01,
+					maxPriceThreshold: 10000,
+				};
+
+				// Fetch Omnia feed data
+				const feedData = await fetchOmniaFeedData(config);
+
+				// Process pricing with bulk operations
+				const result = await processOmniaFeedWithBulkOperations(
+					adminClientAdapter,
+					feedData.products,
+					validationConfig,
+				);
+
+				// Store status in KV
+				if (shopDomain) {
+					const status: OmniaPricingStatus = {
+						timestamp: new Date().toISOString(),
+						success: true,
+						summary: {
+							...result,
+							feedStats: {
+								totalRows: feedData.totalRows,
+								validRows: feedData.validRows,
+								invalidRows: feedData.invalidRows,
+							},
+						},
+						shop: shopDomain,
+					};
+					await context.cloudflare.env.OMNIA_PRICING_STATUS?.put(
+						`omnia_last_sync:${shopDomain}`,
+						JSON.stringify(status),
+					);
+				}
+
+				return {
+					success: true,
+					message: `Omnia pricing sync completed. ${result.successful} products updated successfully, ${result.failed} failed. ${result.totalMatches} total matches, ${result.validMatches} valid updates.`,
+					result,
 				};
 			}
 
