@@ -1089,6 +1089,52 @@ export interface FeatureFlags {
 }
 ```
 
+### Phase 5: Email Reporting (Cloudflare Email, 1 SP)
+
+Plan an email report for Omnia sync results using Cloudflare Email (MailChannels) — not Mailgun.
+
+– Transport: Cloudflare Email via MailChannels HTTP API
+  - Endpoint: `https://api.mailchannels.net/tx/v1/send`
+  - Method: POST JSON
+  - From domain should be verified in Cloudflare Email Routing
+
+– Configuration (wrangler vars/secrets)
+  - `EMAIL_PROVIDER = cloudflare`
+  - `EMAIL_FROM = reports@woood.nl` (must be authorized sender)
+  - `OMNIA_EMAIL_RECIPIENTS = "ops@woood.nl,buying@woood.nl"` (CSV)
+  - Optional: `EMAIL_SUBJECT_PREFIX = "[Staging]"`
+
+– App action and UI
+  - Add action `send-omnia-report-email` in `app/routes/app.index.tsx`
+  - Reads the latest `OMNIA_PRICING_STATUS:omnia_last_sync:<shop>` summary from KV
+  - Renders HTML with headline metrics and a table of recent updates (top 50 from `updatedSamples`)
+  - Sends via MailChannels JSON payload:
+    ```json
+    {
+      "personalizations":[{"to":[{"email":"to@example.com"}]}],
+      "from":{"email":"reports@woood.nl"},
+      "subject":"<prefix> Omnia pricing sync — <shop> — <timestamp>",
+      "content":[{"type":"text/html","value":"<html>…</html>"}]
+    }
+    ```
+  - Add a secondary Button "Send email" in the Omnia card next to "Sync Omnia Pricing"
+
+– Scheduling
+  - Optional follow‑up: Worker scheduled email at 04:05 UTC (after the 04:00 sync) to the same recipients
+
+– Recipient storage (current and future)
+  - Current: `OMNIA_EMAIL_RECIPIENTS` env (CSV)
+  - Future: per‑shop KV key `omnia:email:recipients:<shop>` editable from the UI
+
+– Security/observability
+  - Log only the send status and recipient count (not full addresses)
+  - Include first 256 chars of response body on non‑2xx for diagnostics
+
+Acceptance criteria:
+  - Manual send works from the dashboard and returns success/error banner
+  - Email contains the same summary metrics shown in the UI and a compact recent updates table
+  - No Mailgun; Cloudflare Email (MailChannels) is used exclusively
+
 **Integration Summary:**
 - **Single Dashboard**: All sync functions (Experience Center, Store Locator, Omnia Pricing) in one unified interface
 - **Consistent Patterns**: Same action/loader/status/KV patterns as existing features
