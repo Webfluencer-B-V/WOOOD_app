@@ -413,6 +413,30 @@ export default function AppIndex({
 													{omniaPricingStatus.summary.feedStats.validRows} valid
 												</Text>
 											)}
+											{Array.isArray(
+												omniaPricingStatus.summary.updatedSamples,
+											) &&
+												omniaPricingStatus.summary.updatedSamples.length >
+													0 && (
+													<div style={{ marginTop: "8px" }}>
+														<Text as="p" tone="subdued">
+															Recent updates (by variant):
+														</Text>
+														<ul style={{ paddingLeft: 16 }}>
+															{omniaPricingStatus.summary.updatedSamples
+																.slice(0, 10)
+																.map((u) => (
+																	<li key={u.variantId}>
+																		<Text as="span" tone="subdued">
+																			{u.ean || u.variantId}: €
+																			{u.oldPrice.toFixed(2)} → €
+																			{u.newPrice.toFixed(2)}
+																		</Text>
+																	</li>
+																))}
+														</ul>
+													</div>
+												)}
 										</div>
 									)}
 								</div>

@@ -39,6 +39,17 @@ export interface ProductPriceMatch {
 	priceChange: number;
 }
 
+export interface ProductUpdateSample {
+	productId: string;
+	variantId: string;
+	ean: string;
+	oldPrice: number;
+	oldCompareAtPrice: number | null;
+	newPrice: number;
+	newCompareAtPrice: number;
+	priceChange: number;
+}
+
 export interface ValidationError {
 	productId: string;
 	variantId: string;
@@ -181,6 +192,8 @@ export async function processOmniaFeedWithBulkOperations(
 	priceDecreases: number;
 	priceUnchanged: number;
 	sourceTotal: number;
+	updatedSamples: ProductUpdateSample[];
+	invalidSamples: ValidationError[];
 }> {
 	// Use same bulk operations pattern as Experience Center
 	const bulkQuery = `
@@ -392,6 +405,8 @@ export async function processOmniaFeedWithBulkOperations(
 	let priceUnchanged = 0;
 	const allErrors: string[] = [];
 
+	const updatedSamples: ProductUpdateSample[] = [];
+
 	for (let i = 0; i < validMatches.length; i += batchSize) {
 		const batch = validMatches.slice(i, i + batchSize);
 		try {
@@ -405,6 +420,24 @@ export async function processOmniaFeedWithBulkOperations(
 				if (match.priceChange > 0.01) priceIncreases++;
 				else if (match.priceChange < -0.01) priceDecreases++;
 				else priceUnchanged++;
+			}
+
+			// Collect samples for successful variants (cap to 100 entries)
+			for (const variantId of result.successfulVariantIds) {
+				if (updatedSamples.length >= 100) break;
+				const matched = batch.find((m) => m.variantId === variantId);
+				if (matched) {
+					updatedSamples.push({
+						productId: matched.productId,
+						variantId: matched.variantId,
+						ean: matched.ean,
+						oldPrice: matched.currentPrice,
+						oldCompareAtPrice: matched.currentCompareAtPrice,
+						newPrice: matched.newPrice,
+						newCompareAtPrice: matched.newCompareAtPrice,
+						priceChange: matched.priceChange,
+					});
+				}
 			}
 
 			if (i + batchSize < validMatches.length) await delay(1000);
@@ -426,6 +459,8 @@ export async function processOmniaFeedWithBulkOperations(
 		priceDecreases,
 		priceUnchanged,
 		sourceTotal: omniaProducts.length,
+		updatedSamples,
+		invalidSamples: validationResult.invalid.slice(0, 50),
 	};
 }
 
@@ -537,74 +572,66 @@ function validateSinglePriceMatch(
 async function updateProductPricesBulk(
 	adminClient: ShopifyAdminClient,
 	matches: ProductPriceMatch[],
-): Promise<{ successful: number; failed: number; errors: string[] }> {
+): Promise<{
+	successful: number;
+	failed: number;
+	errors: string[];
+	successfulVariantIds: string[];
+}> {
 	if (matches.length > 10) {
 		throw new Error(
 			`Batch size too large: ${matches.length}. Maximum allowed: 10 for price updates`,
 		);
 	}
 
-	// Use individual mutations for better error handling
-	let successful = 0;
-	let failed = 0;
-	const errors: string[] = [];
-
-	for (const match of matches) {
-		try {
-			const mutation = `
-				mutation productVariantUpdate($input: ProductVariantInput!) {
-					productVariantUpdate(input: $input) {
-						productVariant {
-							id
-							price
-							compareAtPrice
-						}
-						userErrors {
-							field
-							message
-						}
-					}
+	// Use bulk variants update for efficiency and capture returned IDs
+	const mutation = `
+		mutation productVariantsBulkUpdate($productVariants: [ProductVariantsBulkInput!]!) {
+			productVariantsBulkUpdate(productVariants: $productVariants) {
+				productVariants {
+					id
+					price
+					compareAtPrice
 				}
-			`;
-
-			const variables = {
-				input: {
-					id: match.variantId,
-					price: match.newPrice.toFixed(2),
-					compareAtPrice: match.newCompareAtPrice.toFixed(2),
-				},
-			};
-
-			const result = (await adminClient.request(mutation, variables)) as {
-				data?: {
-					productVariantUpdate?: {
-						userErrors?: Array<{ field?: string; message?: string }>;
-						productVariant?: unknown;
-					};
-				};
-			};
-
-			const userErrors = result.data?.productVariantUpdate?.userErrors ?? [];
-			if (userErrors.length > 0) {
-				const errorMsg = userErrors.map((e) => e.message).join(", ");
-				errors.push(`${match.ean}: ${errorMsg}`);
-				failed++;
-			} else {
-				successful++;
+				userErrors {
+					field
+					message
+				}
 			}
-
-			// Rate limiting delay
-			await delay(100);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			errors.push(`${match.ean}: ${message}`);
-			failed++;
 		}
-	}
+	`;
+
+	const productVariants = matches.map((match) => ({
+		id: match.variantId,
+		price: match.newPrice.toFixed(2),
+		compareAtPrice: match.newCompareAtPrice.toFixed(2),
+	}));
+
+	const result = (await adminClient.request(mutation, {
+		productVariants,
+	})) as {
+		data?: {
+			productVariantsBulkUpdate?: {
+				userErrors?: Array<{ field?: string; message?: string }>;
+				productVariants?: Array<{ id: string }>;
+			};
+		};
+	};
+
+	const userErrors = (result.data?.productVariantsBulkUpdate?.userErrors ??
+		[]) as Array<{
+		field?: string;
+		message?: string;
+	}>;
+	const successfulVariants = (result.data?.productVariantsBulkUpdate
+		?.productVariants ?? []) as Array<{
+		id: string;
+	}>;
 
 	return {
-		successful,
-		failed,
-		errors,
+		successful: successfulVariants.length,
+		failed: matches.length - successfulVariants.length,
+		errors: userErrors.map((e) => `${e.field}: ${e.message}`),
+		successfulVariantIds: successfulVariants.map((v) => v.id),
 	};
 }

@@ -156,6 +156,949 @@ Post‑validation TODO (after E2E passes on Polaris v12)
   - `SCHEDULER_ENABLED_SHOPS?: string` (JSON list; maps to KV `scheduler:enabledShops`).
 - In Worker, read these keys from KV and no‑op cron enqueue if not leader/not enabled. Documented here; implementation pending post‑validation.
 
+## Sprint 28: Omnia Pricing Feed Integration (Planned - 6 SP)
+
+**Goal:** Integrate Omnia pricing feed following existing app architecture patterns (similar to Experience Center), with automated daily imports, pricing validation, and comprehensive dashboard integration.
+
+**Technical Requirements:**
+- Feed URL: `https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV`
+- Feed Format: CSV with columns: `OmniUniqueId`, `EAN`, `RecommendedSellingPrice`, `PriceAdvice`
+- Schedule: Daily import at 4:00 AM UTC via Worker scheduled events
+- Integration: Follow `experienceCenter.ts` patterns for consistency
+
+### Phase 1: Pure Utility Functions - `src/utils/omniaFeed.ts` (2 SP)
+
+#### 1.1 CSV Feed Parser (Pure Functions)
+
+```typescript
+// src/utils/omniaFeed.ts
+export interface OmniaFeedApiConfig {
+  feedUrl: string;
+  userAgent?: string;
+}
+
+export interface OmniaFeedRow {
+  omniUniqueId: string;
+  ean: string;
+  recommendedSellingPrice: number;
+  priceAdvice: number;
+  discountPercentage: number;
+}
+
+export interface FeedParseResult {
+  success: boolean;
+  totalRows: number;
+  validRows: number;
+  invalidRows: number;
+  products: OmniaFeedRow[];
+  errors: string[];
+}
+
+export async function fetchOmniaFeedData(
+  config: OmniaFeedApiConfig,
+): Promise<FeedParseResult> {
+  const { feedUrl, userAgent = 'WOOOD-Shopify-Integration/1.0' } = config;
+
+  if (!feedUrl) {
+    throw new Error("Missing feedUrl for Omnia Feed API");
+  }
+
+  const headers: Record<string, string> = {
+    'User-Agent': userAgent,
+    'Accept': 'text/csv',
+  };
+
+  const response = await fetch(feedUrl, { headers });
+  if (!response.ok) {
+    let extra = "";
+    try {
+      const text = await response.text();
+      extra = `; body: ${text.slice(0, 256)}`;
+    } catch {}
+    throw new Error(
+      `Failed to fetch Omnia feed data: ${response.status} ${response.statusText}${extra}`,
+    );
+  }
+
+  const csvData = await response.text();
+  return parseOmniaCSV(csvData);
+}
+
+function parseOmniaCSV(csvData: string): FeedParseResult {
+  const lines = csvData.split('\n').filter(line => line.trim());
+  if (lines.length === 0) {
+    throw new Error('Empty CSV data received');
+  }
+
+  const result: FeedParseResult = {
+    success: false,
+    totalRows: lines.length - 1,
+    validRows: 0,
+    invalidRows: 0,
+    products: [],
+    errors: [],
+  };
+
+  // Skip header row
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(';').map(v => v.replace(/"/g, '').trim());
+
+    if (values.length < 4) {
+      result.invalidRows++;
+      result.errors.push(`Row ${i}: Insufficient columns (${values.length}/4)`);
+      continue;
+    }
+
+    const [omniUniqueId, ean, recommendedSellingPrice, priceAdvice] = values;
+
+    // Validate required fields
+    if (!ean || !recommendedSellingPrice || !priceAdvice) {
+      result.invalidRows++;
+      result.errors.push(`Row ${i}: Missing required fields`);
+      continue;
+    }
+
+    // Validate numeric values
+    const price = parseFloat(recommendedSellingPrice);
+    const advice = parseFloat(priceAdvice);
+
+    if (isNaN(price) || isNaN(advice) || price <= 0 || advice <= 0) {
+      result.invalidRows++;
+      result.errors.push(`Row ${i}: Invalid price values (price: ${recommendedSellingPrice}, advice: ${priceAdvice})`);
+      continue;
+    }
+
+    const discountPercentage = ((advice - price) / advice) * 100;
+
+    result.products.push({
+      omniUniqueId: omniUniqueId || '',
+      ean,
+      recommendedSellingPrice: price,
+      priceAdvice: advice,
+      discountPercentage,
+    });
+    result.validRows++;
+  }
+
+  result.success = result.validRows > 0;
+  return result;
+}
+```
+
+#### 1.2 Product Matching & Price Updates (Following Experience Center Pattern)
+
+```typescript
+export interface ProductPriceMatch {
+  productId: string;
+  variantId: string;
+  ean: string;
+  currentPrice: number;
+  currentCompareAtPrice: number | null;
+  newPrice: number;
+  newCompareAtPrice: number;
+  discountPercentage: number;
+  priceChange: number;
+}
+
+export interface ValidationError {
+  productId: string;
+  variantId: string;
+  ean: string;
+  errorCode: 'discount_too_large' | 'base_price_differs' | 'validation_fails' | 'price_too_low' | 'price_too_high';
+  errorMessage: string;
+  currentPrice: number;
+  newPrice: number;
+  discountPercentage: number;
+}
+
+export interface PricingValidationConfig {
+  maxDiscountPercentage: number;     // Default: 90
+  enforceBasePriceMatch: boolean;    // Default: true
+  basePriceTolerance: number;        // Default: 5% tolerance
+  minPriceThreshold: number;         // Default: 0.01
+  maxPriceThreshold: number;         // Default: 10000
+}
+
+export async function processOmniaFeedWithBulkOperations(
+  adminClient: ShopifyAdminClient,
+  omniaProducts: OmniaFeedRow[],
+  validationConfig?: PricingValidationConfig,
+): Promise<{
+  successful: number;
+  failed: number;
+  errors: string[];
+  totalMatches: number;
+  validMatches: number;
+  invalidMatches: number;
+  priceIncreases: number;
+  priceDecreases: number;
+  priceUnchanged: number;
+  sourceTotal: number;
+}> {
+  // Use same bulk operations pattern as Experience Center
+  const bulkQuery = `
+{
+  products(first: 250) {
+    edges {
+      node {
+        id
+        variants(first: 250) {
+          edges {
+            node {
+              id
+              barcode
+              price
+              compareAtPrice
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
+  // Create bulk operation (same pattern as EC)
+  const createBulkOperationMutation = `
+    mutation {
+      bulkOperationRunQuery(
+        query: """
+        ${bulkQuery}
+        """
+      ) {
+        bulkOperation { id status }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const createResult = (await adminClient.request(
+    createBulkOperationMutation,
+  )) as GraphQLResponse<{
+    bulkOperationRunQuery?: {
+      bulkOperation?: { id?: string };
+      userErrors?: Array<{ field?: string; message?: string }>;
+    };
+  }>;
+
+  const userErrors = createResult.data?.bulkOperationRunQuery?.userErrors ?? [];
+  if (userErrors.length > 0) {
+    throw new Error(
+      `Bulk operation creation failed: ${JSON.stringify(userErrors)}`,
+    );
+  }
+
+  const bulkOperationId =
+    createResult.data?.bulkOperationRunQuery?.bulkOperation?.id;
+  if (!bulkOperationId) throw new Error("No bulk operation ID returned");
+
+  // Poll for completion (same pattern as EC)
+  const maxWaitTime = 10 * 60 * 1000;
+  const pollInterval = 5000;
+  const start = Date.now();
+  let status = "CREATED";
+  let downloadUrl: string | null = null;
+
+  while (
+    status !== "COMPLETED" &&
+    status !== "FAILED" &&
+    status !== "CANCELED"
+  ) {
+    if (Date.now() - start > maxWaitTime)
+      throw new Error("Bulk operation timeout - exceeded 10 minutes");
+    await delay(pollInterval);
+
+    const statusQuery = `
+      query { node(id: "${bulkOperationId}") { ... on BulkOperation { id status errorCode objectCount fileSize url partialDataUrl } } }
+    `;
+    const statusResult = (await adminClient.request(
+      statusQuery,
+    )) as GraphQLResponse<{
+      node?: { status?: string; errorCode?: string; url?: string };
+    }>;
+
+    const node = statusResult.data?.node;
+    if (!node) throw new Error("Could not retrieve bulk operation status");
+
+    if (typeof node.status === "string") {
+      status = node.status;
+    }
+    if (typeof node.url === "string") {
+      downloadUrl = node.url;
+    }
+    if (status === "FAILED")
+      throw new Error(`Bulk operation failed: ${node.errorCode || "Unknown"}`);
+    if (status === "CANCELED") throw new Error("Bulk operation was canceled");
+  }
+
+  if (!downloadUrl)
+    throw new Error("No download URL available for completed bulk operation");
+
+  // Parse JSONL data (same pattern as EC)
+  const downloadResponse = await fetch(downloadUrl);
+  if (!downloadResponse.ok)
+    throw new Error(
+      `Failed to download bulk operation data: ${downloadResponse.status} ${downloadResponse.statusText}`,
+    );
+
+  const jsonlData: string = await downloadResponse.text();
+  const lines = jsonlData.trim().split("\n");
+
+  const products = new Map<
+    string,
+    { id: string; variants: Array<{ id: string; barcode: string | null; price: string; compareAtPrice: string | null }> }
+  >();
+
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const obj = JSON.parse(line);
+      if (obj.id?.includes("/Product/")) {
+        products.set(obj.id, { id: obj.id, variants: [] });
+      } else if (obj.id?.includes("/ProductVariant/") && obj.__parentId) {
+        const product = products.get(obj.__parentId);
+        if (product) {
+          product.variants.push({
+            id: obj.id,
+            barcode: obj.barcode || null,
+            price: obj.price || "0",
+            compareAtPrice: obj.compareAtPrice || null,
+          });
+        }
+      }
+    } catch {}
+  }
+
+  // Debug visibility
+  console.log("Omnia bulk parsed products", {
+    productsCount: products.size,
+    sample: Array.from(products.values()).slice(0, 3),
+  });
+
+  // Match products by EAN
+  const eanMap = new Map<string, OmniaFeedRow>();
+  omniaProducts.forEach(product => {
+    eanMap.set(product.ean, product);
+  });
+
+  const matches: ProductPriceMatch[] = [];
+  let totalMatches = 0;
+
+  for (const [, product] of products) {
+    for (const variant of product.variants) {
+      if (variant.barcode && eanMap.has(variant.barcode)) {
+        const omniaProduct = eanMap.get(variant.barcode)!;
+        const currentPrice = parseFloat(variant.price);
+        const currentCompareAtPrice = variant.compareAtPrice ? parseFloat(variant.compareAtPrice) : null;
+        const newPrice = omniaProduct.recommendedSellingPrice;
+        const newCompareAtPrice = omniaProduct.priceAdvice;
+        const priceChange = newPrice - currentPrice;
+
+        matches.push({
+          productId: product.id,
+          variantId: variant.id,
+          ean: variant.barcode,
+          currentPrice,
+          currentCompareAtPrice,
+          newPrice,
+          newCompareAtPrice,
+          discountPercentage: omniaProduct.discountPercentage,
+          priceChange,
+        });
+        totalMatches++;
+      }
+    }
+  }
+
+  console.log("Omnia bulk matching summary", {
+    totalMatches,
+    omniaProductsCount: omniaProducts.length,
+  });
+
+  // Validate matches
+  const config = validationConfig || {
+    maxDiscountPercentage: 90,
+    enforceBasePriceMatch: true,
+    basePriceTolerance: 5,
+    minPriceThreshold: 0.01,
+    maxPriceThreshold: 10000,
+  };
+
+  const validationResult = validatePriceMatches(matches, config);
+  const validMatches = validationResult.valid;
+
+  // Update prices in batches (same pattern as EC)
+  const batchSize = 10; // Conservative for price updates
+  let totalSuccessful = 0;
+  let totalFailed = 0;
+  let priceIncreases = 0;
+  let priceDecreases = 0;
+  let priceUnchanged = 0;
+  const allErrors: string[] = [];
+
+  for (let i = 0; i < validMatches.length; i += batchSize) {
+    const batch = validMatches.slice(i, i + batchSize);
+    try {
+      const result = await updateProductPricesBulk(adminClient, batch);
+      totalSuccessful += result.successful;
+      totalFailed += result.failed;
+      allErrors.push(...result.errors);
+
+      // Count price changes
+      for (const match of batch) {
+        if (match.priceChange > 0.01) priceIncreases++;
+        else if (match.priceChange < -0.01) priceDecreases++;
+        else priceUnchanged++;
+      }
+
+      if (i + batchSize < validMatches.length) await delay(1000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      allErrors.push(`Batch error: ${message}`);
+      totalFailed += batch.length;
+    }
+  }
+
+  return {
+    successful: totalSuccessful,
+    failed: totalFailed,
+    errors: allErrors.slice(0, 20),
+    totalMatches,
+    validMatches: validMatches.length,
+    invalidMatches: validationResult.invalid.length,
+    priceIncreases,
+    priceDecreases,
+    priceUnchanged,
+    sourceTotal: omniaProducts.length,
+  };
+}
+
+function validatePriceMatches(
+  matches: ProductPriceMatch[],
+  config: PricingValidationConfig
+): { valid: ProductPriceMatch[]; invalid: ValidationError[] } {
+  const valid: ProductPriceMatch[] = [];
+  const invalid: ValidationError[] = [];
+
+  for (const match of matches) {
+    const errors = validateSinglePriceMatch(match, config);
+    if (errors.length === 0) {
+      valid.push(match);
+    } else {
+      invalid.push(...errors);
+    }
+  }
+
+  return { valid, invalid };
+}
+
+function validateSinglePriceMatch(
+  match: ProductPriceMatch,
+  config: PricingValidationConfig
+): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  // Rule 1: Discount limit check
+  if (match.discountPercentage > config.maxDiscountPercentage) {
+    errors.push({
+      productId: match.productId,
+      variantId: match.variantId,
+      ean: match.ean,
+      errorCode: 'discount_too_large',
+      errorMessage: `Discount ${match.discountPercentage.toFixed(1)}% exceeds maximum ${config.maxDiscountPercentage}%`,
+      currentPrice: match.currentPrice,
+      newPrice: match.newPrice,
+      discountPercentage: match.discountPercentage,
+    });
+  }
+
+  // Rule 2: Price threshold checks
+  if (match.newPrice < config.minPriceThreshold) {
+    errors.push({
+      productId: match.productId,
+      variantId: match.variantId,
+      ean: match.ean,
+      errorCode: 'price_too_low',
+      errorMessage: `New price €${match.newPrice} below minimum threshold €${config.minPriceThreshold}`,
+      currentPrice: match.currentPrice,
+      newPrice: match.newPrice,
+      discountPercentage: match.discountPercentage,
+    });
+  }
+
+  if (match.newPrice > config.maxPriceThreshold) {
+    errors.push({
+      productId: match.productId,
+      variantId: match.variantId,
+      ean: match.ean,
+      errorCode: 'price_too_high',
+      errorMessage: `New price €${match.newPrice} exceeds maximum threshold €${config.maxPriceThreshold}`,
+      currentPrice: match.currentPrice,
+      newPrice: match.newPrice,
+      discountPercentage: match.discountPercentage,
+    });
+  }
+
+  // Rule 3: Base price comparison check
+  if (match.currentCompareAtPrice && config.enforceBasePriceMatch) {
+    const priceDifference = Math.abs(match.currentCompareAtPrice - match.newCompareAtPrice);
+    const toleranceAmount = match.newCompareAtPrice * (config.basePriceTolerance / 100);
+
+    if (priceDifference > toleranceAmount) {
+      errors.push({
+        productId: match.productId,
+        variantId: match.variantId,
+        ean: match.ean,
+        errorCode: 'base_price_differs',
+        errorMessage: `Base price differs by €${priceDifference.toFixed(2)} (tolerance: €${toleranceAmount.toFixed(2)})`,
+        currentPrice: match.currentPrice,
+        newPrice: match.newPrice,
+        discountPercentage: match.discountPercentage,
+      });
+    }
+  }
+
+  // Rule 4: Price validation (selling price shouldn't exceed compare-at price)
+  if (match.newPrice > match.newCompareAtPrice) {
+    errors.push({
+      productId: match.productId,
+      variantId: match.variantId,
+      ean: match.ean,
+      errorCode: 'validation_fails',
+      errorMessage: `Selling price €${match.newPrice} exceeds compare-at price €${match.newCompareAtPrice}`,
+      currentPrice: match.currentPrice,
+      newPrice: match.newPrice,
+      discountPercentage: match.discountPercentage,
+    });
+  }
+
+  return errors;
+}
+
+async function updateProductPricesBulk(
+  adminClient: ShopifyAdminClient,
+  matches: ProductPriceMatch[],
+): Promise<{ successful: number; failed: number; errors: string[] }> {
+  if (matches.length > 10) {
+    throw new Error(
+      `Batch size too large: ${matches.length}. Maximum allowed: 10 for price updates`,
+    );
+  }
+
+    const mutation = `
+    mutation productVariantsBulkUpdate($productVariants: [ProductVariantsBulkInput!]!) {
+      productVariantsBulkUpdate(productVariants: $productVariants) {
+        productVariants {
+          id
+          price
+          compareAtPrice
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+  const productVariants = matches.map(match => ({
+    id: match.variantId,
+    price: match.newPrice.toFixed(2),
+    compareAtPrice: match.newCompareAtPrice.toFixed(2),
+  }));
+
+  const result = (await adminClient.request(mutation, {
+    productVariants,
+  })) as {
+    data?: {
+      productVariantsBulkUpdate?: {
+        userErrors?: Array<{ field?: string; message?: string }>;
+        productVariants?: unknown[];
+      };
+    };
+  };
+
+  const userErrors = (result.data?.productVariantsBulkUpdate?.userErrors ?? []) as Array<{
+    field?: string;
+    message?: string;
+  }>;
+  const successfulVariants = result.data?.productVariantsBulkUpdate?.productVariants ?? [];
+
+  return {
+    successful: successfulVariants.length,
+    failed: matches.length - successfulVariants.length,
+    errors: userErrors.map((e) => `${e.field}: ${e.message}`),
+  };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type GraphQLResponse<TData> = { data?: TData; errors?: unknown };
+```
+
+**Integration Points:**
+- `app/routes/app.index.tsx`: Add "Sync Omnia Pricing" button and status card
+- `worker.ts`: Add `omnia-pricing-sync` scheduled job type
+- `app/types/app.ts`: Add `OmniaFeedStatus` type
+- Environment Variables: `OMNIA_FEED_URL`, `OMNIA_PRICING_STATUS` KV namespace
+
+**Expected Outcome:** Complete Omnia pricing integration following established patterns, ready for Phase 2 dashboard integration.
+
+## Sprint 29: Omnia Pricing Dashboard Integration (Planned - 4 SP)
+
+**Goal:** Integrate Omnia pricing management into existing `app/routes/app.index.tsx` dashboard following established UI patterns, with comprehensive status display and error management.
+
+**Integration Approach:**
+- Extend existing `app.index.tsx` with Omnia pricing card (same pattern as Experience Center/Store Locator)
+- Add `sync-omnia-pricing` action to existing action handler
+- Use existing KV status pattern with `OMNIA_PRICING_STATUS` namespace
+- Follow established Polaris UI components and loading states
+
+### Phase 1: App Route Integration (2 SP)
+
+#### 1.1 Extend `app/routes/app.index.tsx` - Loader
+
+```typescript
+// Add to existing loader function
+export async function loader({ context, request }: Route.LoaderArgs) {
+  // ... existing code ...
+
+  // Add Omnia pricing status
+  let omniaPricingStatus = null;
+  if (shopDomain) {
+    try {
+      omniaPricingStatus =
+        await context.cloudflare.env.OMNIA_PRICING_STATUS?.get(
+          `omnia_last_sync:${shopDomain}`,
+          "json",
+        );
+    } catch (e) {
+      console.warn("Failed to get Omnia pricing status", e);
+    }
+  }
+
+  return {
+    data,
+    errors,
+    experienceCenterStatus,
+    storeLocatorStatus,
+    omniaPricingStatus, // Add to return
+  };
+}
+```
+
+#### 1.2 Extend Action Handler
+
+```typescript
+// Add to existing action function switch statement
+case "sync-omnia-pricing": {
+  const config: OmniaFeedApiConfig = {
+    feedUrl: context.cloudflare.env.OMNIA_FEED_URL || "",
+    userAgent: "WOOOD-Shopify-Integration/1.0",
+  };
+
+  // Fetch Omnia feed data
+  const omniaFeedData = await fetchOmniaFeedData(config);
+
+  // Process pricing for current shop
+  const validationConfig: PricingValidationConfig = {
+    maxDiscountPercentage: parseInt(context.cloudflare.env.PRICING_MAX_DISCOUNT_PERCENTAGE || "90"),
+    enforceBasePriceMatch: context.cloudflare.env.PRICING_ENFORCE_BASE_PRICE_MATCH !== "false",
+    basePriceTolerance: parseFloat(context.cloudflare.env.PRICING_BASE_PRICE_TOLERANCE || "5"),
+    minPriceThreshold: 0.01,
+    maxPriceThreshold: 10000,
+  };
+
+  const result = await processOmniaFeedWithBulkOperations(
+    adminClientAdapter,
+    omniaFeedData.products,
+    validationConfig,
+  );
+
+  // Store status in KV
+  if (shopDomain) {
+    const status = {
+      timestamp: new Date().toISOString(),
+      success: true,
+      summary: {
+        ...result,
+        feedStats: {
+          totalRows: omniaFeedData.totalRows,
+          validRows: omniaFeedData.validRows,
+          invalidRows: omniaFeedData.invalidRows,
+        },
+      },
+      shop: shopDomain,
+    };
+    await context.cloudflare.env.OMNIA_PRICING_STATUS?.put(
+      `omnia_last_sync:${shopDomain}`,
+      JSON.stringify(status),
+    );
+  }
+
+  return {
+    success: true,
+    message: `Omnia pricing sync completed. ${result.successful} prices updated successfully, ${result.failed} failed.`,
+    result,
+  };
+}
+```
+
+#### 1.3 UI Component - Omnia Pricing Card
+
+```typescript
+// Add to existing JSX in AppIndex component
+<Layout.Section>
+  <Card>
+    <Text variant="headingMd" as="h2">
+      Omnia Pricing Sync
+    </Text>
+    <Text as="p" tone="subdued">
+      Sync product pricing from Omnia feed with validation
+    </Text>
+
+    <div style={{ marginTop: "16px" }}>
+      <InlineStack gap="400" align="space-between">
+        <div>
+          <Text as="p">
+            <strong>Status:</strong>{" "}
+            {getStatusBadge(omniaPricingStatus)}
+          </Text>
+          <Text as="p" tone="subdued">
+            Last sync:{" "}
+            {formatTimestamp(omniaPricingStatus?.timestamp)}
+          </Text>
+          {omniaPricingStatus?.summary && (
+            <div>
+              <Text as="p" tone="subdued">
+                Products: {omniaPricingStatus.summary.successful}{" "}
+                successful, {omniaPricingStatus.summary.failed}{" "}
+                failed
+              </Text>
+              {typeof omniaPricingStatus.summary.sourceTotal === "number" && (
+                <Text as="p" tone="subdued">
+                  Feed total: {omniaPricingStatus.summary.sourceTotal}
+                </Text>
+              )}
+              {typeof omniaPricingStatus.summary.totalMatches === "number" && (
+                <Text as="p" tone="subdued">
+                  Product matches: {omniaPricingStatus.summary.totalMatches}
+                </Text>
+              )}
+              {typeof omniaPricingStatus.summary.validMatches === "number" && (
+                <Text as="p" tone="subdued">
+                  Valid updates: {omniaPricingStatus.summary.validMatches}
+                </Text>
+              )}
+              {typeof omniaPricingStatus.summary.priceIncreases === "number" && (
+                <Text as="p" tone="subdued">
+                  Price increases: {omniaPricingStatus.summary.priceIncreases}
+                </Text>
+              )}
+              {typeof omniaPricingStatus.summary.priceDecreases === "number" && (
+                <Text as="p" tone="subdued">
+                  Price decreases: {omniaPricingStatus.summary.priceDecreases}
+                </Text>
+              )}
+            </div>
+          )}
+        </div>
+        <Form method="post">
+          <input
+            type="hidden"
+            name="action"
+            value="sync-omnia-pricing"
+          />
+          <Button
+            variant="primary"
+            submit
+            loading={
+              isSubmitting && actionType === "sync-omnia-pricing"
+            }
+          >
+            Sync Omnia Pricing
+          </Button>
+        </Form>
+      </InlineStack>
+    </div>
+  </Card>
+</Layout.Section>
+```
+
+### Phase 2: Worker Integration (1 SP)
+
+#### 2.1 Add to `worker.ts` Scheduled Jobs
+
+```typescript
+// Add to existing scheduled() function
+if (
+  isFeatureEnabled(FEATURE_FLAGS, "ENABLE_OMNIA_PRICING") &&
+  event.cron === "0 4 * * *" // 4:00 AM UTC daily
+) {
+  for (const shop of shops) {
+    await (
+      env as unknown as {
+        SCHEDULED_QUEUE?: {
+          send: (m: {
+            type: string;
+            shop?: string;
+            scheduledAt: string;
+          }) => Promise<void>;
+        };
+      }
+    ).SCHEDULED_QUEUE?.send({
+      type: "omnia-pricing-sync",
+      shop,
+      scheduledAt: new Date().toISOString(),
+    });
+  }
+}
+```
+
+#### 2.2 Add Queue Handler
+
+```typescript
+// Add to existing queue() function switch statement
+case "omnia-pricing-sync": {
+  if (!body.shop) throw new Error("Missing shop for Omnia pricing job");
+  const adminClient = await createAdminClientForShop(body.shop, env);
+  const config: OmniaFeedApiConfig = {
+    feedUrl: env.OMNIA_FEED_URL || "",
+    userAgent: "WOOOD-Shopify-Integration/1.0",
+  };
+
+  const validationConfig: PricingValidationConfig = {
+    maxDiscountPercentage: parseInt(env.PRICING_MAX_DISCOUNT_PERCENTAGE || "90"),
+    enforceBasePriceMatch: env.PRICING_ENFORCE_BASE_PRICE_MATCH !== "false",
+    basePriceTolerance: parseFloat(env.PRICING_BASE_PRICE_TOLERANCE || "5"),
+    minPriceThreshold: 0.01,
+    maxPriceThreshold: 10000,
+  };
+
+  const omniaData = await fetchOmniaFeedData(config);
+  const result = await processOmniaFeedWithBulkOperations(
+    adminClient,
+    omniaData.products,
+    validationConfig,
+  );
+
+  await env.OMNIA_PRICING_STATUS?.put(
+    `omnia_last_sync:${body.shop}`,
+    JSON.stringify({
+    timestamp: new Date().toISOString(),
+      success: true,
+    summary: {
+        ...result,
+        feedStats: {
+          totalRows: omniaData.totalRows,
+          validRows: omniaData.validRows,
+          invalidRows: omniaData.invalidRows,
+        },
+      },
+      shop: body.shop,
+      cron: true,
+    }),
+  );
+  message.ack();
+  break;
+}
+```
+
+### Phase 3: Type Definitions & Configuration (1 SP)
+
+#### 3.1 Add to `app/types/app.ts`
+
+```typescript
+export interface OmniaPricingStatus {
+  timestamp: string;
+  success: boolean;
+  summary?: {
+    successful: number;
+    failed: number;
+    totalMatches: number;
+    validMatches: number;
+    invalidMatches: number;
+    priceIncreases: number;
+    priceDecreases: number;
+    priceUnchanged: number;
+    sourceTotal: number;
+    feedStats: {
+      totalRows: number;
+      validRows: number;
+      invalidRows: number;
+    };
+  };
+  shop: string;
+  error?: string;
+  cron?: boolean;
+}
+
+// Add to ScheduledJobType union
+export type ScheduledJobType =
+  | "experience-center-sync"
+  | "store-locator-sync"
+  | "token-cleanup"
+  | "omnia-pricing-sync"; // Add this
+
+// Add to WorkerEnv interface
+export interface WorkerEnv {
+  // ... existing properties ...
+  OMNIA_FEED_URL?: string;
+  OMNIA_PRICING_STATUS?: KVNamespace;
+  PRICING_MAX_DISCOUNT_PERCENTAGE?: string;
+  PRICING_BASE_PRICE_TOLERANCE?: string;
+  PRICING_ENFORCE_BASE_PRICE_MATCH?: string;
+}
+```
+
+#### 3.2 Add to `src/config/flags.ts`
+
+```typescript
+export const DEFAULT_FEATURE_FLAGS: FeatureFlags = {
+  // ... existing flags ...
+  ENABLE_OMNIA_PRICING: true,
+};
+
+export interface FeatureFlags {
+  // ... existing flags ...
+  ENABLE_OMNIA_PRICING: boolean;
+}
+```
+
+### Phase 4: Environment & Configuration (1 SP)
+
+#### 4.1 Environment Variables
+
+```typescript
+// Add to wrangler.json vars section
+{
+  "vars": {
+    "OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
+    "PRICING_MAX_DISCOUNT_PERCENTAGE": "90",
+    "PRICING_BASE_PRICE_TOLERANCE": "5",
+    "PRICING_ENFORCE_BASE_PRICE_MATCH": "true"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OMNIA_PRICING_STATUS",
+      "id": "your-kv-namespace-id",
+      "preview_id": "your-preview-kv-namespace-id"
+    }
+  ]
+}
+```
+
+**Integration Summary:**
+- **Single Dashboard**: All sync functions (Experience Center, Store Locator, Omnia Pricing) in one unified interface
+- **Consistent Patterns**: Same action/loader/status/KV patterns as existing features
+- **Scheduled Automation**: Daily 4 AM UTC sync via Worker cron jobs
+- **Rich Status Display**: Comprehensive metrics following Experience Center reporting pattern
+- **Error Handling**: Built-in validation with detailed error reporting
+- **Feature Flags**: Controlled rollout via existing feature flag system
+
+**Expected Outcome:** Seamless integration of Omnia pricing functionality into existing app architecture with unified dashboard experience and automated daily pricing updates.
+
 ## Upcoming: API Endpoints (Consolidated Worker)
 
 - Standardize endpoints (feature‑flagged):
@@ -163,6 +1106,11 @@ Post‑validation TODO (after E2E passes on Polaris v12)
   - `POST /api/store-locator?action=upsert`
   - `POST /api/experience-center?action=trigger`
   - `GET /api/experience-center?action=status`
+  - `POST /api/pricing-feed/import` - Manual pricing feed import trigger
+  - `GET /api/pricing-feed/status` - Current import status and history
+  - `GET /api/pricing-feed/errors` - Detailed error reports with pagination
+  - `GET /api/pricing-feed/validation-config` - Current validation configuration
+  - `PUT /api/pricing-feed/validation-config` - Update validation rules
   - `GET /health`
 - Deprecations (return 410 with guidance):
   - Any legacy `/api/*` not listed above

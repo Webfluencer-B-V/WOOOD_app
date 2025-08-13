@@ -79,6 +79,26 @@ export interface OmniaPricingStatus {
     priceDecreases: number;
     priceUnchanged: number;
     sourceTotal: number;
+    updatedSamples?: Array<{
+      productId: string;
+      variantId: string;
+      ean: string;
+      oldPrice: number;
+      oldCompareAtPrice: number | null;
+      newPrice: number;
+      newCompareAtPrice: number;
+      priceChange: number;
+    }>;
+    invalidSamples?: Array<{
+      productId: string;
+      variantId: string;
+      ean: string;
+      errorCode: string;
+      errorMessage: string;
+      currentPrice: number;
+      newPrice: number;
+      discountPercentage: number;
+    }>;
     feedStats: {
       totalRows: number;
       validRows: number;
