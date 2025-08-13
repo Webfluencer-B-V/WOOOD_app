@@ -7,7 +7,7 @@ import {
 	useMetafield,
 	View,
 } from "@shopify/ui-extensions-react/checkout";
-import React from "react";
+// React import not needed in modern JSX runtime
 import {
 	getExperienceCenterStatus,
 	getStoreLocatorStatus,
@@ -136,15 +136,18 @@ export function MetafieldTester() {
 							<Text size="small" emphasis="bold">
 								Cart Products:
 							</Text>
-							{cartLines.map((line, index) => {
+							{cartLines.map((line) => {
 								const product = line.merchandise?.product;
 								const productId =
 									product?.id?.replace("gid://shopify/Product/", "") ||
 									"unknown";
 								return (
-									<Text key={index} size="small">
-										Line {index}: Product {productId} -{" "}
-										{(product as any)?.title || "Unknown"}
+									<Text key={productId} size="small">
+										Product {productId} -{" "}
+										{typeof (product as unknown as { title?: string })
+											?.title === "string"
+											? (product as unknown as { title?: string }).title
+											: "Unknown"}
 									</Text>
 								);
 							})}

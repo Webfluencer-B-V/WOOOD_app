@@ -115,7 +115,11 @@ export function useCartProductsMetadata(
 			console.log(`📋 Product data available:`, {
 				id: product.id,
 				// Note: Some properties may not be available in TypeScript types but exist in runtime
-				...(product as any), // Safe cast to access all available properties
+				// Avoid "any"; access known optional fields via index signature
+				title: (product as unknown as { title?: string })?.title,
+				vendor: (product as unknown as { vendor?: string })?.vendor,
+				productType: (product as unknown as { productType?: string })
+					?.productType,
 			});
 
 			// For now, we'll extract the product ID to track what products we're analyzing
@@ -174,12 +178,22 @@ export function useCartProductsInfo() {
 				lineIndex: index,
 				quantity: line.quantity,
 				productId: product?.id,
-				productTitle: (product as any)?.title || "Unknown Product",
-				productVendor: (product as any)?.vendor || "Unknown Vendor",
-				productType: (product as any)?.productType || "Unknown Type",
+				productTitle:
+					(product as unknown as { title?: string })?.title ||
+					"Unknown Product",
+				productVendor:
+					(product as unknown as { vendor?: string })?.vendor ||
+					"Unknown Vendor",
+				productType:
+					(product as unknown as { productType?: string })?.productType ||
+					"Unknown Type",
 				variantId: line.merchandise?.id,
-				variantTitle: (line.merchandise as any)?.title || "Unknown Variant",
-				variantSku: (line.merchandise as any)?.sku || "Unknown SKU",
+				variantTitle:
+					(line.merchandise as unknown as { title?: string })?.title ||
+					"Unknown Variant",
+				variantSku:
+					(line.merchandise as unknown as { sku?: string })?.sku ||
+					"Unknown SKU",
 				// Note: metafields would be available here if configured in shopify.extension.toml
 				// For example: erpDeliveryTime: product.erpMetafield?.value
 				// shippingMethod: product.shippingMethodMetafield?.value

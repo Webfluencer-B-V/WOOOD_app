@@ -65,7 +65,7 @@ export async function fetchDeliveryDates(
 		const authHeaders = getAuthenticationHeaders();
 
 		// Use provided shop domain or fallback
-		const domain = shopDomain || "unknown-shop";
+		const _domain = shopDomain || "unknown-shop";
 
 		const response = await fetch(url, {
 			method: "GET",
@@ -87,8 +87,9 @@ export async function fetchDeliveryDates(
 		} else {
 			throw new Error("Invalid response format");
 		}
-	} catch (error: any) {
-		console.error(`❌ Failed to fetch delivery dates: ${error.message}`);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`❌ Failed to fetch delivery dates: ${message}`);
 
 		// Fallback to mock data on error
 		console.log("🔄 Falling back to mock delivery dates");
@@ -135,8 +136,9 @@ export async function saveOrderMetafields(
 		const result = await response.json();
 		console.log("✅ Successfully saved order metafields:", result);
 		return true;
-	} catch (error: any) {
-		console.error("❌ Failed to save order metafields:", error.message);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("❌ Failed to save order metafields:", message);
 		return false;
 	}
 }
@@ -178,11 +180,9 @@ export async function triggerExperienceCenterUpdate(
 		}
 
 		return true;
-	} catch (error: any) {
-		console.error(
-			"❌ Failed to trigger experience center sync:",
-			error.message,
-		);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("❌ Failed to trigger experience center sync:", message);
 		return false;
 	}
 }
@@ -194,7 +194,7 @@ export async function triggerExperienceCenterUpdate(
  */
 export async function getExperienceCenterStatus(
 	config: FetchConfig = DEFAULT_CONFIG,
-): Promise<any> {
+): Promise<unknown> {
 	const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
 	const url = `${apiBaseUrl}/api/experience-center/status`;
 
@@ -216,11 +216,9 @@ export async function getExperienceCenterStatus(
 		console.log("✅ Successfully fetched experience center status:", result);
 
 		return result;
-	} catch (error: any) {
-		console.error(
-			"❌ Failed to fetch experience center status:",
-			error.message,
-		);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("❌ Failed to fetch experience center status:", message);
 		return null;
 	}
 }
@@ -262,8 +260,9 @@ export async function triggerStoreLocatorUpdate(
 		}
 
 		return true;
-	} catch (error: any) {
-		console.error("❌ Failed to trigger store locator sync:", error.message);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("❌ Failed to trigger store locator sync:", message);
 		return false;
 	}
 }
@@ -275,7 +274,7 @@ export async function triggerStoreLocatorUpdate(
  */
 export async function getStoreLocatorStatus(
 	config: FetchConfig = DEFAULT_CONFIG,
-): Promise<any> {
+): Promise<unknown> {
 	const apiBaseUrl = config.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl;
 	const url = `${apiBaseUrl}/api/store-locator/status`;
 
@@ -297,8 +296,9 @@ export async function getStoreLocatorStatus(
 		console.log("✅ Successfully fetched store locator status:", result);
 
 		return result;
-	} catch (error: any) {
-		console.error("❌ Failed to fetch store locator status:", error.message);
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error("❌ Failed to fetch store locator status:", message);
 		return null;
 	}
 }

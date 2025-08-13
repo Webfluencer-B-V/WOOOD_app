@@ -13,8 +13,8 @@ export default defineConfig(({ mode }) => {
 
 	// Determine Cloudflare environment
 	const cloudflareEnv = env.APP_ENV || mode;
-	const isStaging = cloudflareEnv === "staging";
-	const isProduction = cloudflareEnv === "production";
+	const _isStaging = cloudflareEnv === "staging";
+	const _isProduction = cloudflareEnv === "production";
 
 	return {
 		base: rawBaseUrl ?? "/",
