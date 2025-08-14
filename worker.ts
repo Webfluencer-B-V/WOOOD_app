@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import { createRequestHandler } from "react-router";
+import { createRequestHandler, type ServerBuild } from "react-router";
 import type {
 	WorkerEnv as Env,
 	FeatureFlags,
@@ -38,10 +38,10 @@ declare module "react-router" {
 	}
 }
 
-// Prevent bundler from resolving the virtual module at build time by using a non-literal specifier
-const serverBuildSpecifier = "virtual:react-router/server-build";
+// Load built server bundle via a variable specifier to avoid TS composite checks
+const serverBuildSpecifier: string = "./build/server/index.js";
 const requestHandler = createRequestHandler(
-	() => import(serverBuildSpecifier),
+	() => import(serverBuildSpecifier) as unknown as Promise<ServerBuild>,
 	"production",
 );
 
