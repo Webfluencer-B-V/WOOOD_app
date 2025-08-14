@@ -7,7 +7,6 @@ import type {
 	QueueMessage,
 	ScheduledJobMessage,
 } from "./app/types/app";
-import serverBuild from "./server-build.js";
 import { DEFAULT_FEATURE_FLAGS, isFeatureEnabled } from "./src/config/flags";
 import { createAdminClientForShop } from "./src/lib/admin";
 import {
@@ -38,9 +37,10 @@ declare module "react-router" {
 	}
 }
 
-// Use the static re-exported server build
+// Use React Router virtual server-build via dynamic import of a string specifier
+const serverBuildSpecifier: string = "virtual:react-router/server-build";
 const requestHandler = createRequestHandler(
-	() => Promise.resolve(serverBuild as unknown as ServerBuild),
+	() => import(serverBuildSpecifier) as unknown as Promise<ServerBuild>,
 	"production",
 );
 
