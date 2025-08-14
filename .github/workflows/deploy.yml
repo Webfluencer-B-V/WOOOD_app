@@ -3,8 +3,7 @@ name: Deploy
 on:
   push:
     branches:
-      - staging
-      - production
+      - '**'
 
 jobs:
   deploy:
