@@ -407,7 +407,30 @@ export default {
 			return handleExperienceCenter(request, env);
 		if (path.startsWith("/api/webhooks")) return handleWebhooks(request, env);
 		if (path === "/health") return handleHealth(request, env);
-		return requestHandler(request, { cloudflare: { env, ctx } });
+		const response = await requestHandler(request, {
+			cloudflare: { env, ctx },
+		});
+		// Ensure the app can be embedded in Shopify Admin by removing X-Frame-Options
+		// and setting an explicit CSP frame-ancestors policy.
+		const headers = new Headers(response.headers);
+		headers.delete("X-Frame-Options");
+		const csp = headers.get("Content-Security-Policy");
+		const frameAncestors =
+			"frame-ancestors https://admin.shopify.com https://*.myshopify.com;";
+		if (csp && /frame-ancestors/i.test(csp)) {
+			// Replace existing frame-ancestors directive
+			const updated = csp
+				.replace(/frame-ancestors[^;]*;/gi, frameAncestors)
+				.trim();
+			headers.set("Content-Security-Policy", updated);
+		} else {
+			const prefix = csp ? `${csp.trim()} ` : "";
+			headers.set(
+				"Content-Security-Policy",
+				`${prefix}${frameAncestors}`.trim(),
+			);
+		}
+		return new Response(response.body, { ...response, headers });
 	},
 
 	// Strongly-typed minimal queue batch type compatible with Workers
