@@ -10,6 +10,7 @@ import {
 	useApi,
 	useApplyAttributeChange,
 	useAppMetafields,
+	useAttributes,
 	useCartLines,
 	useDeliveryGroups,
 	useSettings,
@@ -292,6 +293,7 @@ function useSaveMetadataToAttributes(
 	shouldSave: boolean = true,
 ) {
 	const applyAttributeChange = useApplyAttributeChange();
+	const _attributes = useAttributes();
 	const lastSavedRef = useRef<string>("");
 
 	useEffect(() => {
@@ -348,6 +350,17 @@ function useSaveMetadataToAttributes(
 function DeliveryDatePicker() {
 	const [errorKey, setErrorKey] = useState<string | null>(null);
 	const [selectedDate, setSelectedDate] = useState<string | null>(null);
+	const attributes = useAttributes();
+
+	// Sync selectedDate from checkout attributes to prevent visual reset on re-render
+	useEffect(() => {
+		const existing = attributes?.find?.(
+			(a: { key: string; value: string }) => a.key === "delivery_date",
+		)?.value as string | undefined;
+		if (existing && existing !== selectedDate) {
+			setSelectedDate(existing);
+		}
+	}, [attributes, selectedDate]);
 	const [selectedShippingMethod, setSelectedShippingMethod] = useState<
 		string | null
 	>(null);
@@ -403,7 +416,7 @@ function DeliveryDatePicker() {
 		.filter((code: string) => code.length > 0); // Remove empty strings
 
 	const countryCode = shippingAddress?.countryCode;
-	const canShowPicker =
+	const _canShowPicker =
 		countryCode &&
 		activeCountryCodesList.includes(countryCode) &&
 		shouldShowDatePicker;
@@ -418,8 +431,8 @@ function DeliveryDatePicker() {
 	useSaveMetadataToAttributes(metadataResult, shouldSaveShippingData);
 
 	// Hide extension completely if disabled
-	const isExtensionDisabledUI = isExtensionDisabled;
-	const onlyShippingDataUI = onlyShippingData;
+	const _isExtensionDisabledUI = isExtensionDisabled;
+	const _onlyShippingDataUI = onlyShippingData;
 	const hidePickerDueToEarlyDelivery = useMemo(() => {
 		if (!minimumDeliveryDate || hidePicker === 0) return false;
 		const today = new Date();
@@ -786,24 +799,25 @@ function DeliveryDatePicker() {
 	const handleDateSelect = useCallback(
 		async (dateString: string) => {
 			setSelectedDate(dateString);
-
+			const current = attributes?.find?.(
+				(a: { key: string; value: string }) => a.key === "delivery_date",
+			)?.value as string | undefined;
+			if (current === dateString) return;
 			try {
 				const result = await applyAttributeChange({
 					type: "updateAttribute",
 					key: "delivery_date",
 					value: dateString,
 				});
-
 				if (result.type === "error") {
 					throw new Error("Failed to save delivery date");
 				}
-
 				console.log("✅ Saved delivery date:", dateString);
 			} catch (_err) {
 				setErrorKey("error_saving");
 			}
 		},
-		[applyAttributeChange],
+		[applyAttributeChange, attributes],
 	);
 
 	const handleRetry = useCallback(() => {
