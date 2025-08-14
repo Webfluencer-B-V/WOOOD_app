@@ -471,6 +471,11 @@ function DeliveryDatePicker() {
 			return;
 		}
 
+		// Skip inventory fetch while saving attribute to avoid flicker
+		if (_isSavingRef.current) {
+			return;
+		}
+
 		console.log(
 			`🔍 [Inventory Check] Starting for ${variantIds.length} variants in shop: ${shop.myshopifyDomain}`,
 		);
@@ -792,12 +797,15 @@ function DeliveryDatePicker() {
 	// Save selected delivery date separately
 	const handleDateSelect = useCallback(
 		async (dateString: string) => {
+			// Avoid redundant state updates and re-renders
+			if (selectedDate === dateString) return;
 			setSelectedDate(dateString);
 			const current = attributes?.find?.(
 				(a: { key: string; value: string }) => a.key === "delivery_date",
 			)?.value as string | undefined;
 			if (current === dateString) return;
 			try {
+				_isSavingRef.current = true;
 				const result = await applyAttributeChange({
 					type: "updateAttribute",
 					key: "delivery_date",
@@ -809,9 +817,11 @@ function DeliveryDatePicker() {
 				console.log("✅ Saved delivery date:", dateString);
 			} catch (_err) {
 				setErrorKey("error_saving");
+			} finally {
+				_isSavingRef.current = false;
 			}
 		},
-		[applyAttributeChange, attributes],
+		[applyAttributeChange, attributes, selectedDate],
 	);
 
 	const handleRetry = useCallback(() => {
