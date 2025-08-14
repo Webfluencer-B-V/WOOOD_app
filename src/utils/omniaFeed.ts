@@ -668,7 +668,11 @@ export async function processOmniaFeedWithBulkOperations(
 			if (i + batchSize < validMatches.length) await delay(1000);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			allErrors.push(`Batch error: ${message}`);
+			const variantIds = batch.map((m) => m.variantId).slice(0, 10);
+			console.error("❌ Batch update failed", { message, variantIds });
+			allErrors.push(
+				`Batch error: ${message}; variants: ${variantIds.join(",")}`,
+			);
 			totalFailed += batch.length;
 		}
 	}
