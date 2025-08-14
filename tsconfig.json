@@ -1,7 +1,8 @@
 {
 	"compilerOptions": {
 		"baseUrl": ".",
-		"checkJs": true,
+		"allowJs": true,
+		"checkJs": false,
 		"composite": true,
 		"esModuleInterop": true,
 		"jsx": "react-jsx",
@@ -26,7 +27,7 @@
 		],
 		"verbatimModuleSyntax": true
 	},
-	"exclude": ["build", "**/dist", "server-build.js"],
+	"exclude": ["build", "**/dist"],
 	"include": [
 		"**/*",
 		"**/.server/**/*",
