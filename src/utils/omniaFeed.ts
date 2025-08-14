@@ -373,6 +373,24 @@ export async function processOmniaFeedWithBulkOperations(
   }
 }`;
 
+	// Preflight: ensure no running QUERY bulk op blocks us
+	try {
+		const preflight = (await adminClient.request(`
+			query { currentBulkOperation(type: QUERY) { id status } }
+		`)) as {
+			data?: { currentBulkOperation?: { id?: string; status?: string } };
+		};
+		const current = preflight?.data?.currentBulkOperation;
+		if (current?.status === "RUNNING" && current?.id) {
+			// Cancel stale/previous query to avoid ID-less response
+			await adminClient.request(`
+				mutation { bulkOperationCancel(id: "${current.id}") { userErrors { field message } } }
+			`);
+		}
+	} catch (_e) {
+		// Non-fatal; proceed
+	}
+
 	// Create bulk operation (same pattern as EC)
 	const createBulkOperationMutation = `
     mutation {
@@ -405,7 +423,10 @@ export async function processOmniaFeedWithBulkOperations(
 
 	const bulkOperationId =
 		createResult.data?.bulkOperationRunQuery?.bulkOperation?.id;
-	if (!bulkOperationId) throw new Error("No bulk operation ID returned");
+	if (!bulkOperationId) {
+		console.error("❌ No bulk operation ID. Raw result:", createResult);
+		throw new Error("No bulk operation ID returned");
+	}
 
 	// Poll for completion (same pattern as EC)
 	const maxWaitTime = 10 * 60 * 1000;
@@ -563,7 +584,20 @@ export async function processOmniaFeedWithBulkOperations(
 		maxPriceThreshold: 10000,
 	};
 
-	const validationResult = validatePriceMatches(matches, config);
+	// Filter out no-op updates before validation (Shopify often returns no changes)
+	const filtered = matches.filter((m) => {
+		const pOld = +m.currentPrice.toFixed(2);
+		const pNew = +m.newPrice.toFixed(2);
+		const capOld =
+			m.currentCompareAtPrice != null
+				? +m.currentCompareAtPrice.toFixed(2)
+				: null;
+		const capNewValid =
+			m.newCompareAtPrice > m.newPrice ? +m.newCompareAtPrice.toFixed(2) : null;
+		return pOld !== pNew || capOld !== capNewValid;
+	});
+
+	const validationResult = validatePriceMatches(filtered, config);
 	let validMatches = validationResult.valid;
 
 	console.log("Omnia valid matches", {
@@ -590,7 +624,7 @@ export async function processOmniaFeedWithBulkOperations(
 	const timestamp = new Date().toISOString();
 
 	// Update prices in batches (same pattern as EC)
-	const batchSize = 10; // Conservative for price updates
+	const batchSize = 50; // Safe batch size for Admin API
 	let totalSuccessful = 0;
 	let totalFailed = 0;
 	let priceIncreases = 0;
@@ -853,6 +887,11 @@ async function updateProductPricesBulk(
 			};
 		};
 	};
+
+	const topLevelErrors = (result as unknown as { errors?: unknown[] })?.errors;
+	if (Array.isArray(topLevelErrors) && topLevelErrors.length > 0) {
+		console.error("❌ GraphQL top-level errors:", topLevelErrors);
+	}
 
 	const userErrors = (result.data?.productVariantsBulkUpdate?.userErrors ??
 		[]) as Array<{
