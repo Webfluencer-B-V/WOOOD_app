@@ -39,7 +39,8 @@ declare module "react-router" {
 }
 
 // Load built server bundle via a variable specifier to avoid TS composite checks
-const serverBuildSpecifier: string = "./build/server/index.js";
+// Indirect indirection: import a small module that re-exports the built server bundle
+const serverBuildSpecifier: string = "./server-build.js";
 const requestHandler = createRequestHandler(
 	() => import(serverBuildSpecifier) as unknown as Promise<ServerBuild>,
 	"production",
