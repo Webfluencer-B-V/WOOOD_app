@@ -410,15 +410,18 @@ export default {
 		const response = await requestHandler(request, {
 			cloudflare: { env, ctx },
 		});
-		// Ensure the app can be embedded in Shopify Admin by removing X-Frame-Options
-		// and setting an explicit CSP frame-ancestors policy.
+		// Only adjust headers for embedded HTML documents
+		const contentType = response.headers.get("content-type") || "";
+		const isHtml = contentType.includes("text/html");
+		const isEmbedded = url.searchParams.get("embedded") === "1";
+		if (!isHtml || !isEmbedded) return response;
+
 		const headers = new Headers(response.headers);
 		headers.delete("X-Frame-Options");
 		const csp = headers.get("Content-Security-Policy");
 		const frameAncestors =
 			"frame-ancestors https://admin.shopify.com https://*.myshopify.com;";
 		if (csp && /frame-ancestors/i.test(csp)) {
-			// Replace existing frame-ancestors directive
 			const updated = csp
 				.replace(/frame-ancestors[^;]*;/gi, frameAncestors)
 				.trim();
