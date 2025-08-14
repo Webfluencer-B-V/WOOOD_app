@@ -54,12 +54,6 @@ export default function App({ loaderData }: Route.ComponentProps) {
 					<Link rel="home" to="/app">
 						{t("app")}
 					</Link>
-					<Link
-						target="_top"
-						to={`shopify://admin/charges/${appHandle}/pricing_plans`}
-					>
-						{t("pricingPlans")}
-					</Link>
 					<Link to="/app?section=experience-center">EC</Link>
 					<Link to="/app?section=store-locator">Store Locator</Link>
 					<Link to="/app?section=omnia">Omnia Pricing</Link>
