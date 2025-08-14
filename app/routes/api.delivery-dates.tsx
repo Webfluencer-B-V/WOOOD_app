@@ -3,9 +3,12 @@ import { createShopify } from "../shopify.server";
 
 export async function loader({ request, context }: LoaderFunctionArgs) {
 	try {
-		const _shopify = createShopify(context as unknown as any);
-		const urlIn = new URL(request.url);
-		const shop = urlIn.searchParams.get("shop");
+		const shopify = createShopify(context as unknown as any);
+		const client = await shopify.admin(request);
+		const shopResp = (await client.request(
+			`query { shop { myshopifyDomain } }`,
+		)) as { data?: { shop?: { myshopifyDomain?: string } } };
+		const shop = shopResp?.data?.shop?.myshopifyDomain;
 		if (!shop) {
 			return new Response(JSON.stringify({ error: "Missing shop" }), {
 				status: 401,
