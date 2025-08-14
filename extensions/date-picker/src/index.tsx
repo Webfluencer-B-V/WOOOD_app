@@ -377,8 +377,8 @@ function DeliveryDatePicker() {
 	const { shop } = useApi();
 	const applyAttributeChange = useApplyAttributeChange();
 
-	// API base URL - hardcoded for production
-	const apiBaseUrl = "https://woood-production.leander-4e0.workers.dev";
+	// API base URL - use app's API route on the Worker (staging for verification)
+	const apiBaseUrl = "https://woood-staging.leander-4e0.workers.dev";
 
 	// Extension settings
 	const extensionMode = settings.extension_mode || "Full";
