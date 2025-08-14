@@ -39,8 +39,8 @@ declare module "react-router" {
 }
 
 // Load built server bundle via a variable specifier to avoid TS composite checks
-// Indirect indirection: import a small module that re-exports the built server bundle
-const serverBuildSpecifier: string = "./server-build.js";
+// Match Shopflare pattern: import the virtual server build via a variable specifier
+const serverBuildSpecifier: string = "virtual:react-router/server-build";
 const requestHandler = createRequestHandler(
 	() => import(serverBuildSpecifier) as unknown as Promise<ServerBuild>,
 	"production",
