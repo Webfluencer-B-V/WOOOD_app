@@ -69,6 +69,9 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 		let experienceCenterStatus = null;
 		let storeLocatorStatus = null;
 		let omniaPricingStatus = null;
+		let isEcSchedulerEnabled: boolean | null = null;
+		let isSlSchedulerEnabled: boolean | null = null;
+		let isOmniaSchedulerEnabled: boolean | null = null;
 
 		if (shopDomain) {
 			try {
@@ -77,8 +80,17 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 						`ec_last_sync:${shopDomain}`,
 						"json",
 					);
-			} catch (e) {
-				console.warn("Failed to get experience center status", e);
+			} catch {
+				console.warn("Failed to get experience center status");
+			}
+
+			try {
+				const flag = await context.cloudflare.env.WOOOD_KV?.get(
+					`scheduler:enabled:experience-center:${shopDomain}`,
+				);
+				isEcSchedulerEnabled = flag !== "false";
+			} catch {
+				isEcSchedulerEnabled = null;
 			}
 
 			try {
@@ -87,8 +99,17 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 						`sl_last_sync:${shopDomain}`,
 						"json",
 					);
-			} catch (e) {
-				console.warn("Failed to get store locator status", e);
+			} catch {
+				console.warn("Failed to get store locator status");
+			}
+
+			try {
+				const flag = await context.cloudflare.env.WOOOD_KV?.get(
+					`scheduler:enabled:store-locator:${shopDomain}`,
+				);
+				isSlSchedulerEnabled = flag !== "false";
+			} catch {
+				isSlSchedulerEnabled = null;
 			}
 
 			try {
@@ -97,8 +118,17 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 						`omnia_last_sync:${shopDomain}`,
 						"json",
 					);
-			} catch (e) {
-				console.warn("Failed to get Omnia pricing status", e);
+			} catch {
+				console.warn("Failed to get Omnia pricing status");
+			}
+
+			try {
+				const flag = await context.cloudflare.env.WOOOD_KV?.get(
+					`scheduler:enabled:omnia-pricing:${shopDomain}`,
+				);
+				isOmniaSchedulerEnabled = flag !== "false";
+			} catch {
+				isOmniaSchedulerEnabled = null;
 			}
 		}
 
@@ -108,6 +138,9 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			experienceCenterStatus,
 			storeLocatorStatus,
 			omniaPricingStatus,
+			isEcSchedulerEnabled,
+			isSlSchedulerEnabled,
+			isOmniaSchedulerEnabled,
 		};
 	} catch (error: unknown) {
 		shopify.utils.log.error("app.index.loader.error", error);
@@ -163,6 +196,9 @@ export default function AppIndex({
 		experienceCenterStatus?: ExperienceCenterStatus | null;
 		storeLocatorStatus?: StoreLocatorStatus | null;
 		omniaPricingStatus?: OmniaPricingStatus | null;
+		isEcSchedulerEnabled: boolean | null;
+		isSlSchedulerEnabled: boolean | null;
+		isOmniaSchedulerEnabled: boolean | null;
 	};
 
 	const {
@@ -171,6 +207,9 @@ export default function AppIndex({
 		experienceCenterStatus,
 		storeLocatorStatus,
 		omniaPricingStatus,
+		isEcSchedulerEnabled,
+		isSlSchedulerEnabled,
+		isOmniaSchedulerEnabled,
 	} = (loaderData ?? {}) as IndexLoaderData;
 	const navigation = useNavigation();
 	const { t } = useTranslation();
@@ -213,10 +252,7 @@ export default function AppIndex({
 				<Layout.Section>
 					<Card>
 						<Text variant="headingMd" as="h2">
-							Welcome to WOOOD App - {data?.shop?.name}
-						</Text>
-						<Text as="p" tone="subdued">
-							Manage your Experience Center and Store Locator data sync
+							{data?.shop?.name}
 						</Text>
 					</Card>
 				</Layout.Section>
@@ -306,7 +342,11 @@ export default function AppIndex({
 										name="action"
 										value="toggle-ec-scheduler"
 									/>
-									<Button submit>Toggle EC Scheduler</Button>
+									{isEcSchedulerEnabled !== null && (
+										<Button submit>
+											{isEcSchedulerEnabled ? "Disable" : "Enable"} EC Scheduler
+										</Button>
+									)}
 								</Form>
 							</InlineStack>
 						</div>
@@ -360,7 +400,11 @@ export default function AppIndex({
 										name="action"
 										value="toggle-sl-scheduler"
 									/>
-									<Button submit>Toggle SL Scheduler</Button>
+									{isSlSchedulerEnabled !== null && (
+										<Button submit>
+											{isSlSchedulerEnabled ? "Disable" : "Enable"} SL Scheduler
+										</Button>
+									)}
 								</Form>
 							</InlineStack>
 						</div>
@@ -531,7 +575,12 @@ export default function AppIndex({
 											name="action"
 											value="toggle-omnia-scheduler"
 										/>
-										<Button submit>Toggle Omnia Scheduler</Button>
+										{isOmniaSchedulerEnabled !== null && (
+											<Button submit>
+												{isOmniaSchedulerEnabled ? "Disable" : "Enable"} Omnia
+												Scheduler
+											</Button>
+										)}
 									</Form>
 								</InlineStack>
 							</InlineStack>
