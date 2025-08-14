@@ -42,22 +42,22 @@ jobs:
           VERSION=$(node -e "process.stdout.write(require('./package.json').version)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Read Shopify client id
-        id: shopify
-        run: |
-          CLIENT_ID=$(awk -F= '/^client_id/ {gsub(/["][ ]/,"",$2); print $2}' shopify.app.toml)
-          if [ -z "$CLIENT_ID" ]; then echo "client_id missing in shopify.app.toml" && exit 1; fi
-          echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
+      # - name: Read Shopify client id
+      #   id: shopify
+      #   run: |
+      #     CLIENT_ID=$(awk -F= '/^client_id/ {gsub(/["][ ]/,"",$2); print $2}' shopify.app.toml)
+      #     if [ -z "$CLIENT_ID" ]; then echo "client_id missing in shopify.app.toml" && exit 1; fi
+      #     echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Deploy Shopify App (staging)
-        env:
-          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
-          SHOPIFY_CLI_TTY: 0
-        run: >-
-          npx shopify app deploy
-          --client-id ${{ steps.shopify.outputs.client_id }}
-          --force
-          --message "${{ github.ref_name }}:${{ steps.pkg.outputs.version }}"
-          --version "${{ github.sha }}"
+      # - name: Deploy Shopify App (staging)
+      #   env:
+      #     SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+      #     SHOPIFY_CLI_TTY: 0
+      #   run: >-
+      #     npx shopify app deploy
+      #     --client-id ${{ steps.shopify.outputs.client_id }}
+      #     --force
+      #     --message "${{ github.ref_name }}:${{ steps.pkg.outputs.version }}"
+      #     --version "${{ github.sha }}"
 
 
