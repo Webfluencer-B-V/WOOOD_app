@@ -678,11 +678,6 @@ async function updateProductPricesBulk(
   adminClient: ShopifyAdminClient,
   matches: ProductPriceMatch[],
 ): Promise<{ successful: number; failed: number; errors: string[] }> {
-  if (matches.length > 10) {
-    throw new Error(
-      `Batch size too large: ${matches.length}. Maximum allowed: 10 for price updates`,
-    );
-  }
 
     const mutation = `
     mutation productVariantsBulkUpdate($productVariants: [ProductVariantsBulkInput!]!) {

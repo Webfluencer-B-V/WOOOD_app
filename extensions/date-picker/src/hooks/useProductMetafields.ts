@@ -20,7 +20,7 @@ export interface CartProductsMetadata {
  * @param erpLevertijd - The metafield value (e.g., "2025-22")
  * @returns Date object or null if invalid
  */
-function parseErpLevertijd(erpLevertijd: string | null): Date | null {
+function _parseErpLevertijd(erpLevertijd: string | null): Date | null {
 	if (!erpLevertijd || typeof erpLevertijd !== "string") {
 		return null;
 	}
@@ -56,7 +56,7 @@ function weekNumberToDate(year: number, week: number): Date {
 /**
  * Extract number from shipping method string (e.g., "11 - PAKKET POST" -> 11)
  */
-function extractShippingMethodNumber(shippingMethod: string): number {
+function _extractShippingMethodNumber(shippingMethod: string): number {
 	const match = shippingMethod.match(/^(\d+)/);
 	return match ? parseInt(match[1], 10) : 0;
 }

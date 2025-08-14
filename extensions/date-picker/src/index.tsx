@@ -18,13 +18,7 @@ import {
 	View,
 } from "@shopify/ui-extensions-react/checkout";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React, {
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { type DeliveryDate, useDeliveryDates } from "./hooks/useDeliveryDates";
 
@@ -111,7 +105,7 @@ function extractShippingMethodNumber(shippingMethod: string): number {
 /**
  * Check if date is within the next 2 weeks
  */
-function isWithinTwoWeeks(date: Date): boolean {
+function _isWithinTwoWeeks(date: Date): boolean {
 	const twoWeeksFromNow = new Date();
 	twoWeeksFromNow.setDate(twoWeeksFromNow.getDate() + 14);
 	return date <= twoWeeksFromNow;
@@ -218,7 +212,7 @@ function useCartMetadataOptimized(): MetadataResult {
 		let productsWithShippingData = 0;
 		let rawErpLevertijd: string | null = null;
 
-		cartLines.forEach((line, index) => {
+		cartLines.forEach((line, _index) => {
 			const product = line.merchandise?.product;
 			if (!product) return;
 			const productId = product.id;
@@ -342,7 +336,7 @@ function useSaveMetadataToAttributes(
 				}
 
 				// console.log('✅ Saved cart metadata to order attributes');
-			} catch (err) {
+			} catch (_err) {
 				// console.error('❌ Error saving cart metadata to attributes:', err);
 			}
 		};
@@ -409,15 +403,14 @@ function DeliveryDatePicker() {
 		.filter((code: string) => code.length > 0); // Remove empty strings
 
 	const countryCode = shippingAddress?.countryCode;
-	const showDatePicker =
+	const canShowPicker =
 		countryCode &&
 		activeCountryCodesList.includes(countryCode) &&
 		shouldShowDatePicker;
 
 	// Always process cart metadata (needed for order attributes even when picker is hidden)
 	const metadataResult = useCartMetadataOptimized();
-	const { minimumDeliveryDate, highestShippingMethod, debugInfo } =
-		metadataResult;
+	const { minimumDeliveryDate, highestShippingMethod } = metadataResult;
 
 	// Save metadata to attributes based on extension mode
 	const shouldSaveShippingData =
@@ -425,67 +418,18 @@ function DeliveryDatePicker() {
 	useSaveMetadataToAttributes(metadataResult, shouldSaveShippingData);
 
 	// Hide extension completely if disabled
-	if (isExtensionDisabled) {
-		// In preview mode, show a message explaining why it's hidden
-		if (isCheckoutPreview) {
-			return (
-				<View border="base" cornerRadius="base" padding="base">
-					<BlockStack spacing="base">
-						<Heading level={2}>{t("title")}</Heading>
-						<Banner status="info">
-							<Text size="small">🚫 Extension is disabled via settings</Text>
-						</Banner>
-					</BlockStack>
-				</View>
-			);
-		}
-		// In actual checkout, return an empty div to avoid React errors
-		return <View />;
-	}
-
-	// If only shipping data mode, don't show date picker UI
-	if (onlyShippingData) {
-		// In preview mode, show a message explaining the mode
-		if (isCheckoutPreview) {
-			return (
-				<View border="base" cornerRadius="base" padding="base">
-					<BlockStack spacing="base">
-						<Heading level={2}>{t("title")}</Heading>
-						<Banner status="info">
-							<Text size="small">
-								📊 Shipping data only mode - saving cart metadata without date
-								picker
-							</Text>
-						</Banner>
-					</BlockStack>
-				</View>
-			);
-		}
-		// In actual checkout, return an empty div (metadata still gets saved)
-		return <View />;
-	}
-
-	// Check if minimum date is within configured days (hide date picker if so)
+	const isExtensionDisabledUI = isExtensionDisabled;
+	const onlyShippingDataUI = onlyShippingData;
 	const hidePickerDueToEarlyDelivery = useMemo(() => {
 		if (!minimumDeliveryDate || hidePicker === 0) return false;
 		const today = new Date();
 		const daysUntilDelivery = Math.ceil(
 			(minimumDeliveryDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
 		);
-		const minDateStr = minimumDeliveryDate.toISOString().split("T")[0];
-		const todayStr = today.toISOString().split("T")[0];
-		console.log(
-			"[Hide Picker Within Days] minimumDeliveryDate:",
-			minDateStr,
-			"today:",
-			todayStr,
-			"daysUntilDelivery:",
-			daysUntilDelivery,
-			"hidePickerWithinDays:",
-			hidePicker,
-		);
 		return daysUntilDelivery <= hidePicker;
 	}, [minimumDeliveryDate, hidePicker]);
+
+	// Country allow-listing combined with picker mode (computed above)
 
 	const cartLines = useCartLines();
 	const [inventory, setInventory] = useState<Record<
@@ -534,7 +478,7 @@ function DeliveryDatePicker() {
 			})
 			.then((data) => {
 				console.log(`✅ [Inventory Check] API Response:`, data);
-				if (data && data.success && data.inventory) {
+				if (data?.success && data.inventory) {
 					setInventory(data.inventory);
 
 					// Log inventory details for debugging
@@ -566,7 +510,7 @@ function DeliveryDatePicker() {
 				setInventory(null);
 			})
 			.finally(() => setInventoryLoading(false));
-	}, [cartLines, shop?.myshopifyDomain, apiBaseUrl]);
+	}, [cartLines, shop?.myshopifyDomain]);
 
 	// Determine if all products are in stock using fetched inventory
 	const allProductsInStock = useMemo(() => {
@@ -627,7 +571,7 @@ function DeliveryDatePicker() {
 	}, [allProductsInStock]);
 
 	// STEP 2: Dutch Order Check Logic - REMOVED, now always proceed
-	const isDutchOrder = true; // Always proceed regardless of country
+	const _isDutchOrder = true; // Always proceed regardless of country
 
 	// STEP 3: Delivery Method Check Logic
 	const deliveryMethodNumber = useMemo(() => {
@@ -757,7 +701,7 @@ function DeliveryDatePicker() {
 			return [];
 		}
 
-		let filtered;
+		let filtered: DeliveryDate[];
 		if (!enableWeekNumberFiltering || !minimumDeliveryDate) {
 			filtered = deliveryDates;
 			console.log(
@@ -777,7 +721,7 @@ function DeliveryDatePicker() {
 						`🔍 [Date Filtering] ${dateItem.date} >= ${minDateStr}: ${isAfterMin}`,
 					);
 					return isAfterMin;
-				} catch (error) {
+				} catch (_error) {
 					console.log(`🔍 [Date Filtering] Invalid date: ${dateItem.date}`);
 					return false;
 				}
@@ -811,7 +755,6 @@ function DeliveryDatePicker() {
 		enableWeekNumberFiltering,
 		maxDatesToShow,
 		deliveryType,
-		deliveryMethodCutoff,
 	]);
 
 	// Detect selected shipping method from delivery groups
@@ -856,7 +799,7 @@ function DeliveryDatePicker() {
 				}
 
 				console.log("✅ Saved delivery date:", dateString);
-			} catch (err) {
+			} catch (_err) {
 				setErrorKey("error_saving");
 			}
 		},
