@@ -1528,7 +1528,7 @@ case "omnia-pricing-sync": {
   await env.OMNIA_PRICING_STATUS?.put(
     `omnia_last_sync:${body.shop}`,
     JSON.stringify({
-    timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
       success: true,
     summary: {
         ...result,
