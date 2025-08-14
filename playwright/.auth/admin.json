@@ -1,0 +1,236 @@
+{
+	"cookies": [
+		{
+			"name": "_secure_admin_session_id",
+			"value": "dbf93628ba3943a6265d83349fefac09",
+			"domain": "webfluencer-panda.myshopify.com",
+			"path": "/admin",
+			"expires": 1762869511.993867,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "None"
+		},
+		{
+			"name": "_secure_admin_session_id_csrf",
+			"value": "dbf93628ba3943a6265d83349fefac09",
+			"domain": "webfluencer-panda.myshopify.com",
+			"path": "/admin",
+			"expires": 1762869511.993919,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "_master_udr",
+			"value": "eyJfcmFpbHMiOnsibWVzc2FnZSI6IkJBaEpJaWt3Tnpnd05HUmpNeTB5TWpRNExUUTFaak10WWpVeU15MHhZekZoWmpRelpHTTNPVGtHT2daRlJnPT0iLCJleHAiOiIyMDI3LTA4LTExVDEzOjU4OjMxLjkwMloiLCJwdXIiOiJjb29raWUuX21hc3Rlcl91ZHIifX0%3D--eab766443faf0f368068b587ceb73e2942867456",
+			"domain": "webfluencer-panda.myshopify.com",
+			"path": "/admin",
+			"expires": 1789480711.99394,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "device_id",
+			"value": "xM8Y%2BKZW4SY4x57mkmENcByAnxNypUnpxkvpv6XCPWWsFvAfGtBSOvYrzfSL%2Bw0wchgGX%2FaiMxLH9GR8GKBHK%2B4On%2BCvBI%2BKC0eFVS2wkmp8bAUA%2FIHS1zvgkxC6BD1m7rHd%2Bexn3HhKFVo%2BIAj1Czw%3D--gVFqBP0VRdBtQqg%2B--CDH5URHTr4Q1rwlCSQCUOw%3D%3D",
+			"domain": "accounts.shopify.com",
+			"path": "/",
+			"expires": 1789480713.142038,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "None"
+		},
+		{
+			"name": "master_device_id",
+			"value": "bbd402a2-5ff8-4b6f-b1b5-e4e7ecf27706",
+			"domain": ".shopify.com",
+			"path": "/",
+			"expires": 1786456748.94536,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "None"
+		},
+		{
+			"name": "_shopify_s",
+			"value": "209918af-cbb1-459e-958b-0ea239772f44",
+			"domain": ".shopify.com",
+			"path": "/",
+			"expires": 1754922555.233731,
+			"httpOnly": false,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "_shopify_essential_",
+			"value": "2bc5e5c3-6ee4-43d1-8536-2b0c4a13c019",
+			"domain": ".shopify.com",
+			"path": "/",
+			"expires": 1786456755.233669,
+			"httpOnly": false,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "__cf_bm",
+			"value": "_0e4fFoHNXTa07uXamKUeVgvo9I6IaEEzUifrx05hZA-1754920715-1.0.1.1-GG2mcJhhUohX09W.BbJNTc6Y83Y_1oHwF8SSGyvPFX9O5MShpnlSrF2fMHCQRPxDPTz5klytZ_y.CajQwcEkC5fnUgw7DSrAbSVXvtmG3jM",
+			"domain": ".hcaptcha.com",
+			"path": "/",
+			"expires": 1754922515.023468,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "None"
+		},
+		{
+			"name": "hmt_id",
+			"value": "f230fc79-67a3-437a-bd19-fa99040b27fb",
+			"domain": "api.hcaptcha.com",
+			"path": "/",
+			"expires": 1757512717.604869,
+			"httpOnly": false,
+			"secure": true,
+			"sameSite": "None",
+			"partitionKey": "https://shopify.com",
+			"_crHasCrossSiteAncestor": true
+		},
+		{
+			"name": "_shopify_y",
+			"value": "5612777e-8364-48de-a3b1-38cba8cea6db",
+			"domain": ".shopify.com",
+			"path": "/",
+			"expires": 1786456755.233716,
+			"httpOnly": false,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "_identity_session",
+			"value": "0b03a71630e526b7612292e6d73ea03a",
+			"domain": "accounts.shopify.com",
+			"path": "/",
+			"expires": 1789480749.266995,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "None"
+		},
+		{
+			"name": "__Host-_identity_session_same_site",
+			"value": "0b03a71630e526b7612292e6d73ea03a",
+			"domain": "accounts.shopify.com",
+			"path": "/",
+			"expires": 1789480749.267052,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "_merchant_essential",
+			"value": "%3AAZiZbPdAAAEAee3G7shD0rrqWb9J6raLjF4g0j9P5_M1_8bRGTFgttY6JXUbgrZeH3IQs6INzFEBC2Xnm71EwhSgjiktbt-KuzGEhOH0bPmkW0LpHg2lOPnpI0DIUIJhoXtoaNQBC2qCIUuoK08kMexp0_2A46efQRBy2wDFAj4g7NEq_zBpkO2AQ28gCMnV4OwUdf_ofTLaVTJm6-p1a0nd8GEz0RDpbAt45OyMi-2x1b6-_GnBYsKuNv0Wq_ec8g7zskY3vj7bSbTWz4etEztFxlQwCfDLCXF17jotEmOi0uL9RII1doykTs9sQbucubSUDe0YQxhPzSRH9rVzEU_37uGRUqnT8R_aiNZU6E0iLjnwS_IyLyLuTxqfCisd466vbpwgmXf_h_by581A_xy3EcgNYqylbFrBOgB16jPI4RpaWvkX4e5kVHLn6IvgukJHMRtgxlFNcF4oLELY1wrghhIHTzdz5Rvpkj1ZCiOZM7QgZI3l1hN0ZJRb1FQmhyE_mhX7b3IF8yFBtlkggLoZGX4f0iQwQarvpvLG0C4XtPLmFoZXIlcxvQ1IwRVI2ax3csZfNo1b-HFKqFCwqSRcBN-1glaNkjCZPYvmdSWEk83ceA9WmOrzwdHkH1FlQpGM6iCBC2x57M0AsLyHpjo5HVt_aJh5FlCY4Lp4VEtKu_TEzsHEsk1iP_fVznMrqUpwo9awFwOmE9Maplj-MN6XDnlmuiSuwCjeSew%3A",
+			"domain": ".shopify.com",
+			"path": "/",
+			"expires": 1786477701.266923,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "is_shopify_merchant",
+			"value": "1",
+			"domain": ".shopify.com",
+			"path": "/",
+			"expires": 1786456749.568722,
+			"httpOnly": false,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "koa.sid",
+			"value": "z0FJxyxgJvRsCPEWfgYF-V9CzzcVpWlZ",
+			"domain": "admin.shopify.com",
+			"path": "/",
+			"expires": 1755007150.446803,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "koa.sid.sig",
+			"value": "HTS82hgx7_6XJBMFW400EQAuXqw",
+			"domain": "admin.shopify.com",
+			"path": "/",
+			"expires": 1755007150.446853,
+			"httpOnly": true,
+			"secure": true,
+			"sameSite": "Lax"
+		},
+		{
+			"name": "62431789223--Order--selected-location",
+			"value": "[{%22id%22:%22MULTILOCATION_ALL_LOCATIONS_KEY%22}]",
+			"domain": ".admin.shopify.com",
+			"path": "/",
+			"expires": -1,
+			"httpOnly": false,
+			"secure": false,
+			"sameSite": "Lax"
+		}
+	],
+	"origins": [
+		{
+			"origin": "https://admin.shopify.com",
+			"localStorage": [
+				{
+					"name": "62431789223-sidekick-guide-context",
+					"value": "{\"enabled\":false,\"supportedGuides\":[]}"
+				},
+				{
+					"name": "shopsAccessedAt",
+					"value": "{\"Z2lkOi8vb3JnYW5pemF0aW9uL1Nob3BpZnlTaG9wLzYyNDMxNzg5MjIz\":1754920753007}"
+				},
+				{
+					"name": "extensions-dev-visible-v2-webfluencer-panda.myshopify.com",
+					"value": "{\"console\":false,\"nav\":false}"
+				},
+				{
+					"name": "home__shopifyql_date_controls__comparison_range",
+					"value": "{\"type\":\"comparison\",\"range\":{\"since\":\"previous_period\"}}"
+				},
+				{
+					"name": "home__shopifyql_date_controls__primary_range",
+					"value": "{\"type\":\"dateRange\",\"range\":{\"since\":\"startOfDay(-30d)\",\"until\":\"endOfDay(-1d)\"}}"
+				},
+				{
+					"name": "home__analytics_date_controls__primary_range",
+					"value": "\"{\\\"since\\\":\\\"startOfDay(-30d)\\\",\\\"until\\\":\\\"endOfDay(-1d)\\\",\\\"alias\\\":\\\"last30days\\\",\\\"comparisonOf\\\":null}\""
+				},
+				{
+					"name": "latest_shop_access",
+					"value": "\"Z2lkOi8vb3JnYW5pemF0aW9uL1Nob3BpZnlTaG9wLzYyNDMxNzg5MjIz\""
+				},
+				{
+					"name": "62431789223-persistent_guide_session_id",
+					"value": "\"\""
+				},
+				{
+					"name": "bugsnag-anonymous-id",
+					"value": "cme76i4xq00003b6jv7mlkuol"
+				},
+				{
+					"name": "home__analytics_date_controls__comparison_range",
+					"value": "\"{\\\"since\\\":\\\"2025-06-12\\\",\\\"until\\\":\\\"2025-07-11\\\",\\\"alias\\\":\\\"previous_period\\\",\\\"comparisonOf\\\":\\\"last30days\\\"}\""
+				},
+				{
+					"name": "lf_62431789223",
+					"value": "{\"isMinimised\":true,\"isFormSubmitted\":false,\"dismissCount\":0}"
+				}
+			]
+		},
+		{
+			"origin": "https://accounts.shopify.com",
+			"localStorage": [
+				{
+					"name": "bugsnag-anonymous-id",
+					"value": "cme76hd4800003b6of4zshkyi"
+				}
+			]
+		}
+	]
+}

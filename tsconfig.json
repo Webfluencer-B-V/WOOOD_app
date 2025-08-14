@@ -1,32 +1,38 @@
 {
-  "compilerOptions": {
-    "strict": true,
-    "esModuleInterop": true,
-    "allowJs": true,
-    "checkJs": true,
-    "noImplicitAny": true,
-    "noEmit": true,
-    "sourceMap": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "forceConsistentCasingInFileNames": true,
-    "target": "es2020",
-    "lib": [
-      "es2020",
-      "DOM"
-    ],
-    "skipLibCheck": true,
-    "jsx": "react-jsx",
-    "moduleResolution": "Bundler",
-    "resolveJsonModule": true,
-    "baseUrl": "."
-  },
-  "exclude": [
-    "node_modules",
-    "dist",
-    "build",
-    "backend/dist",
-    "extensions/*/dist",
-    "extensions/*/build"
-  ]
+	"compilerOptions": {
+		"baseUrl": ".",
+		"checkJs": true,
+		"composite": true,
+		"esModuleInterop": true,
+		"jsx": "react-jsx",
+		"lib": ["DOM", "DOM.Iterable", "ES2022"],
+		"module": "ES2022",
+		"moduleResolution": "bundler",
+		"noEmit": true,
+		"paths": {
+			"~/*": ["./app/*"]
+		},
+		"resolveJsonModule": true,
+		"rootDirs": [".", "./.react-router/types"],
+		"skipLibCheck": true,
+		"strict": true,
+		"target": "ES2022",
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+		"types": [
+			"@cloudflare/vitest-pool-workers",
+			"@vitest/browser/matchers",
+			"@vitest/browser/providers/playwright",
+			"vite/client"
+		],
+		"verbatimModuleSyntax": true
+	},
+	"exclude": ["build", "**/dist"],
+	"include": [
+		"**/*",
+		"**/.server/**/*",
+		"**/.client/**/*",
+		".react-router/types/**/*",
+		"worker-configuration.d.ts",
+		"node_modules/vite-plugin-i18next-loader/typings/*"
+	]
 }
