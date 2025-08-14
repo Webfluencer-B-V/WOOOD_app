@@ -37,9 +37,8 @@ declare module "react-router" {
 	}
 }
 
-// Load built server bundle via a variable specifier to avoid TS composite checks
-// Use local re-export to avoid unresolved virtual module at runtime
-const serverBuildSpecifier: string = "./server-build.js";
+// Use virtual server-build via dynamic import of a string specifier
+const serverBuildSpecifier: string = "virtual:react-router/server-build";
 const requestHandler = createRequestHandler(
 	() => import(serverBuildSpecifier) as unknown as Promise<ServerBuild>,
 	"production",
