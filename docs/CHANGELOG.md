@@ -1194,3 +1194,70 @@ Acceptance criteria:
 3. Move `Env`/flags/types; delete `src/utils/consolidation.ts` and `/docs/CONSOLIDATION.md`
 4. Remove legacy `workers/` folder; verify CI green
 5. Do not keep 410 deprecated endpoints for two releases
+
+## Sprint 30: Bulk Mutations for EC & Omnia (Plan - 6 SP)
+
+Goal: Migrate write paths for Experience Center metafields and Omnia pricing updates from per‑batch mutations to Shopify Bulk Mutation operations for higher throughput and simpler retries.
+
+References: Shopify Bulk imports and limitations [docs](https://shopify.dev/docs/api/usage/bulk-operations/imports#limitations)
+
+Scope and approach
+
+- EC (Experience Center)
+  - Current: bulkOperationRunQuery to read products/variants; per‑batch `metafieldsSet` writes.
+  - Target: bulkOperationRunMutation with `metafieldsSet` using JSONL variables.
+  - Plan:
+    1) Build EAN→{productId, variantId} index (read-only) via daily bulk QUERY and persist to KV: `ean:index:<ean> → { productId, variantId }`. Provide manual refresh in UI.
+    2) During EC sync, map EC rows (EAN) using KV index to productId.
+    3) Generate JSONL with lines of `{ "metafields": [{ key, namespace, value, type, ownerId: <productId> }] }`.
+    4) Use `stagedUploadsCreate` → upload JSONL → `bulkOperationRunMutation` with the `metafieldsSet` mutation.
+    5) Poll `currentBulkOperation(type: MUTATION)` until complete; parse results JSONL; write per‑shop status to `EXPERIENCE_CENTER_STATUS`.
+
+- Omnia Pricing
+  - Current: bulkOperationRunQuery to read; per‑batch `productVariantsBulkUpdate` writes.
+  - Target: bulkOperationRunMutation with `productVariantsBulkUpdate` using JSONL variables.
+  - Plan:
+    1) Reuse the same EAN index from EC (KV) to map EAN→variantId (and parent productId for reporting).
+    2) For each Omnia feed row, compute price (PriceAdvice) and compareAtPrice (RecommendedSellingPrice) and ensure `compareAtPrice > price` (or send null).
+    3) Generate JSONL with lines of `{ "productVariants": [{ id: <variantId>, price, compareAtPrice }] }`.
+    4) Upload JSONL (stagedUploadsCreate) and run `bulkOperationRunMutation` with `productVariantsBulkUpdate`.
+    5) Poll mutation status; parse results JSONL to derive success/failure, updated variant IDs; persist detailed history to `OMNIA_PRICING_HISTORY` and summary to `OMNIA_PRICING_STATUS`.
+
+JSONL and limits
+
+- Respect 20MB JSONL size limit. If exceeded, chunk into multiple uploads/operations (looped with backoff).
+- Only 1 bulk operation of each type per shop at a time. Implement preflight checks:
+  - If a QUERY/MUTATION is RUNNING, either wait or cancel before starting a new one.
+
+Data index (ID/EAN) strategy
+
+- Maintain KV index populated daily by a bulk QUERY:
+  - Key: `ean:index:<ean>` → `{ productId, variantId, handle?, title? }`
+  - Optional: Store a reverse map `variant:index:<variantId>` for revert/reporting.
+- Provide manual refresh button in UI and schedule daily refresh via cron.
+
+Observability & reporting
+
+- Store raw mutation status (objectCount, errorCode) and parsed results in KV.
+- Surface counts and samples (updated IDs, titles, links) in the dashboard and emails.
+- For Omnia, keep persistent per‑run history keyed `omnia:update:<shop>:<variantId>:<timestamp>`.
+
+Feature flags & rollout
+
+- Add flags: `ENABLE_BULK_MUTATION_EC`, `ENABLE_BULK_MUTATION_OMNIA` default false.
+- Ship side‑by‑side path with current batched writes; toggle per environment.
+- Fallback: If bulk mutation fails or JSONL exceeds limits, auto‑fallback to current batched mutation path.
+
+Touchpoints
+
+- `src/utils/experienceCenter.ts`: add JSONL builder, staged upload, bulk mutation path; use KV EAN index.
+- `src/utils/omniaFeed.ts`: add JSONL builder, staged upload, bulk mutation path; use KV EAN index and validation.
+- `app/routes/app.index.tsx`: add buttons to refresh EAN index and to trigger bulk modes (behind flags); show bulk op progress.
+- `worker.ts`: scheduled daily EAN index refresh; optional scheduled bulk runs; preflight cancel/wait logic.
+- `app/types/app.ts`: types for EAN index entry, bulk mutation status/results.
+
+Acceptance Criteria
+
+- EC: bulk mutation updates product metafields for EC flag with success metrics matching the batched implementation.
+- Omnia: bulk mutation updates prices; history entries persisted; email reports include updated products list.
+- JSONL stays under limits or chunks automatically; retries and preflight logic prevent conflicting operations.
