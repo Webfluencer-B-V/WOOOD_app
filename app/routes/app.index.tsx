@@ -618,7 +618,10 @@ export async function action({ context, request }: Route.ActionArgs) {
 	// Create admin client adapter for our utility functions
 	const adminClientAdapter: ShopifyAdminClient = {
 		request: async (query: string, variables?: Record<string, unknown>) => {
-			return await client.request(query, { variables });
+			// Shopify Remix Admin client returns the GraphQL data directly (without { data })
+			// Our utilities expect a shape { data: ... }, so wrap it for compatibility
+			const resp = await client.request(query, { variables });
+			return { data: resp } as unknown;
 		},
 	};
 
