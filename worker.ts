@@ -410,11 +410,9 @@ export default {
 		const response = await requestHandler(request, {
 			cloudflare: { env, ctx },
 		});
-		// Only adjust headers for embedded HTML documents
-		const contentType = response.headers.get("content-type") || "";
-		const isHtml = contentType.includes("text/html");
+		// Only adjust headers for embedded app requests
 		const isEmbedded = url.searchParams.get("embedded") === "1";
-		if (!isHtml || !isEmbedded) return response;
+		if (!isEmbedded) return response;
 
 		const headers = new Headers(response.headers);
 		headers.delete("X-Frame-Options");
