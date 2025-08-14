@@ -37,7 +37,8 @@ async function fetchDeliveryDates(
 	data: DeliveryDate[];
 	metadata?: ApiResponse["metadata"];
 }> {
-	const url = `${apiBaseUrl}/api/delivery-dates`;
+	// Call through app route which proxies/normalizes Worker response
+	const url = `${apiBaseUrl}/app/api.delivery-dates`;
 
 	console.log("🌐 Fetching delivery dates from:", url);
 
