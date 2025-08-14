@@ -624,7 +624,7 @@ export async function processOmniaFeedWithBulkOperations(
 	const timestamp = new Date().toISOString();
 
 	// Update prices in batches (same pattern as EC)
-	const batchSize = 50; // Safe batch size for Admin API
+	const batchSize = 10;
 	let totalSuccessful = 0;
 	let totalFailed = 0;
 	let priceIncreases = 0;
@@ -834,9 +834,10 @@ async function updateProductPricesBulk(
 	errors: string[];
 	successfulVariantIds: string[];
 }> {
-	if (matches.length > 10) {
+	// Guard to keep single-mutation payloads reasonable for Admin API
+	if (matches.length > 50) {
 		throw new Error(
-			`Batch size too large: ${matches.length}. Maximum allowed: 10 for price updates`,
+			`Batch size too large: ${matches.length}. Maximum allowed: 50 for price updates`,
 		);
 	}
 
