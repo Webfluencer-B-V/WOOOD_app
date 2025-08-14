@@ -834,92 +834,101 @@ async function updateProductPricesBulk(
 	errors: string[];
 	successfulVariantIds: string[];
 }> {
-	// Guard to keep single-mutation payloads reasonable for Admin API
-	if (matches.length > 50) {
-		throw new Error(
-			`Batch size too large: ${matches.length}. Maximum allowed: 50 for price updates`,
-		);
-	}
+	// Group by productId; productVariantsBulkUpdate requires productId + variants of that product
+	const productIdToVariants = new Map<
+		string,
+		Array<{ id: string; price: string; compareAtPrice: string | null }>
+	>();
 
-	// Use bulk variants update for efficiency and capture returned IDs
-	const mutation = `
-		mutation productVariantsBulkUpdate($productVariants: [ProductVariantsBulkInput!]!) {
-			productVariantsBulkUpdate(productVariants: $productVariants) {
-				productVariants {
-					id
-					price
-					compareAtPrice
-				}
-				userErrors {
-					field
-					message
-				}
-			}
-		}
-	`;
-
-	const productVariants = matches.map((match) => {
-		// Shopify requires compareAtPrice > price. If not, set compareAtPrice to null to avoid errors.
+	for (const match of matches) {
 		const compareAtValid = match.newCompareAtPrice > match.newPrice;
-		return {
+		const input = {
 			id: match.variantId,
 			price: match.newPrice.toFixed(2),
 			compareAtPrice: compareAtValid
 				? match.newCompareAtPrice.toFixed(2)
 				: null,
 		};
-	});
-
-	// Log the number of variants attempted and first 3 variant IDs
-	console.log(`💰 Attempting to update ${matches.length} product variants:`, {
-		variantIds: matches.slice(0, 3).map((m) => m.variantId),
-		samplePrices: matches
-			.slice(0, 3)
-			.map((m) => `${m.ean}: €${m.currentPrice} → €${m.newPrice}`),
-	});
-
-	const result = (await adminClient.request(mutation, {
-		productVariants,
-	})) as {
-		data?: {
-			productVariantsBulkUpdate?: {
-				userErrors?: Array<{ field?: string; message?: string }>;
-				productVariants?: Array<{ id: string }>;
-			};
-		};
-	};
-
-	const topLevelErrors = (result as unknown as { errors?: unknown[] })?.errors;
-	if (Array.isArray(topLevelErrors) && topLevelErrors.length > 0) {
-		console.error("❌ GraphQL top-level errors:", topLevelErrors);
+		const arr = productIdToVariants.get(match.productId) ?? [];
+		arr.push(input);
+		productIdToVariants.set(match.productId, arr);
 	}
 
-	const userErrors = (result.data?.productVariantsBulkUpdate?.userErrors ??
-		[]) as Array<{
-		field?: string;
-		message?: string;
-	}>;
-	const successfulVariants = (result.data?.productVariantsBulkUpdate
-		?.productVariants ?? []) as Array<{
-		id: string;
-	}>;
+	// Mutation per product
+	const mutation = `
+    mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!, $allowPartial: Boolean) {
+      productVariantsBulkUpdate(productId: $productId, variants: $variants, allowPartialUpdates: $allowPartial) {
+        product { id }
+        productVariants { id }
+        userErrors { field message }
+      }
+    }
+  `;
 
-	// Log results with detailed error information
-	console.log(`💰 Price update batch results:`, {
-		successful: successfulVariants.length,
-		failed: matches.length - successfulVariants.length,
-		userErrors: userErrors.length > 0 ? userErrors : "none",
-		successfulVariantIds: successfulVariants.slice(0, 3).map((v) => v.id),
-	});
+	let totalSuccessful = 0;
+	let totalFailed = 0;
+	const errors: string[] = [];
+	const successfulVariantIds: string[] = [];
 
-	if (userErrors.length > 0) {
-		console.error("❌ Shopify API errors during price update:", userErrors);
+	for (const [productId, variants] of productIdToVariants) {
+		// Shopify limit: up to 250 variants per call
+		for (let i = 0; i < variants.length; i += 250) {
+			const slice = variants.slice(i, i + 250);
+
+			console.log(
+				`💰 Attempting to update ${slice.length} variants for product`,
+				{ productId, sample: slice.slice(0, 3) },
+			);
+
+			const result = (await adminClient.request(mutation, {
+				productId,
+				variants: slice,
+				allowPartial: true,
+			})) as {
+				data?: {
+					productVariantsBulkUpdate?: {
+						userErrors?: Array<{ field?: string; message?: string }>;
+						productVariants?: Array<{ id: string }>;
+					};
+				};
+				errors?: unknown[];
+			};
+
+			if (Array.isArray(result?.errors) && result.errors.length > 0) {
+				console.error("❌ GraphQL top-level errors:", result.errors);
+			}
+
+			const userErrors = (result.data?.productVariantsBulkUpdate?.userErrors ??
+				[]) as Array<{
+				field?: string;
+				message?: string;
+			}>;
+			const updated = (result.data?.productVariantsBulkUpdate
+				?.productVariants ?? []) as Array<{
+				id: string;
+			}>;
+
+			totalSuccessful += updated.length;
+			totalFailed += slice.length - updated.length;
+			successfulVariantIds.push(...updated.map((u) => u.id));
+			if (userErrors.length > 0) {
+				errors.push(...userErrors.map((e) => `${e.field}: ${e.message}`));
+			}
+
+			console.log(`💰 Price update results (per product)`, {
+				productId,
+				successful: updated.length,
+				failed: slice.length - updated.length,
+				userErrors: userErrors.length > 0 ? userErrors : "none",
+				sampleUpdated: updated.slice(0, 3).map((u) => u.id),
+			});
+		}
 	}
 
 	return {
-		successful: successfulVariants.length,
-		failed: matches.length - successfulVariants.length,
-		errors: userErrors.map((e) => `${e.field}: ${e.message}`),
-		successfulVariantIds: successfulVariants.map((v) => v.id),
+		successful: totalSuccessful,
+		failed: totalFailed,
+		errors,
+		successfulVariantIds,
 	};
 }
