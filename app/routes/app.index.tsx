@@ -428,55 +428,65 @@ export default function AppIndex({
 														<Text as="p" tone="subdued">
 															Recent updates (by product):
 														</Text>
-														<ul style={{ paddingLeft: 16 }}>
-															{omniaPricingStatus.summary.updatedSamples
-																.slice(0, 10)
-																.map((u) => {
-																	const productHandle = u.productHandle;
-																	const productTitle =
-																		u.productTitle ||
-																		`Product ${u.productId.split("/").pop()}`;
-																	const shopDomain =
-																		data?.shop?.myshopifyDomain;
+														<div
+															style={{
+																maxHeight: 320,
+																overflowY: "auto",
+																border: "1px solid #e5e7eb",
+																borderRadius: 6,
+																padding: 8,
+															}}
+														>
+															<ul style={{ paddingLeft: 16, margin: 0 }}>
+																{omniaPricingStatus.summary.updatedSamples.map(
+																	(u) => {
+																		const productHandle = u.productHandle;
+																		const productTitle =
+																			u.productTitle ||
+																			`Product ${u.productId.split("/").pop()}`;
+																		const shopDomain =
+																			data?.shop?.myshopifyDomain;
 
-																	return (
-																		<li key={u.variantId}>
-																			<Text as="span" tone="subdued">
-																				{productHandle && shopDomain ? (
-																					<a
-																						href={`https://${shopDomain}/admin/products/${u.productId.split("/").pop()}`}
-																						target="_blank"
-																						rel="noopener noreferrer"
-																						style={{
-																							textDecoration: "none",
-																							color: "#2563eb",
-																						}}
-																					>
-																						{productTitle}
-																					</a>
-																				) : (
-																					productTitle
-																				)}
-																				{u.variantSku && ` (${u.variantSku})`}:
-																				€{u.oldPrice.toFixed(2)} → €
-																				{u.newPrice.toFixed(2)}
-																				{u.priceChange !== 0 && (
-																					<span
-																						style={{
-																							color:
-																								u.priceChange > 0
-																									? "#dc2626"
-																									: "#059669",
-																						}}
-																					>
-																						{` (${u.priceChange > 0 ? "+" : ""}€${u.priceChange.toFixed(2)})`}
-																					</span>
-																				)}
-																			</Text>
-																		</li>
-																	);
-																})}
-														</ul>
+																		return (
+																			<li key={u.variantId}>
+																				<Text as="span" tone="subdued">
+																					{productHandle && shopDomain ? (
+																						<a
+																							href={`https://${shopDomain}/admin/products/${u.productId.split("/").pop()}`}
+																							target="_blank"
+																							rel="noopener noreferrer"
+																							style={{
+																								textDecoration: "none",
+																								color: "#2563eb",
+																							}}
+																						>
+																							{productTitle}
+																						</a>
+																					) : (
+																						productTitle
+																					)}
+																					{u.variantSku && ` (${u.variantSku})`}
+																					: €{u.oldPrice.toFixed(2)} → €
+																					{u.newPrice.toFixed(2)}
+																					{u.priceChange !== 0 && (
+																						<span
+																							style={{
+																								color:
+																									u.priceChange > 0
+																										? "#dc2626"
+																										: "#059669",
+																							}}
+																						>
+																							{` (${u.priceChange > 0 ? "+" : ""}€${u.priceChange.toFixed(2)})`}
+																						</span>
+																					)}
+																				</Text>
+																			</li>
+																		);
+																	},
+																)}
+															</ul>
+														</div>
 													</div>
 												)}
 										</div>
@@ -499,66 +509,6 @@ export default function AppIndex({
 											Sync Omnia Pricing
 										</Button>
 									</Form>
-
-									<Form method="post">
-										<input
-											type="hidden"
-											name="action"
-											value="sync-omnia-pricing"
-										/>
-										<input type="hidden" name="limit" value="3" />
-										<Button
-											submit
-											loading={
-												isSubmitting && actionType === "sync-omnia-pricing"
-											}
-										>
-											Test 3 Updates
-										</Button>
-									</Form>
-
-									{omniaPricingStatus?.success && (
-										<Form method="post">
-											<input
-												type="hidden"
-												name="action"
-												value="send-omnia-report-email"
-											/>
-											<Button
-												submit
-												loading={
-													isSubmitting &&
-													actionType === "send-omnia-report-email"
-												}
-											>
-												Send Email
-											</Button>
-										</Form>
-									)}
-
-									{omniaPricingStatus?.runId && (
-										<Form method="post">
-											<input
-												type="hidden"
-												name="action"
-												value="revert-omnia-pricing"
-											/>
-											<input
-												type="hidden"
-												name="runId"
-												value={omniaPricingStatus.runId}
-											/>
-											<Button
-												tone="critical"
-												submit
-												loading={
-													isSubmitting && actionType === "revert-omnia-pricing"
-												}
-											>
-												Revert Prices
-											</Button>
-										</Form>
-									)}
 								</InlineStack>
 							</InlineStack>
 						</div>
