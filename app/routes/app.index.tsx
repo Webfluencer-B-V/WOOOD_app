@@ -300,6 +300,14 @@ export default function AppIndex({
 										Sync Experience Center
 									</Button>
 								</Form>
+								<Form method="post">
+									<input
+										type="hidden"
+										name="action"
+										value="toggle-ec-scheduler"
+									/>
+									<Button submit>Toggle EC Scheduler</Button>
+								</Form>
 							</InlineStack>
 						</div>
 					</Card>
@@ -345,6 +353,14 @@ export default function AppIndex({
 									>
 										Update Store Locator
 									</Button>
+								</Form>
+								<Form method="post">
+									<input
+										type="hidden"
+										name="action"
+										value="toggle-sl-scheduler"
+									/>
+									<Button submit>Toggle SL Scheduler</Button>
 								</Form>
 							</InlineStack>
 						</div>
@@ -508,6 +524,14 @@ export default function AppIndex({
 										>
 											Sync Omnia Pricing
 										</Button>
+									</Form>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="toggle-omnia-scheduler"
+										/>
+										<Button submit>Toggle Omnia Scheduler</Button>
 									</Form>
 								</InlineStack>
 							</InlineStack>
@@ -674,6 +698,39 @@ export async function action({ context, request }: Route.ActionArgs) {
 					success: true,
 					message: "Webhooks registered successfully.",
 				};
+			}
+
+			case "toggle-ec-scheduler": {
+				if (!shopDomain) throw new Error("Shop domain required");
+				const key = `scheduler:enabled:experience-center:${shopDomain}`;
+				const current = await context.cloudflare.env.WOOOD_KV?.get(key);
+				await context.cloudflare.env.WOOOD_KV?.put(
+					key,
+					current === "false" ? "true" : "false",
+				);
+				return { success: true, message: "EC scheduler toggled" };
+			}
+
+			case "toggle-sl-scheduler": {
+				if (!shopDomain) throw new Error("Shop domain required");
+				const key = `scheduler:enabled:store-locator:${shopDomain}`;
+				const current = await context.cloudflare.env.WOOOD_KV?.get(key);
+				await context.cloudflare.env.WOOOD_KV?.put(
+					key,
+					current === "false" ? "true" : "false",
+				);
+				return { success: true, message: "Store Locator scheduler toggled" };
+			}
+
+			case "toggle-omnia-scheduler": {
+				if (!shopDomain) throw new Error("Shop domain required");
+				const key = `scheduler:enabled:omnia-pricing:${shopDomain}`;
+				const current = await context.cloudflare.env.WOOOD_KV?.get(key);
+				await context.cloudflare.env.WOOOD_KV?.put(
+					key,
+					current === "false" ? "true" : "false",
+				);
+				return { success: true, message: "Omnia scheduler toggled" };
 			}
 
 			case "sync-omnia-pricing": {

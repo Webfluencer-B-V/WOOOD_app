@@ -60,6 +60,9 @@ export default function App({ loaderData }: Route.ComponentProps) {
 					>
 						{t("pricingPlans")}
 					</Link>
+					<Link to="/app?section=experience-center">EC</Link>
+					<Link to="/app?section=store-locator">Store Locator</Link>
+					<Link to="/app?section=omnia">Omnia Pricing</Link>
 				</NavMenu>
 
 				<AppOutlet />

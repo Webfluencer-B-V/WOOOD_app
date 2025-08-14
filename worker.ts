@@ -592,6 +592,10 @@ export default {
 			event.cron === "0 */6 * * *"
 		) {
 			for (const shop of shops) {
+				const enabled = await env.WOOOD_KV?.get(
+					`scheduler:enabled:store-locator:${shop}`,
+				);
+				if (enabled === "false") continue;
 				await (
 					env as unknown as {
 						SCHEDULED_QUEUE?: {
@@ -615,6 +619,10 @@ export default {
 			(event.cron === "0 */6 * * *" || event.cron === "0 4 * * *")
 		) {
 			for (const shop of shops) {
+				const enabled = await env.WOOOD_KV?.get(
+					`scheduler:enabled:experience-center:${shop}`,
+				);
+				if (enabled === "false") continue;
 				await (
 					env as unknown as {
 						SCHEDULED_QUEUE?: {
@@ -638,6 +646,10 @@ export default {
 			event.cron === "0 4 * * *"
 		) {
 			for (const shop of shops) {
+				const enabled = await env.WOOOD_KV?.get(
+					`scheduler:enabled:omnia-pricing:${shop}`,
+				);
+				if (enabled === "false") continue;
 				await (
 					env as unknown as {
 						SCHEDULED_QUEUE?: {
