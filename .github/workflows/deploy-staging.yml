@@ -38,7 +38,9 @@ jobs:
 
       - name: Read package version
         id: pkg
-        run: echo "version=$(node -p -e \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+        run: |
+          VERSION=$(node -e "process.stdout.write(require('./package.json').version)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Shopify App (staging)
         env:
