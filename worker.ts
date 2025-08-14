@@ -430,7 +430,11 @@ export default {
 				`${prefix}${frameAncestors}`.trim(),
 			);
 		}
-		return new Response(response.body, { ...response, headers });
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
 	},
 
 	// Strongly-typed minimal queue batch type compatible with Workers
