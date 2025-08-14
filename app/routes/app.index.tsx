@@ -2,10 +2,13 @@ import {
 	Badge,
 	Banner,
 	Button,
+	ButtonGroup,
 	Card,
 	InlineStack,
 	Layout,
+	List,
 	Page,
+	Scrollable,
 	Text,
 } from "@shopify/polaris";
 import { useTranslation } from "react-i18next";
@@ -251,8 +254,11 @@ export default function AppIndex({
 			<Layout>
 				<Layout.Section>
 					<Card>
-						<Text variant="headingMd" as="h2">
+						<Text variant="headingLg" as="h2">
 							{data?.shop?.name}
+						</Text>
+						<Text as="p" tone="subdued">
+							Manage Experience Center, Store Locator, and Omnia pricing
 						</Text>
 					</Card>
 				</Layout.Section>
@@ -320,34 +326,37 @@ export default function AppIndex({
 										</div>
 									)}
 								</div>
-								<Form method="post">
-									<input
-										type="hidden"
-										name="action"
-										value="sync-experience-center"
-									/>
-									<Button
-										variant="primary"
-										submit
-										loading={
-											isSubmitting && actionType === "sync-experience-center"
-										}
-									>
-										Sync Experience Center
-									</Button>
-								</Form>
-								<Form method="post">
-									<input
-										type="hidden"
-										name="action"
-										value="toggle-ec-scheduler"
-									/>
-									{isEcSchedulerEnabled !== null && (
-										<Button submit>
-											{isEcSchedulerEnabled ? "Disable" : "Enable"} EC Scheduler
+								<ButtonGroup>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="sync-experience-center"
+										/>
+										<Button
+											variant="primary"
+											submit
+											loading={
+												isSubmitting && actionType === "sync-experience-center"
+											}
+										>
+											Sync Experience Center
 										</Button>
-									)}
-								</Form>
+									</Form>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="toggle-ec-scheduler"
+										/>
+										{isEcSchedulerEnabled !== null && (
+											<Button submit>
+												{isEcSchedulerEnabled ? "Disable" : "Enable"} EC
+												Scheduler
+											</Button>
+										)}
+									</Form>
+								</ButtonGroup>
 							</InlineStack>
 						</div>
 					</Card>
@@ -378,34 +387,37 @@ export default function AppIndex({
 										</Text>
 									)}
 								</div>
-								<Form method="post">
-									<input
-										type="hidden"
-										name="action"
-										value="sync-store-locator"
-									/>
-									<Button
-										variant="primary"
-										submit
-										loading={
-											isSubmitting && actionType === "sync-store-locator"
-										}
-									>
-										Update Store Locator
-									</Button>
-								</Form>
-								<Form method="post">
-									<input
-										type="hidden"
-										name="action"
-										value="toggle-sl-scheduler"
-									/>
-									{isSlSchedulerEnabled !== null && (
-										<Button submit>
-											{isSlSchedulerEnabled ? "Disable" : "Enable"} SL Scheduler
+								<ButtonGroup>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="sync-store-locator"
+										/>
+										<Button
+											variant="primary"
+											submit
+											loading={
+												isSubmitting && actionType === "sync-store-locator"
+											}
+										>
+											Update Store Locator
 										</Button>
-									)}
-								</Form>
+									</Form>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="toggle-sl-scheduler"
+										/>
+										{isSlSchedulerEnabled !== null && (
+											<Button submit>
+												{isSlSchedulerEnabled ? "Disable" : "Enable"} SL
+												Scheduler
+											</Button>
+										)}
+									</Form>
+								</ButtonGroup>
 							</InlineStack>
 						</div>
 					</Card>
@@ -484,33 +496,27 @@ export default function AppIndex({
 											) &&
 												omniaPricingStatus.summary.updatedSamples.length >
 													0 && (
-													<div style={{ marginTop: "8px" }}>
+													<>
 														<Text as="p" tone="subdued">
 															Recent updates (by product):
 														</Text>
-														<div
-															style={{
-																maxHeight: 320,
-																overflowY: "auto",
-																border: "1px solid #e5e7eb",
-																borderRadius: 6,
-																padding: 8,
-															}}
+														<Scrollable
+															shadow
+															focusable
+															style={{ maxHeight: 320 }}
 														>
-															<ul style={{ paddingLeft: 16, margin: 0 }}>
+															<List type="bullet">
 																{omniaPricingStatus.summary.updatedSamples.map(
 																	(u) => {
-																		const productHandle = u.productHandle;
 																		const productTitle =
 																			u.productTitle ||
 																			`Product ${u.productId.split("/").pop()}`;
 																		const shopDomain =
 																			data?.shop?.myshopifyDomain;
-
 																		return (
-																			<li key={u.variantId}>
+																			<List.Item key={u.variantId}>
 																				<Text as="span" tone="subdued">
-																					{productHandle && shopDomain ? (
+																					{u.productHandle && shopDomain ? (
 																						<a
 																							href={`https://${shopDomain}/admin/products/${u.productId.split("/").pop()}`}
 																							target="_blank"
@@ -541,18 +547,18 @@ export default function AppIndex({
 																						</span>
 																					)}
 																				</Text>
-																			</li>
+																			</List.Item>
 																		);
 																	},
 																)}
-															</ul>
-														</div>
-													</div>
+															</List>
+														</Scrollable>
+													</>
 												)}
 										</div>
 									)}
 								</div>
-								<InlineStack gap="200">
+								<ButtonGroup>
 									<Form method="post">
 										<input
 											type="hidden"
@@ -582,7 +588,7 @@ export default function AppIndex({
 											</Button>
 										)}
 									</Form>
-								</InlineStack>
+								</ButtonGroup>
 							</InlineStack>
 						</div>
 					</Card>
