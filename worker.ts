@@ -38,9 +38,10 @@ declare module "react-router" {
 	}
 }
 
+// Prevent bundler from resolving the virtual module at build time by using a non-literal specifier
+const serverBuildSpecifier = "virtual:react-router/server-build";
 const requestHandler = createRequestHandler(
-	// virtual module injected by build tool
-	() => import("virtual:react-router/server-build"),
+	() => import(serverBuildSpecifier),
 	"production",
 );
 
