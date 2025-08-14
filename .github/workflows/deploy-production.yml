@@ -1,0 +1,49 @@
+name: Deploy (Production)
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NODE_VERSION: 22
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web (React Router)
+        run: npm run build:web
+
+      - name: Build app (Shopify CLI)
+        run: npm run build
+
+      - name: Select production Shopify config
+        run: cp shopify.app.prod.toml shopify.app.toml
+
+      - name: Deploy Cloudflare Worker (production)
+        if: ${{ vars.CF_GIT_INTEGRATION != 'true' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy -c wrangler.production.json --keep-vars
+
+      # Optional: Deploy Shopify app (enable when CI auth is configured)
+      # - name: Deploy Shopify app (production)
+      #   run: npm run deploy:shopify
+      #   env:
+      #     SHOPIFY_FLAG_FORCE: true
+      #     SHOPIFY_CLI_TTY: 0
+
+

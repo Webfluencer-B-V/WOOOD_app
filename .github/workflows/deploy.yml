@@ -1,58 +1,10 @@
-name: Deploy
+name: (Deprecated) Deploy Combined
 
 on:
-  push:
-    branches:
-      - '**'
+  workflow_dispatch: {}
 
 jobs:
-  deploy:
+  noop:
     runs-on: ubuntu-latest
-    env:
-      NODE_VERSION: 22
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build web (React Router)
-        run: npm run build:web
-
-      - name: Build app (Shopify CLI)
-        run: npm run build
-
-      - name: Select production Shopify config (production branch)
-        if: github.ref == 'refs/heads/production'
-        run: |
-          cp shopify.app.prod.toml shopify.app.toml
-
-      - name: Deploy Cloudflare Worker (staging)
-        if: github.ref == 'refs/heads/staging'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c wrangler.json --keep-vars
-
-      - name: Deploy Cloudflare Worker (production)
-        if: github.ref == 'refs/heads/production'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c wrangler.production.json --keep-vars
-
-      # Optional: Deploy Shopify app (uncomment when CI auth is configured)
-      # - name: Deploy Shopify app
-      #   run: npm run deploy:shopify
-      #   env:
-      #     SHOPIFY_FLAG_FORCE: true
-      #     SHOPIFY_CLI_TTY: 0
-      #   if: github.ref == 'refs/heads/main'
-
-  # Removed duplicate legacy deploy stanza
+      - run: echo "This workflow is deprecated. Use 'Deploy (Staging)' or 'Deploy (Production)'."
