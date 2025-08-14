@@ -185,23 +185,99 @@ export interface OmniaFeedRow {
   discountPercentage: number;
 }
 
-export interface FeedParseResult {
-  success: boolean;
-  totalRows: number;
-  validRows: number;
-  invalidRows: number;
-  products: OmniaFeedRow[];
-  errors: string[];
-}
+**Endpoints:**
+- `POST /api/store-locator/upsert` — Triggers the fetch, transform, and upsert process manually
+- `GET /api/store-locator/status` — Returns the last upsert status and timestamp
+- **Scheduled Cron** — Runs daily at 04:00 UTC
 
-export async function fetchOmniaFeedData(
-  config: OmniaFeedApiConfig,
-): Promise<FeedParseResult> {
-  const { feedUrl, userAgent = 'WOOOD-Shopify-Integration/1.0' } = config;
+**Example Use Case:**
+Automatically syncs a dealer/store locator JSON blob to a shop metafield for use in theme/app blocks, with full control over data mapping and update frequency.
 
-  if (!feedUrl) {
-    throw new Error("Missing feedUrl for Omnia Feed API");
-  }
+**Expected Outcome:** ✅ **ACHIEVED** - Shop metafields always reflect the latest external data, with minimal manual intervention and full auditability.
+
+**Implementation:** This functionality is integrated into the main worker (`workers/src/index.ts`) with comprehensive logging and error handling.
+
+### Sprint 27: Extension Settings Simplification & Enhanced Logging (COMPLETED - 2 SP) ✅
+**Goal:** Simplify extension settings by removing redundant options, improve setting descriptions, and add comprehensive logging to debug delivery date flow issues.
+
+**Key Features Delivered:**
+- [x] **Settings Simplification**: Removed `only_show_if_in_stock` setting (now baked-in feature, always enabled)
+- [x] **Improved Setting Descriptions**: More descriptive and clear explanations for each setting
+- [x] **Default Values Added**: All settings now have clear default values in TOML configuration
+- [x] **Reorganized Settings Order**: Logical ordering with most important settings first
+- [x] **Comprehensive Flow Logging**: Detailed console logs showing complete decision flow
+- [x] **Inventory Check Always Enabled**: Stock verification now built into extension (no longer optional)
+- [x] **Enhanced Debug Visibility**: Clear logging for shipping method detection, delivery type, and date filtering
+- [x] **Visual Flow Documentation**: Added Mermaid flowchart to README.md for clear decision flow visualization
+
+**Settings Changes:**
+- **Removed**: `only_show_if_in_stock` (inventory check now always enabled)
+- **Improved**: All descriptions now explain functionality clearly with defaults
+- **Reorganized**: `delivery_method_cutoff` moved to prominent position
+- **Enhanced**: Added default values to all settings in TOML configuration
+
+**New Logging System:**
+```javascript
+🔧 [Settings] Extension Mode: Full, Cutoff: 30, Preview: false
+🔍 [Inventory Check] Starting for 2 variants in shop: woood-shop.myshopify.com
+✅ [Inventory Check] API Response: {success: true, inventory: {...}}
+🔍 [Stock Check Passed] Stock check passed, returning true
+🚚 [Shipping Method] Selected: "35 - EXPEDITIE STANDAARD" → Number: 35
+🎯 [Delivery Type] Method: 35, Cutoff: 30, Is Dutchned: true
+📋 [Flow Summary] Stock: true, Highest Method: "35 - EXPEDITIE STANDAARD", Delivery Type: DUTCHNED
+📅 [Date Source] DUTCHNED delivery - Using 14 API dates from Dutchned
+🔍 [Date Filtering] Starting with 14 DUTCHNED dates
+🔍 [Date Filtering] ERP filtering enabled - minimum date: 2025-07-20
+🔍 [Date Filtering] After ERP filtering: 8 dates remain
+🔍 [Date Filtering] Final result: 8 DUTCHNED dates available
+```
+
+**Three-Step Decision Flow:**
+1. **Stock Check**: Always enabled inventory verification from Shopify Admin API
+2. **Shipping Method Analysis**: Extract number from method name, compare with cutoff
+3. **Date Source Selection**: ERP (no picker), DUTCHNED (API dates), or POST (mock dates)
+
+**Visual Flow Documentation:**
+Added comprehensive Mermaid flowchart to README.md showing the complete decision process:
+```mermaid
+flowchart TD
+    A[🛒 Cart Items] --> B{📦 Stock Check}
+    B -->|❌ Out of Stock| C[🏭 ERP Delivery]
+    B -->|✅ In Stock| D{🚚 Shipping Method Check}
+
+    D -->|≥ 30| E[🚛 DUTCHNED Delivery]
+    D -->|< 30| F[📮 POST Delivery]
+
+    C --> G[📅 No Date Picker<br/>ERP determines dates]
+    E --> H[📅 API Dates<br/>Live from Dutchned]
+    F --> I[📅 Mock Dates<br/>Generated locally]
+
+    H --> J{🔍 ERP Filtering?}
+    I --> J
+    J -->|Yes| K[Filter dates ≥ minimum ERP date]
+    J -->|No| L[Show all dates]
+    K --> M[📱 Display Date Picker]
+    L --> M
+```
+
+**Technical Implementation:**
+- **Baked-in Inventory Check**: Removed setting dependency, always verify stock
+- **Enhanced Error Handling**: Better fallbacks when inventory API fails
+- **Comprehensive Logging**: Track complete flow from settings to final display
+- **Type Safety**: Improved TypeScript types for settings and logging
+- **Performance Optimization**: Reduced unnecessary re-renders with better useMemo dependencies
+- **Visual Documentation**: Professional Mermaid flowchart for developer and merchant understanding
+
+**Debugging Benefits:**
+- **Clear Flow Visibility**: See exactly why dates appear or don't appear
+- **Shipping Method Tracking**: Understand how method numbers are extracted
+- **Delivery Type Logic**: See which delivery type is selected and why
+- **Date Filtering Details**: Track how ERP filtering affects available dates
+- **Error Diagnosis**: Better error messages and fallback behavior
+- **Visual Understanding**: Clear flowchart for troubleshooting and onboarding
+
+**Expected Outcome:** ✅ **ACHIEVED** - Simplified, more intuitive settings with comprehensive debugging capabilities and visual documentation for troubleshooting delivery date issues.
+
 
   const headers: Record<string, string> = {
     'User-Agent': userAgent,
@@ -219,10 +295,481 @@ export async function fetchOmniaFeedData(
       `Failed to fetch Omnia feed data: ${response.status} ${response.statusText}${extra}`,
     );
   }
+          break;
+        default:
+          comparison = 0;
+      }
 
-  const csvData = await response.text();
-  return parseOmniaCSV(csvData);
+      return sortDirection === 'desc' ? -comparison : comparison;
+    });
+
+    return filtered;
+  }, [errors, errorTypeFilter, searchValue, sortValue]);
+
+  const paginatedErrors = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredAndSortedErrors.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredAndSortedErrors, currentPage]);
+
+  const tableRows = paginatedErrors.map((error, index) => [
+    error.ean,
+    <Badge
+      status="critical"
+      onClick={() => {
+        setSelectedError(error);
+        setShowErrorModal(true);
+      }}
+    >
+      {error.errorCode.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+    </Badge>,
+    error.errorMessage,
+    `€${error.currentPrice.toFixed(2)}`,
+    `€${error.newPrice.toFixed(2)}`,
+    `${error.discountPercentage.toFixed(1)}%`,
+    <ButtonGroup>
+      <Button
+        size="slim"
+        onClick={() => viewProductDetails(error.productId)}
+      >
+        View Product
+      </Button>
+      <Button
+        size="slim"
+        onClick={() => retryProduct(error.productId)}
+      >
+        Retry
+      </Button>
+    </ButtonGroup>,
+  ]);
+
+  const errorTypeOptions = [
+    { label: 'All Error Types', value: '' },
+    { label: 'Discount Too Large', value: 'discount_too_large' },
+    { label: 'Base Price Differs', value: 'base_price_differs' },
+    { label: 'Validation Fails', value: 'validation_fails' },
+  ];
+
+  const sortOptions = [
+    { label: 'Newest First', value: 'timestamp_desc' },
+    { label: 'Oldest First', value: 'timestamp_asc' },
+    { label: 'Highest Discount', value: 'discount_desc' },
+    { label: 'Lowest Discount', value: 'discount_asc' },
+    { label: 'Highest Price', value: 'price_desc' },
+    { label: 'Lowest Price', value: 'price_asc' },
+  ];
+
+  if (errors.length === 0) {
+    return (
+      <Card>
+        <Card.Section>
+          <EmptyState
+            heading="No validation errors"
+            image="https://cdn.shopify.com/s/files/1/0757/9955/files/empty-state.svg"
+          >
+            <p>All products passed validation in the last import.</p>
+          </EmptyState>
+        </Card.Section>
+      </Card>
+    );
+  }
+
+  return (
+    <>
+      <Card>
+        <Card.Section>
+          <Stack vertical spacing="loose">
+            <Stack alignment="center" distribution="equalSpacing">
+              <Heading>Error Management</Heading>
+              <ButtonGroup>
+                <Button
+                  icon={ExportMinor}
+                  onClick={() => exportErrors(filteredAndSortedErrors)}
+                >
+                  Export Errors
+                </Button>
+                <Button
+                  primary
+                  onClick={() => retryAllErrors(filteredAndSortedErrors)}
+                >
+                  Retry All
+                </Button>
+              </ButtonGroup>
+            </Stack>
+
+            <Banner status="info">
+              <p>
+                Showing {filteredAndSortedErrors.length} of {errors.length} errors.
+                Products with validation errors are not updated and require manual review.
+              </p>
+            </Banner>
+
+            <Filters
+              queryValue={searchValue}
+              queryPlaceholder="Search by EAN or error message"
+              filters={[
+                {
+                  key: 'errorType',
+                  label: 'Error Type',
+                  filter: (
+                    <Select
+                      options={errorTypeOptions}
+                      value={errorTypeFilter || ''}
+                      onChange={setErrorTypeFilter}
+                    />
+                  ),
+                },
+                {
+                  key: 'sort',
+                  label: 'Sort by',
+                  filter: (
+                    <Select
+                      options={sortOptions}
+                      value={sortValue}
+                      onChange={setSortValue}
+                    />
+                  ),
+                },
+              ]}
+              onQueryChange={setSearchValue}
+              onQueryClear={() => setSearchValue('')}
+              onClearAll={() => {
+                setSearchValue('');
+                setErrorTypeFilter('');
+                setSortValue('timestamp_desc');
+              }}
+            />
+          </Stack>
+        </Card.Section>
+
+        <DataTable
+          columnContentTypes={['text', 'text', 'text', 'numeric', 'numeric', 'numeric', 'text']}
+          headings={['EAN', 'Error Type', 'Message', 'Current Price', 'New Price', 'Discount %', 'Actions']}
+          rows={tableRows}
+          sortable={[false, true, false, true, true, true, false]}
+          defaultSortDirection="descending"
+          initialSortColumnIndex={1}
+        />
+
+        {filteredAndSortedErrors.length > itemsPerPage && (
+          <Card.Section>
+            <Stack alignment="center">
+              <Pagination
+                hasNext={currentPage * itemsPerPage < filteredAndSortedErrors.length}
+                hasPrevious={currentPage > 1}
+                onNext={() => setCurrentPage(prev => prev + 1)}
+                onPrevious={() => setCurrentPage(prev => prev - 1)}
+              />
+              <TextStyle variation="subdued">
+                Page {currentPage} of {Math.ceil(filteredAndSortedErrors.length / itemsPerPage)}
+              </TextStyle>
+            </Stack>
+          </Card.Section>
+        )}
+      </Card>
+
+      {selectedError && (
+        <Modal
+          open={showErrorModal}
+          onClose={() => setShowErrorModal(false)}
+          title="Error Details"
+          primaryAction={{
+            content: 'View Product',
+            onAction: () => viewProductDetails(selectedError.productId),
+          }}
+          secondaryActions={[
+            {
+              content: 'Retry Product',
+              onAction: () => retryProduct(selectedError.productId),
+            },
+          ]}
+        >
+          <Modal.Section>
+            <Scrollable style={{height: '300px'}}>
+              <Stack vertical spacing="loose">
+                <DescriptionList
+                  items={[
+                    { term: 'EAN Code', description: selectedError.ean },
+                    { term: 'Error Type', description: selectedError.errorCode },
+                    { term: 'Error Message', description: selectedError.errorMessage },
+                    { term: 'Current Price', description: `€${selectedError.currentPrice.toFixed(2)}` },
+                    { term: 'New Price', description: `€${selectedError.newPrice.toFixed(2)}` },
+                    { term: 'Discount Percentage', description: `${selectedError.discountPercentage.toFixed(1)}%` },
+                  ]}
+                />
+              </Stack>
+            </Scrollable>
+          </Modal.Section>
+        </Modal>
+      )}
+    </>
+  );
 }
+```
+
+**Phase 4: Configuration Management with Polaris Forms (1 SP)**
+
+**4.1 Advanced Configuration Interface**
+```typescript
+// components/ValidationConfigCard.tsx
+import {
+  Card,
+  FormLayout,
+  TextField,
+  Checkbox,
+  Button,
+  Banner,
+  Stack,
+  Heading,
+  TextStyle,
+  RangeSlider,
+  Select,
+  Collapsible,
+  Link,
+  Tooltip,
+  Icon
+} from '@shopify/polaris';
+import { QuestionMarkInverseMinor } from '@shopify/polaris-icons';
+
+export function ValidationConfigCard({ config, shop }: ValidationConfigCardProps) {
+  const [formData, setFormData] = useState(config);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (formData.maxDiscountPercentage < 0 || formData.maxDiscountPercentage > 100) {
+      newErrors.maxDiscountPercentage = 'Discount percentage must be between 0 and 100';
+    }
+
+    if (formData.basePriceTolerance < 0 || formData.basePriceTolerance > 50) {
+      newErrors.basePriceTolerance = 'Base price tolerance must be between 0 and 50%';
+    }
+
+    if (formData.minPriceThreshold < 0) {
+      newErrors.minPriceThreshold = 'Minimum price threshold cannot be negative';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!validateForm()) return;
+
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      const response = await fetch('/api/pricing-feed/validation-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop, config: formData }),
+      });
+
+      if (!response.ok) throw new Error('Failed to save configuration');
+
+      setSaveMessage('Configuration saved successfully');
+      setTimeout(() => setSaveMessage(null), 5000);
+    } catch (error: any) {
+      setSaveMessage(`Error: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const discountPresetOptions = [
+    { label: 'Conservative (70%)', value: '70' },
+    { label: 'Standard (90%)', value: '90' },
+    { label: 'Aggressive (95%)', value: '95' },
+    { label: 'Custom', value: 'custom' },
+  ];
+
+  return (
+    <Card>
+      <Card.Section>
+        <Stack vertical spacing="loose">
+          <Stack alignment="center" distribution="equalSpacing">
+            <Heading>Validation Configuration</Heading>
+            <Link onClick={() => setShowAdvanced(!showAdvanced)}>
+              {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
+            </Link>
+          </Stack>
+
+          {saveMessage && (
+            <Banner
+              status={saveMessage.startsWith('Error') ? 'critical' : 'success'}
+              onDismiss={() => setSaveMessage(null)}
+            >
+              {saveMessage}
+            </Banner>
+          )}
+
+          <FormLayout>
+            <FormLayout.Group>
+              <Stack spacing="tight" alignment="center">
+                <TextField
+                  label="Maximum Discount Percentage"
+                  type="number"
+                  value={formData.maxDiscountPercentage.toString()}
+                  onChange={(value) => setFormData(prev => ({
+                    ...prev,
+                    maxDiscountPercentage: parseFloat(value) || 0
+                  }))}
+                  suffix="%"
+                  error={errors.maxDiscountPercentage}
+                  helpText="Products with discounts higher than this will be rejected"
+                />
+                <Tooltip content="This prevents unrealistic discounts that might indicate data errors">
+                  <Icon source={QuestionMarkInverseMinor} />
+                </Tooltip>
+              </Stack>
+
+              <Select
+                label="Discount Preset"
+                options={discountPresetOptions}
+                value={formData.maxDiscountPercentage.toString()}
+                onChange={(value) => {
+                  if (value !== 'custom') {
+                    setFormData(prev => ({
+                      ...prev,
+                      maxDiscountPercentage: parseFloat(value)
+                    }));
+                  }
+                }}
+              />
+            </FormLayout.Group>
+
+            <RangeSlider
+              label="Maximum Discount Percentage (Visual)"
+              value={formData.maxDiscountPercentage}
+              onChange={(value) => setFormData(prev => ({
+                ...prev,
+                maxDiscountPercentage: value
+              }))}
+              output
+              min={0}
+              max={100}
+              step={5}
+            />
+
+            <FormLayout.Group>
+              <TextField
+                label="Base Price Tolerance"
+                type="number"
+                value={formData.basePriceTolerance.toString()}
+                onChange={(value) => setFormData(prev => ({
+                  ...prev,
+                  basePriceTolerance: parseFloat(value) || 0
+                }))}
+                suffix="%"
+                error={errors.basePriceTolerance}
+                helpText="Allowed difference between current and new base prices"
+              />
+
+              <Checkbox
+                label="Enforce Base Price Matching"
+                checked={formData.enforceBasePriceMatch}
+                onChange={(checked) => setFormData(prev => ({
+                  ...prev,
+                  enforceBasePriceMatch: checked
+                }))}
+                helpText="Reject updates where base prices don't match within tolerance"
+              />
+            </FormLayout.Group>
+
+            <Collapsible
+              open={showAdvanced}
+              id="advanced-settings"
+              transition={{duration: '200ms', timingFunction: 'ease-in-out'}}
+            >
+              <Stack vertical spacing="loose">
+                <Heading element="h4">Advanced Settings</Heading>
+
+                <FormLayout.Group>
+                  <TextField
+                    label="Minimum Price Threshold"
+                    type="number"
+                    value={formData.minPriceThreshold.toString()}
+                    onChange={(value) => setFormData(prev => ({
+                      ...prev,
+                      minPriceThreshold: parseFloat(value) || 0
+                    }))}
+                    prefix="€"
+                    error={errors.minPriceThreshold}
+                    helpText="Minimum allowed product price"
+                  />
+
+                  <TextField
+                    label="Maximum Price Threshold"
+                    type="number"
+                    value={formData.maxPriceThreshold.toString()}
+                    onChange={(value) => setFormData(prev => ({
+                      ...prev,
+                      maxPriceThreshold: parseFloat(value) || 0
+                    }))}
+                    prefix="€"
+                    helpText="Maximum allowed product price"
+                  />
+                </FormLayout.Group>
+
+                <Checkbox
+                  label="Enable Strict Validation Mode"
+                  checked={formData.strictMode || false}
+                  onChange={(checked) => setFormData(prev => ({
+                    ...prev,
+                    strictMode: checked
+                  }))}
+                  helpText="Apply additional validation rules for data consistency"
+                />
+              </Stack>
+            </Collapsible>
+
+            <Stack distribution="trailing">
+              <ButtonGroup>
+                <Button onClick={() => setFormData(config)}>
+                  Reset to Default
+                </Button>
+                <Button
+                  primary
+                  loading={isSaving}
+                  onClick={handleSave}
+                  disabled={Object.keys(errors).length > 0}
+                >
+                  Save Configuration
+                </Button>
+              </ButtonGroup>
+            </Stack>
+          </FormLayout>
+        </Stack>
+      </Card.Section>
+    </Card>
+  );
+}
+```
+
+**Complete Polaris Component Integration:**
+- **Layout & Navigation**: Page, Layout, Card, Tabs for organized content structure
+- **Data Display**: DataTable, Badge, DisplayText, DescriptionList for clear information presentation
+- **Form Controls**: TextField, Checkbox, Select, RangeSlider, ButtonGroup for user interactions
+- **Feedback**: Banner, Modal, Tooltip, ProgressBar for user feedback and guidance
+- **Actions**: Button, Pagination, Filters for user actions and navigation
+- **Visual Elements**: Icon, Divider, EmptyState for enhanced visual hierarchy
+
+**Expected Outcome:** Professional embedded Shopify app dashboard fully leveraging Polaris design system for consistent, accessible, and beautiful user interface matching Shopify's design standards.
+
+### Sprint 25: Collection Sorting by Product Metafields (Planned - 6 SP)
+**Goal:** Implement automated collection sorting system based on product metafields, enabling intelligent product ordering across all collections.
+
+**Feature Overview:**
+- **Product Metafield Sorting**: Sort collections based on `custom.PLP_Sortering` metafield containing numeric values (1491, 1421, 1091, 1991)
+- **Flexible Configuration**: Support for product properties, metafields, or first variant properties
+- **Collection Targeting**: Option to sort specific collections or all manually-sorted collections
+- **Sorting Options**: Natural sorting, reverse sorting, and configurable sort order
+- **Automated Execution**: Hourly or daily scheduled sorting with manual trigger capability
+
 
 function parseOmniaCSV(csvData: string): FeedParseResult {
   const lines = csvData.split('\n').filter(line => line.trim());
