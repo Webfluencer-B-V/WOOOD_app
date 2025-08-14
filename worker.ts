@@ -399,43 +399,59 @@ export default {
 	): Promise<Response> {
 		const url = new URL(request.url);
 		const path = url.pathname;
-		if (path.startsWith("/api/delivery-dates"))
-			return handleDeliveryDates(request, env);
-		if (path.startsWith("/api/store-locator"))
-			return handleStoreLocator(request, env);
-		if (path.startsWith("/api/experience-center"))
-			return handleExperienceCenter(request, env);
-		if (path.startsWith("/api/webhooks")) return handleWebhooks(request, env);
-		if (path === "/health") return handleHealth(request, env);
-		const response = await requestHandler(request, {
-			cloudflare: { env, ctx },
-		});
-		// Only adjust headers for embedded app requests
-		const isEmbedded = url.searchParams.get("embedded") === "1";
-		if (!isEmbedded) return response;
+		try {
+			if (path.startsWith("/api/delivery-dates"))
+				return handleDeliveryDates(request, env);
+			if (path.startsWith("/api/store-locator"))
+				return handleStoreLocator(request, env);
+			if (path.startsWith("/api/experience-center"))
+				return handleExperienceCenter(request, env);
+			if (path.startsWith("/api/webhooks")) return handleWebhooks(request, env);
+			if (path === "/health") return handleHealth(request, env);
 
-		const headers = new Headers(response.headers);
-		headers.delete("X-Frame-Options");
-		const csp = headers.get("Content-Security-Policy");
-		const frameAncestors =
-			"frame-ancestors https://admin.shopify.com https://*.myshopify.com;";
-		if (csp && /frame-ancestors/i.test(csp)) {
-			const updated = csp
-				.replace(/frame-ancestors[^;]*;/gi, frameAncestors)
-				.trim();
-			headers.set("Content-Security-Policy", updated);
-		} else {
-			const prefix = csp ? `${csp.trim()} ` : "";
-			headers.set(
-				"Content-Security-Policy",
-				`${prefix}${frameAncestors}`.trim(),
+			const response = await requestHandler(request, {
+				cloudflare: { env, ctx },
+			});
+			// Only adjust headers for embedded app requests
+			const isEmbedded = url.searchParams.get("embedded") === "1";
+			if (!isEmbedded) return response;
+
+			const headers = new Headers(response.headers);
+			headers.delete("X-Frame-Options");
+			const csp = headers.get("Content-Security-Policy");
+			const frameAncestors =
+				"frame-ancestors https://admin.shopify.com https://*.myshopify.com;";
+			if (csp && /frame-ancestors/i.test(csp)) {
+				const updated = csp
+					.replace(/frame-ancestors[^;]*;/gi, frameAncestors)
+					.trim();
+				headers.set("Content-Security-Policy", updated);
+			} else {
+				const prefix = csp ? `${csp.trim()} ` : "";
+				headers.set(
+					"Content-Security-Policy",
+					`${prefix}${frameAncestors}`.trim(),
+				);
+			}
+			return new Response(response.body, {
+				status: response.status,
+				statusText: response.statusText,
+				headers,
+			});
+		} catch (error) {
+			console.error("Worker fetch error:", error);
+			const message = error instanceof Error ? error.message : String(error);
+			return new Response(
+				`<!doctype html><html><body><h1>App Error</h1><pre>${message.slice(
+					0,
+					512,
+				)}</pre></body></html>`,
+				{
+					status: 500,
+					headers: { "Content-Type": "text/html;charset=utf-8" },
+				},
 			);
 		}
-		return new Response(response.body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers,
-		});
 	},
 
 	// Strongly-typed minimal queue batch type compatible with Workers
