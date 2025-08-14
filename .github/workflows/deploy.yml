@@ -3,8 +3,8 @@ name: Deploy
 on:
   push:
     branches:
-      - main
       - staging
+      - production
 
 jobs:
   deploy:
@@ -29,24 +29,24 @@ jobs:
       - name: Build app (Shopify CLI)
         run: npm run build
 
-      - name: Select production Shopify config (main branch)
-        if: github.ref == 'refs/heads/main'
+      - name: Select production Shopify config (production branch)
+        if: github.ref == 'refs/heads/production'
         run: |
           cp shopify.app.prod.toml shopify.app.toml
 
       - name: Deploy Cloudflare Worker (staging)
-        if: github.ref != 'refs/heads/main'
+        if: github.ref == 'refs/heads/staging'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy --keep-vars
+          command: deploy -c wrangler.json --keep-vars
 
       - name: Deploy Cloudflare Worker (production)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/production'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy --env production --keep-vars
+          command: deploy -c wrangler.production.json --keep-vars
 
       # Optional: Deploy Shopify app (uncomment when CI auth is configured)
       # - name: Deploy Shopify app
