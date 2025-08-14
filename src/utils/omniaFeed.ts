@@ -528,8 +528,9 @@ export async function processOmniaFeedWithBulkOperations(
 				const currentCompareAtPrice = variant.compareAtPrice
 					? parseFloat(variant.compareAtPrice)
 					: null;
-				const newPrice = omniaProduct.recommendedSellingPrice;
-				const newCompareAtPrice = omniaProduct.priceAdvice;
+				// Map Omnia fields to Shopify: price = PriceAdvice, compareAtPrice = RecommendedSellingPrice
+				const newPrice = omniaProduct.priceAdvice;
+				const newCompareAtPrice = omniaProduct.recommendedSellingPrice;
 				const priceChange = newPrice - currentPrice;
 
 				matches.push({
@@ -777,18 +778,10 @@ function validateSinglePriceMatch(
 		}
 	}
 
-	// Rule 4: Price validation (selling price shouldn't exceed compare-at price)
-	if (match.newPrice > match.newCompareAtPrice) {
-		errors.push({
-			productId: match.productId,
-			variantId: match.variantId,
-			ean: match.ean,
-			errorCode: "validation_fails",
-			errorMessage: `Selling price €${match.newPrice} exceeds compare-at price €${match.newCompareAtPrice}`,
-			currentPrice: match.currentPrice,
-			newPrice: match.newPrice,
-			discountPercentage: match.discountPercentage,
-		});
+	// Rule 4: Price validation (ensure compareAtPrice is greater than price if provided)
+	if (match.newCompareAtPrice && match.newCompareAtPrice <= match.newPrice) {
+		// We'll allow this through, because we will null-out compareAtPrice at write time
+		// and only block truly invalid thresholds elsewhere.
 	}
 
 	return errors;
@@ -826,11 +819,17 @@ async function updateProductPricesBulk(
 		}
 	`;
 
-	const productVariants = matches.map((match) => ({
-		id: match.variantId,
-		price: match.newPrice.toFixed(2),
-		compareAtPrice: match.newCompareAtPrice.toFixed(2),
-	}));
+	const productVariants = matches.map((match) => {
+		// Shopify requires compareAtPrice > price. If not, set compareAtPrice to null to avoid errors.
+		const compareAtValid = match.newCompareAtPrice > match.newPrice;
+		return {
+			id: match.variantId,
+			price: match.newPrice.toFixed(2),
+			compareAtPrice: compareAtValid
+				? match.newCompareAtPrice.toFixed(2)
+				: null,
+		};
+	});
 
 	// Log the number of variants attempted and first 3 variant IDs
 	console.log(`💰 Attempting to update ${matches.length} product variants:`, {
