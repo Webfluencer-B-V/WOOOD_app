@@ -39,11 +39,19 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy -c wrangler.production.json --keep-vars
 
-      # Optional: Deploy Shopify app (enable when CI auth is configured)
-      # - name: Deploy Shopify app (production)
-      #   run: npm run deploy:shopify
-      #   env:
-      #     SHOPIFY_FLAG_FORCE: true
-      #     SHOPIFY_CLI_TTY: 0
+      - name: Read package version
+        id: pkg
+        run: echo "version=$(node -p -e \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+
+      - name: Deploy Shopify App (production)
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+          SHOPIFY_CLI_TTY: 0
+        run: >-
+          npx shopify app deploy
+          --client-id ${{ vars.SHOPIFY_APP_CLIENT_ID }}
+          --force
+          --message "${{ github.ref_name }}:${{ steps.pkg.outputs.version }}"
+          --version "${{ github.sha }}"
 
 

@@ -36,10 +36,19 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy -c wrangler.json --keep-vars
 
+      - name: Read package version
+        id: pkg
+        run: echo "version=$(node -p -e \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+
       - name: Deploy Shopify App (staging)
-        run: npm run deploy:shopify
         env:
-          SHOPIFY_FLAG_FORCE: true
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
           SHOPIFY_CLI_TTY: 0
+        run: >-
+          npx shopify app deploy
+          --client-id ${{ vars.SHOPIFY_APP_CLIENT_ID }}
+          --force
+          --message "${{ github.ref_name }}:${{ steps.pkg.outputs.version }}"
+          --version "${{ github.sha }}"
 
 
