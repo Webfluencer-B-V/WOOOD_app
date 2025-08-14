@@ -354,6 +354,18 @@ function useSaveMetadataToAttributes(
 function DeliveryDatePicker() {
 	const [errorKey, setErrorKey] = useState<string | null>(null);
 	const [selectedDate, setSelectedDate] = useState<string | null>(null);
+	const _isSavingRef = useRef(false);
+	const attributes = useAttributes();
+
+	// Sync selectedDate from checkout attributes to prevent visual reset on re-render
+	useEffect(() => {
+		const existing = attributes?.find?.(
+			(a: { key: string; value: string }) => a.key === "delivery_date",
+		)?.value as string | undefined;
+		if (existing && existing !== selectedDate) {
+			setSelectedDate(existing);
+		}
+	}, [attributes, selectedDate]);
 	const [selectedShippingMethod, setSelectedShippingMethod] = useState<
 		string | null
 	>(null);
@@ -616,14 +628,7 @@ function DeliveryDatePicker() {
 		console.log(
 			`🔍 [Stock Check Passed] enableOnlyShowIfInStock: ${allProductsInStock}`,
 		);
-		if (!allProductsInStock) {
-			console.log(
-				`🔍 [Stock Check Passed] Stock check failed, returning false`,
-			);
-			return false; // Stock check failed
-		}
-		console.log(`🔍 [Stock Check Passed] Stock check passed, returning true`);
-		return true; // Stock check passed
+		return allProductsInStock;
 	}, [allProductsInStock]);
 
 	// STEP 2: Dutch Order Check Logic - REMOVED, now always proceed
