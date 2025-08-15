@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build app (single step: web + extensions)
+      - name: Build npm app
         run: npm run build
 
       - name: Deploy Cloudflare Worker (staging)
