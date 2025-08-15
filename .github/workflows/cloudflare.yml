@@ -1,95 +1,157 @@
-name: Cloudflare
-
-concurrency:
-  group: cloudflare
-  cancel-in-progress: true
+# .github/workflows/shopify.yml
+name: Shopify
 
 on:
   push:
-    branches:
-      - '**'
-    tags:
-      - 'releases/*'
+    branches: ['**']
   workflow_dispatch: {}
 
 env:
-  NODE_VERSION: 20.19.4
-  WRANGLER_SEND_METRICS: false
+  NODE_VERSION: '20'
   BRANCH_STAGING: ${{ vars.BRANCH_STAGING || 'staging' }}
   BRANCH_PRODUCTION: ${{ vars.BRANCH_PRODUCTION || 'production' }}
 
 jobs:
-  build:
-    name: Build
-    if: ${{ !contains(github.event.head_commit.message, '[skip-ci]') }}
+  deploy-staging:
+    name: Deploy (Staging)
+    if: ${{ github.ref == format('refs/heads/{0}', env.BRANCH_STAGING) }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
       - run: npm ci
-      - name: Build web (React Router)
-        run: npm run build:web
-      - name: Build app (Shopify CLI)
-        run: npm run build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: build
+      - run: npm i -g @shopify/cli@latest
+      - name: Build extensions
+        run: npx shopify app build
+        env:
+          SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
+      - name: Deploy extensions (staging)
+        run: npx shopify app deploy --force --message "${{ github.ref_name }}:${{ github.sha }}" --version "deploy:${{ github.sha }}"
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
 
-  deploy:
-    name: Deploy
-    needs: build
-    if: ${{ vars.CF_GIT_INTEGRATION != 'true' }}
+  deploy-production:
+    name: Deploy (Production)
+    if: ${{ github.ref == format('refs/heads/{0}', env.BRANCH_PRODUCTION) }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: actions/download-artifact@v4
+      - run: npm ci
+      - run: npm i -g @shopify/cli@latest
+      - name: Build extensions
+        run: npx shopify app build
+        env:
+          SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
+      - name: Use production Shopify config
+        run: cp shopify.app.prod.toml shopify.app.toml
+      - name: Read Shopify client id
+        id: shopify
+        run: |
+          CLIENT_ID=$(awk -F= '/^client_id/ {gsub(/[" ]/,"",$2); print $2}' shopify.app.toml)
+          if [ -z "$CLIENT_ID" ]; then echo "client_id missing in shopify.app.toml" && exit 1; fi
+          echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
+      - name: Deploy extensions (production)
+        run: >-
+          npx shopify app deploy
+          --client-id ${{ steps.shopify.outputs.client_id }}
+          --force
+          --message "${{ github.ref_name }}:${{ github.sha }}"
+          --version "deploy:${{ github.sha }}"
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+
+# .github/workflows/cloudflare.yml
+name: Cloudflare
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch: {}
+
+env:
+  NODE_VERSION: '20'
+  BRANCH_STAGING: ${{ vars.BRANCH_STAGING || 'staging' }}
+  BRANCH_PRODUCTION: ${{ vars.BRANCH_PRODUCTION || 'production' }}
+
+jobs:
+  deploy-staging:
+    name: Deploy (Staging)
+    if: ${{ github.ref == format('refs/heads/{0}', env.BRANCH_STAGING) && vars.CF_GIT_INTEGRATION != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          name: build
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-      - name: Determine environment
-        id: env
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+        env:
+          NPM_CONFIG_ENGINE_STRICT: true
+          NPM_CONFIG_FUND: false
+          NPM_CONFIG_PROGRESS: false
+      - name: Build web (React Router)
+        run: npm run build:web
+      - name: Inject runtime vars into built wrangler config
         run: |
-          BR_STG='${{ vars.BRANCH_STAGING || 'staging' }}'
-          BR_PRD='${{ vars.BRANCH_PRODUCTION || 'production' }}'
-          REF='${{ github.ref }}'
-          if [ "$REF" = "refs/heads/$BR_STG" ]; then echo "name=staging" >> "$GITHUB_OUTPUT"; exit 0; fi
-          if [ "$REF" = "refs/heads/$BR_PRD" ]; then echo "name=production" >> "$GITHUB_OUTPUT"; exit 0; fi
-          echo "name=skip" >> "$GITHUB_OUTPUT"
-      - name: Prepare built wrangler config (staging)
-        if: ${{ steps.env.outputs.name == 'staging' }}
-        run: |
-          mkdir -p build/server
-          jq '.main="build/server/index.js" | .assets.directory="build/client"' wrangler.json > build/server/wrangler.merged.json
-      - name: Install Wrangler (staging)
-        if: ${{ steps.env.outputs.name == 'staging' }}
-        run: npm install -g wrangler@4.30.0
-      - name: Deploy Cloudflare Worker (staging)
-        if: ${{ steps.env.outputs.name == 'staging' }}
-        run: wrangler deploy -c build/server/wrangler.merged.json --keep-vars
+          node -e "
+            const fs = require('fs');
+            const p = 'build/server/wrangler.json';
+            const j = JSON.parse(fs.readFileSync(p,'utf8'));
+            j.vars = j.vars || {};
+            j.vars.DUTCH_FURNITURE_BASE_URL = process.env.DFB;
+            j.vars.DUTCHNED_API_URL = process.env.DNA;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2));
+            console.log('Updated vars in', p);
+          "
+        env:
+          DFB: ${{ vars.DUTCH_FURNITURE_BASE_URL }}
+          DNA: ${{ vars.DUTCHNED_API_URL }}
+      - name: Install Wrangler
+        run: npm i -g wrangler@4.30.0
+      - name: Deploy Worker (staging)
+        run: wrangler deploy -c build/server/wrangler.json --keep-vars
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      - name: Prepare built wrangler config (production)
-        if: ${{ steps.env.outputs.name == 'production' }}
+
+  deploy-production:
+    name: Deploy (Production)
+    if: ${{ github.ref == format('refs/heads/{0}', env.BRANCH_PRODUCTION) && vars.CF_GIT_INTEGRATION != 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci
+        env:
+          NPM_CONFIG_ENGINE_STRICT: true
+          NPM_CONFIG_FUND: false
+          NPM_CONFIG_PROGRESS: false
+      - name: Build web (React Router)
+        run: npm run build:web
+      - name: Inject runtime vars into built wrangler config
         run: |
-          mkdir -p build/server
-          jq '.main="build/server/index.js" | .assets.directory="build/client"' wrangler.production.json > build/server/wrangler.merged.json
-      - name: Install Wrangler (production)
-        if: ${{ steps.env.outputs.name == 'production' }}
-        run: npm install -g wrangler@4.30.0
-      - name: Deploy Cloudflare Worker (production)
-        if: ${{ steps.env.outputs.name == 'production' }}
-        run: wrangler deploy -c build/server/wrangler.merged.json --keep-vars
+          node -e "
+            const fs = require('fs');
+            const p = 'build/server/wrangler.json';
+            const j = JSON.parse(fs.readFileSync(p,'utf8'));
+            j.vars = j.vars || {};
+            j.vars.DUTCH_FURNITURE_BASE_URL = process.env.DFB;
+            j.vars.DUTCHNED_API_URL = process.env.DNA;
+            fs.writeFileSync(p, JSON.stringify(j, null, 2));
+            console.log('Updated vars in', p);
+          "
+        env:
+          DFB: ${{ vars.DUTCH_FURNITURE_BASE_URL }}
+          DNA: ${{ vars.DUTCHNED_API_URL }}
+      - name: Install Wrangler
+        run: npm i -g wrangler@4.30.0
+      - name: Deploy Worker (production)
+        run: wrangler deploy -c build/server/wrangler.json --keep-vars
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
