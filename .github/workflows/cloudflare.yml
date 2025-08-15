@@ -57,6 +57,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Prepare built wrangler config (staging)
         run: |
+          mkdir -p build/server
           jq -s '.[0] * { main: .[1].main, assets: .[1].assets }' wrangler.json build/server/wrangler.json > build/server/wrangler.staging.json
       - name: Deploy Cloudflare Worker (staging)
         uses: cloudflare/wrangler-action@v3
@@ -80,6 +81,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
       - name: Prepare built wrangler config (production)
         run: |
+          mkdir -p build/server
           jq -s '.[0] * { main: .[1].main, assets: .[1].assets }' wrangler.production.json build/server/wrangler.json > build/server/wrangler.production.json
       - name: Deploy Cloudflare Worker (production)
         uses: cloudflare/wrangler-action@v3
