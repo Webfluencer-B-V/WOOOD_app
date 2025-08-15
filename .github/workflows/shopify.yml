@@ -42,35 +42,21 @@ jobs:
           name: extensions
           path: extensions
 
-  deploy-staging:
-    name: Deploy (Staging)
+  deploy:
+    name: Deploy
     needs: build
-    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_STAGING || 'staging')) }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: extensions
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - run: npm install -g @shopify/cli@latest
-      - name: Deploy (Shopify App)
-        run: >-
-          npx shopify app deploy
-          --force
-          --message "${{ github.ref_name }}:${{ github.sha }}"
-          --version "deploy:${{ github.sha }}"
-        env:
-          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
-
-  deploy-production:
-    name: Deploy (Production)
-    needs: build
-    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_PRODUCTION || 'production')) }}
-    runs-on: ubuntu-latest
-    steps:
+      - name: Decide target env
+        id: env
+        run: |
+          BR_STG='${{ vars.BRANCH_STAGING || 'staging' }}'
+          BR_PRD='${{ vars.BRANCH_PRODUCTION || 'production' }}'
+          REF='${{ github.ref }}'
+          if [ "$REF" = "refs/heads/$BR_STG" ]; then echo "name=staging" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$REF" = "refs/heads/$BR_PRD" ]; then echo "name=production" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "name=skip" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           name: extensions
@@ -80,6 +66,7 @@ jobs:
           cache: npm
       - run: npm install -g @shopify/cli@latest
       - name: Use production Shopify config
+        if: ${{ steps.env.outputs.name == 'production' }}
         run: cp shopify.app.prod.toml shopify.app.toml
       - name: Read Shopify client id
         id: shopify
@@ -87,7 +74,17 @@ jobs:
           CLIENT_ID=$(awk -F= '/^client_id/ {gsub(/[" ]/ ,"", $2); print $2}' shopify.app.toml)
           if [ -z "$CLIENT_ID" ]; then echo "client_id missing in shopify.app.toml" && exit 1; fi
           echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
-      - name: Deploy (Shopify App)
+      - name: Deploy (Shopify App - staging)
+        if: ${{ steps.env.outputs.name == 'staging' }}
+        run: >-
+          npx shopify app deploy
+          --force
+          --message "${{ github.ref_name }}:${{ github.sha }}"
+          --version "deploy:${{ github.sha }}"
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+      - name: Deploy (Shopify App - production)
+        if: ${{ steps.env.outputs.name == 'production' }}
         run: >-
           npx shopify app deploy
           --client-id ${{ steps.shopify.outputs.client_id }}

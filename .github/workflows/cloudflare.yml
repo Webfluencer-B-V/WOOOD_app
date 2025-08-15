@@ -41,10 +41,10 @@ jobs:
           name: build
           path: build
 
-  deploy-staging:
-    name: Deploy (Staging)
+  deploy:
+    name: Deploy
     needs: build
-    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_STAGING || 'staging')) && vars.CF_GIT_INTEGRATION != 'true' }}
+    if: ${{ vars.CF_GIT_INTEGRATION != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,38 +55,36 @@ jobs:
           name: build
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Determine environment
+        id: env
+        run: |
+          BR_STG='${{ vars.BRANCH_STAGING || 'staging' }}'
+          BR_PRD='${{ vars.BRANCH_PRODUCTION || 'production' }}'
+          REF='${{ github.ref }}'
+          if [ "$REF" = "refs/heads/$BR_STG" ]; then echo "name=staging" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ "$REF" = "refs/heads/$BR_PRD" ]; then echo "name=production" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "name=skip" >> "$GITHUB_OUTPUT"
       - name: Prepare built wrangler config (staging)
+        if: ${{ steps.env.outputs.name == 'staging' }}
         run: |
           mkdir -p build/server
-          jq -s '.[0] * { main: .[1].main, assets: .[1].assets }' wrangler.json build/server/wrangler.json > build/server/wrangler.staging.json
+          jq '.main="build/server/index.js" | .assets.directory="build/client"' wrangler.json > build/server/wrangler.merged.json
       - name: Deploy Cloudflare Worker (staging)
+        if: ${{ steps.env.outputs.name == 'staging' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c build/server/wrangler.staging.json --keep-vars
-
-  deploy-production:
-    name: Deploy (Production)
-    needs: build
-    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_PRODUCTION || 'production')) && vars.CF_GIT_INTEGRATION != 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: build
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+          command: deploy -c build/server/wrangler.merged.json --keep-vars
       - name: Prepare built wrangler config (production)
+        if: ${{ steps.env.outputs.name == 'production' }}
         run: |
           mkdir -p build/server
-          jq -s '.[0] * { main: .[1].main, assets: .[1].assets }' wrangler.production.json build/server/wrangler.json > build/server/wrangler.production.json
+          jq '.main="build/server/index.js" | .assets.directory="build/client"' wrangler.production.json > build/server/wrangler.merged.json
       - name: Deploy Cloudflare Worker (production)
+        if: ${{ steps.env.outputs.name == 'production' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c build/server/wrangler.production.json --keep-vars
+          command: deploy -c build/server/wrangler.merged.json --keep-vars
 
 
