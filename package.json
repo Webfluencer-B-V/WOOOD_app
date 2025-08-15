@@ -71,7 +71,7 @@
 		"@rollup/rollup-linux-x64-gnu": "^4.21.0"
 	},
 	"engines": {
-		"node": "^22.14.0",
+		"node": ">=20.0.0",
 		"npm": ">=9.6.4"
 	},
 	"packageManager": "npm@10.0.0",

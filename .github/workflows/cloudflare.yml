@@ -13,7 +13,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  NODE_VERSION: 22
+  NODE_VERSION: 20.19.4
   WRANGLER_SEND_METRICS: false
   BRANCH_STAGING: ${{ vars.BRANCH_STAGING || 'staging' }}
   BRANCH_PRODUCTION: ${{ vars.BRANCH_PRODUCTION || 'production' }}
