@@ -31,6 +31,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - run: npm ci
+      - name: Install extension dependencies
+        run: |
+          for f in extensions/*/package.json; do
+            d=$(dirname "$f");
+            echo "Installing deps in $d";
+            npm ci --prefix "$d";
+          done
       - run: npm install -g @shopify/cli@latest
       - name: Build (Shopify)
         run: npx shopify app build
@@ -66,6 +73,13 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm install -g @shopify/cli@latest
+      - name: Install extension dependencies
+        run: |
+          for f in extensions/*/package.json; do
+            d=$(dirname "$f");
+            echo "Installing deps in $d";
+            npm ci --prefix "$d";
+          done
       - name: Use production Shopify config
         if: ${{ steps.env.outputs.name == 'production' }}
         run: cp shopify.app.prod.toml shopify.app.toml
