@@ -81,7 +81,7 @@ jobs:
           npx shopify app deploy
           --force
           --message "${{ github.ref_name }}:${{ github.sha }}"
-          --version "deploy:${{ github.sha }}"
+          --version "deploy-${{ github.sha }}"
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
       - name: Deploy (Shopify App - production)
@@ -91,7 +91,7 @@ jobs:
           --client-id ${{ steps.shopify.outputs.client_id }}
           --force
           --message "${{ github.ref_name }}:${{ github.sha }}"
-          --version "deploy:${{ github.sha }}"
+          --version "deploy-${{ github.sha }}"
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
 
