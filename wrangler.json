@@ -1,0 +1,91 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "woood-staging",
+	"account_id": "4e020126029f6ed8340dadb04f00c883",
+	"compatibility_date": "2025-06-17",
+	"main": "./worker.ts",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": "./build/client"
+	},
+	"dev": {
+		"ip": "0.0.0.0",
+		"port": 8080
+	},
+	"kv_namespaces": [
+		{
+			"binding": "SESSION_STORAGE",
+			"id": "ec5919b68f374a97b4d5aa12e1bae064"
+		},
+		{
+			"binding": "WOOOD_KV",
+			"id": "51fa115a98f44c4d896d3fd99d942d17"
+		},
+		{
+			"binding": "STORE_LOCATOR_STATUS",
+			"id": "e03ccea949a342ed8ad81e4d0e1b2478"
+		},
+		{
+			"binding": "EXPERIENCE_CENTER_STATUS",
+			"id": "fc265ea8b60f4e3aa8b2c3ac3e89eb69"
+		},
+		{
+			"binding": "OMNIA_PRICING_STATUS",
+			"id": "a2ea02194ab5462689a66118ab029517"
+		},
+		{
+			"binding": "OMNIA_PRICING_HISTORY",
+			"id": "47012fe3863f43dc80a2308b61dba43d"
+		}
+	],
+	"logpush": true,
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"invocation_logs": true
+		}
+	},
+	"placement": {
+		"mode": "smart"
+	},
+	"queues": {
+		"producers": [
+			{
+				"queue": "woood",
+				"binding": "WEBHOOK_QUEUE"
+			},
+			{
+				"queue": "woood-scheduled",
+				"binding": "SCHEDULED_QUEUE"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "woood"
+			},
+			{
+				"queue": "woood-scheduled",
+				"max_batch_size": 1
+			}
+		]
+	},
+	"triggers": {
+		"crons": ["0 */6 * * *", "0 4 * * *"]
+	},
+	"upload_source_maps": true,
+	"vars": {
+		"NODE_VERSION": 22,
+		"SHOPIFY_API_KEY": "1c7701d2e09d4ede7616f35e13d472ef",
+		"SHOPIFY_APP_URL": "https://woood-staging.leander-4e0.workers.dev",
+		"SHOPIFY_APP_HANDLE": "woood-2",
+		"SHOPIFY_APP_LOG_LEVEL": "debug",
+		"OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
+		"PRICING_MAX_DISCOUNT_PERCENTAGE": "90",
+		"PRICING_BASE_PRICE_TOLERANCE": "5",
+		"PRICING_ENFORCE_BASE_PRICE_MATCH": "true",
+		"EMAIL_PROVIDER": "cloudflare",
+		"EMAIL_FROM": "noreply@woood-staging.leander-4e0.workers.dev",
+		"OMNIA_EMAIL_RECIPIENTS": "leander@webfluencer.nl",
+		"EMAIL_SUBJECT_PREFIX": "[WOOOD Staging] "
+	}
+}

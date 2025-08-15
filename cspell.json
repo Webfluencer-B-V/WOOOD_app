@@ -1,0 +1,43 @@
+{
+	"ignorePaths": [
+		"**/types",
+		"**/dist",
+		"**/node_modules",
+		"build",
+		"patches",
+		"worker-configuration.d.ts"
+	],
+	"ignoreWords": [
+		"accesstoken",
+		"autoupdate",
+		"biomejs",
+		"cloudflared",
+		"codegen",
+		"evenodd",
+		"eventpath",
+		"HSBA",
+		"isbot",
+		"logpush",
+		"miniflare",
+		"myshopify",
+		"noopen",
+		"nosniff",
+		"nullglob",
+		"picklist",
+		"WOOOD",
+		"supportedLngs",
+		"savebar",
+		"typegen",
+		"upsteam",
+		"valibot",
+		"workerd",
+		"xlink"
+	],
+	"language": "en",
+	"languageSettings": [
+		{
+			"languageId": "bash,css,html,markdown,node,typescript",
+			"locale": "en"
+		}
+	]
+}

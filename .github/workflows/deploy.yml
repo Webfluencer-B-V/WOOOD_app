@@ -1,0 +1,64 @@
+name: Deploy WOOOD App
+
+on:
+  push:
+    branches: [WOOOD-integration, main]
+  pull_request:
+    branches: [WOOOD-integration, main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Remove yarn files
+        run: rm -f yarn.lock yarn-error.log .yarnrc .yarnrc.yml
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_ENGINE_STRICT: true
+          NPM_CONFIG_FUND: false
+          NPM_CONFIG_PROGRESS: false
+
+      - name: Build web (ensures build/server/wrangler.json exists)
+        run: npm run build:web
+
+      - name: Build project (extensions)
+        run: npm run build
+
+      - name: Inject runtime vars into wrangler.json
+        if: ${{ vars.CF_GIT_INTEGRATION != 'true' }}
+        run: |
+          node -e "const fs=require('fs');const p='build/server/wrangler.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.vars=j.vars||{};j.vars.DUTCH_FURNITURE_BASE_URL=process.env.DFB;j.vars.DUTCHNED_API_URL=process.env.DNA;fs.writeFileSync(p,JSON.stringify(j,null,2));console.log('Updated vars in',p);"
+        env:
+          DFB: ${{ vars.DUTCH_FURNITURE_BASE_URL }}
+          DNA: ${{ vars.DUTCHNED_API_URL }}
+
+      - name: Deploy to Cloudflare Workers
+        if: ${{ vars.CF_GIT_INTEGRATION != 'true' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: '.'
+          command: deploy --keep-vars
+        env:
+          SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
+          DUTCH_FURNITURE_API_KEY: ${{ secrets.DUTCH_FURNITURE_API_KEY }}
+          DUTCHNED_API_KEY: ${{ secrets.DUTCHNED_API_KEY }}
+          SHOPIFY_APP_CLIENT_SECRET: ${{ secrets.SHOPIFY_APP_CLIENT_SECRET }}
+          SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
+
+      - name: Deploy Shopify App Extensions (non-interactive)
+        run: npm run deploy:shopify -- --force
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
