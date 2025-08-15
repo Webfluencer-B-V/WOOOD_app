@@ -50,6 +50,8 @@ export default defineWorkspace([
 									"nodejs_compat",
 									"service_binding_extra_handlers",
 								],
+								// Prefer .env for local vars instead of .dev.vars
+								envPath: "./.env",
 							},
 							singleWorker: true,
 							wrangler: { configPath: "./wrangler.json" },

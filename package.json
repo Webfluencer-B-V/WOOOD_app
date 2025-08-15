@@ -24,7 +24,7 @@
 		"prepare": "if [ \"$CI\" = \"true\" ]; then exit 0; fi; test \"$NODE_ENV\" = \"production\" && exit 0 || (mkdir -p ./app/i18n/en && cp node_modules/@shopify/polaris/locales/en.json ./app/i18n/en/polaris.json && (npm run check:code || true))",
 		"start": "wrangler dev",
 		"test": "vitest --run",
-		"test:e2e": "node --env-file=.env --env-file=.env.test $(npm root)/.bin/playwright test",
+		"test:e2e": "node --env-file=.env $(npm root)/.bin/playwright test",
 		"tunnel": "source .env && cloudflared tunnel --no-autoupdate run --token=${CLOUDFLARE_API_TOKEN}"
 	},
 	"dependencies": {

@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { env as processEnv } from "node:process";
 import type { AppLoadContext } from "react-router";
 import { describe, expect, test } from "vitest";
 
@@ -7,7 +8,9 @@ import type { Route } from "./+types/proxy";
 import { loader } from "./proxy";
 
 const context = {
-	cloudflare: { env: { ...env, SHOPIFY_APP_LOG_LEVEL: "error" } },
+	cloudflare: {
+		env: { ...env, ...processEnv, SHOPIFY_APP_LOG_LEVEL: "error" },
+	},
 } as unknown as AppLoadContext;
 
 describe("loader", () => {

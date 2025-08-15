@@ -26,6 +26,8 @@ jobs:
           NPM_CONFIG_ENGINE_STRICT: true
           NPM_CONFIG_FUND: false
           NPM_CONFIG_PROGRESS: false
+      - name: Run unit tests
+        run: npm test
       - name: Build web (React Router)
         run: npm run build:web
       - name: Inject runtime vars into built wrangler config
@@ -49,6 +51,16 @@ jobs:
         run: wrangler deploy -c build/server/wrangler.json --keep-vars
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+      - name: Discover deployed URL
+        run: |
+          echo "HOST=$(node -e 'console.log(require("./build/server/wrangler.json").vars?.SHOPIFY_APP_URL||"")')" >> $GITHUB_ENV
+          echo "Using HOST=$HOST"
+      - name: Post-deploy smoke tests (API only)
+        run: npm run test:e2e -- tests/api.e2e.test.ts
+        env:
+          HOST: ${{ env.HOST }}
 
   deploy-production:
     name: Deploy (Production)
@@ -64,6 +76,8 @@ jobs:
           NPM_CONFIG_ENGINE_STRICT: true
           NPM_CONFIG_FUND: false
           NPM_CONFIG_PROGRESS: false
+      - name: Run unit tests
+        run: npm test
       - name: Build web (React Router)
         run: npm run build:web
       - name: Inject runtime vars into built wrangler config
@@ -87,5 +101,15 @@ jobs:
         run: wrangler deploy -c build/server/wrangler.json --keep-vars
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+      - name: Discover deployed URL
+        run: |
+          echo "HOST=$(node -e 'console.log(require("./build/server/wrangler.json").vars?.SHOPIFY_APP_URL||"")')" >> $GITHUB_ENV
+          echo "Using HOST=$HOST"
+      - name: Post-deploy smoke tests (API only)
+        run: npm run test:e2e -- tests/api.e2e.test.ts
+        env:
+          HOST: ${{ env.HOST }}
 
 

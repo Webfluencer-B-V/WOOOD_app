@@ -18,11 +18,7 @@ import {
 	upsertShopMetafield,
 } from "./src/utils/storeLocator";
 import { handleDeliveryDates } from "./src/worker/handlers/deliveryDates";
-import {
-	handleExperienceCenter,
-	runExperienceCenterForShop,
-} from "./src/worker/handlers/experienceCenter";
-import { handleStoreLocator } from "./src/worker/handlers/storeLocator";
+import { runExperienceCenterForShop } from "./src/worker/handlers/experienceCenter";
 
 // Webhook processing is handled in app routes; worker enqueues and scheduled jobs only
 
@@ -79,10 +75,24 @@ export default {
 		try {
 			if (path.startsWith("/api/delivery-dates"))
 				return handleDeliveryDates(request, env);
-			if (path.startsWith("/api/store-locator"))
-				return handleStoreLocator(request, env);
-			if (path.startsWith("/api/experience-center"))
-				return handleExperienceCenter(request, env);
+			if (path.startsWith("/api/store-locator")) {
+				return new Response(
+					JSON.stringify({
+						error:
+							"Deprecated. Store Locator is managed via app actions. This endpoint is no longer available.",
+					}),
+					{ status: 410, headers: { "Content-Type": "application/json" } },
+				);
+			}
+			if (path.startsWith("/api/experience-center")) {
+				return new Response(
+					JSON.stringify({
+						error:
+							"Deprecated. Experience Center is managed via app actions. This endpoint is no longer available.",
+					}),
+					{ status: 410, headers: { "Content-Type": "application/json" } },
+				);
+			}
 			if (path.startsWith("/api/webhooks")) return handleWebhooks(request, env);
 			if (path === "/health") return handleHealth(request, env);
 

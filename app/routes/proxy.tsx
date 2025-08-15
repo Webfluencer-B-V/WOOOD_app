@@ -14,8 +14,11 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 		return { appUrl: shopify.config.appUrl };
 		// biome-ignore lint/suspicious/noExplicitAny: catch(err)
 	} catch (error: any) {
-		return new Response(error.message, {
-			status: error.status,
+		const status = typeof error?.status === "number" ? error.status : 401;
+		const message =
+			typeof error?.message === "string" ? error.message : "Unauthorized";
+		return new Response(message, {
+			status,
 			statusText: "Unauthorized",
 		});
 	}
