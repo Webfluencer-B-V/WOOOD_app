@@ -14,7 +14,7 @@ env:
 jobs:
   deploy-staging:
     name: Deploy (Staging)
-    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_STAGING || 'staging')) && vars.CF_GIT_INTEGRATION != 'true' }}
+    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_STAGING || 'staging')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
 
   deploy-production:
     name: Deploy (Production)
-    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_PRODUCTION || 'production')) && vars.CF_GIT_INTEGRATION != 'true' }}
+    if: ${{ github.ref == format('refs/heads/{0}', (vars.BRANCH_PRODUCTION || 'production')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
