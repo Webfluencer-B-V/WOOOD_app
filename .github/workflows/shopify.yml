@@ -47,6 +47,7 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Decide target env
         id: env
         run: |
@@ -63,6 +64,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+          cache-dependency-path: package-lock.json
       - run: npm install -g @shopify/cli@latest
       - name: Use production Shopify config
         if: ${{ steps.env.outputs.name == 'production' }}
