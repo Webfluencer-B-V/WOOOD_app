@@ -30,7 +30,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
       - run: npm ci
       - name: Build web (React Router)
         run: npm run build:web
@@ -50,6 +49,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       - uses: actions/download-artifact@v4
         with:
           name: build
@@ -69,22 +71,26 @@ jobs:
         run: |
           mkdir -p build/server
           jq '.main="build/server/index.js" | .assets.directory="build/client"' wrangler.json > build/server/wrangler.merged.json
+      - name: Install Wrangler (staging)
+        if: ${{ steps.env.outputs.name == 'staging' }}
+        run: npm install -g wrangler@4.30.0
       - name: Deploy Cloudflare Worker (staging)
         if: ${{ steps.env.outputs.name == 'staging' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c build/server/wrangler.merged.json --keep-vars
+        run: wrangler deploy -c build/server/wrangler.merged.json --keep-vars
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       - name: Prepare built wrangler config (production)
         if: ${{ steps.env.outputs.name == 'production' }}
         run: |
           mkdir -p build/server
           jq '.main="build/server/index.js" | .assets.directory="build/client"' wrangler.production.json > build/server/wrangler.merged.json
+      - name: Install Wrangler (production)
+        if: ${{ steps.env.outputs.name == 'production' }}
+        run: npm install -g wrangler@4.30.0
       - name: Deploy Cloudflare Worker (production)
         if: ${{ steps.env.outputs.name == 'production' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c build/server/wrangler.merged.json --keep-vars
+        run: wrangler deploy -c build/server/wrangler.merged.json --keep-vars
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 
