@@ -10,6 +10,7 @@ import {
 	useApi,
 	useApplyAttributeChange,
 	useAppMetafields,
+	useAttributes,
 	useCartLines,
 	useDeliveryGroups,
 	useSettings,

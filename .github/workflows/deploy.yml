@@ -57,8 +57,3 @@ jobs:
           DUTCHNED_API_KEY: ${{ secrets.DUTCHNED_API_KEY }}
           SHOPIFY_APP_CLIENT_SECRET: ${{ secrets.SHOPIFY_APP_CLIENT_SECRET }}
           SHOPIFY_STORE_URL: ${{ secrets.SHOPIFY_STORE_URL }}
-
-      - name: Deploy Shopify App Extensions (non-interactive)
-        run: npm run deploy:shopify -- --force
-        env:
-          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
