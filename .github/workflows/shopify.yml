@@ -1,0 +1,100 @@
+name: Shopify
+
+concurrency:
+  group: shopify
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - '**'
+    tags:
+      - 'releases/*'
+  workflow_dispatch: {}
+
+env:
+  NODE_VERSION: 22
+  SHOPIFY_CLI_NO_ANALYTICS: true
+  BRANCH_STAGING: ${{ vars.BRANCH_STAGING || 'staging' }}
+  BRANCH_PRODUCTION: ${{ vars.BRANCH_PRODUCTION || 'production' }}
+
+jobs:
+  build:
+    name: Build Extensions
+    if: ${{ !contains(github.event.head_commit.message, '[skip-ci]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @shopify/cli@latest
+      - name: Build (Shopify)
+        run: npx shopify app build
+        env:
+          SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extensions
+          path: extensions
+
+  deploy-staging:
+    name: Deploy (Staging)
+    needs: build
+    if: ${{ github.ref == format('refs/heads/{0}', env.BRANCH_STAGING) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extensions
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install -g @shopify/cli@latest
+      - name: Deploy (Shopify App)
+        run: >-
+          npx shopify app deploy
+          --force
+          --message "${{ github.ref_name }}:${{ github.sha }}"
+          --version "deploy:${{ github.sha }}"
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+
+  deploy-production:
+    name: Deploy (Production)
+    needs: build
+    if: ${{ github.ref == format('refs/heads/{0}', env.BRANCH_PRODUCTION) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: extensions
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm install -g @shopify/cli@latest
+      - name: Use production Shopify config
+        run: cp shopify.app.prod.toml shopify.app.toml
+      - name: Read Shopify client id
+        id: shopify
+        run: |
+          CLIENT_ID=$(awk -F= '/^client_id/ {gsub(/[" ]/ ,"", $2); print $2}' shopify.app.toml)
+          if [ -z "$CLIENT_ID" ]; then echo "client_id missing in shopify.app.toml" && exit 1; fi
+          echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
+      - name: Deploy (Shopify App)
+        run: >-
+          npx shopify app deploy
+          --client-id ${{ steps.shopify.outputs.client_id }}
+          --force
+          --message "${{ github.ref_name }}:${{ github.sha }}"
+          --version "deploy:${{ github.sha }}"
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+
+

@@ -1,66 +1,12 @@
-name: Deploy (Production)
+name: DEPRECATED: Deploy (Production)
 
 on:
-  push:
-    branches:
-      - production
   workflow_dispatch: {}
 
 jobs:
-  deploy:
+  noop:
     runs-on: ubuntu-latest
-    env:
-      NODE_VERSION: 22
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build web (React Router)
-        run: npm run build:web
-
-      - name: Build app (Shopify CLI)
-        run: npm run build
-
-      - name: Select production Shopify config
-        run: cp shopify.app.prod.toml shopify.app.toml
-
-      - name: Deploy Cloudflare Worker (production)
-        if: ${{ vars.CF_GIT_INTEGRATION != 'true' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c wrangler.production.json --keep-vars
-
-      - name: Read package version
-        id: pkg
-        run: |
-          VERSION=$(node -e "process.stdout.write(require('./package.json').version)")
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Read Shopify client id
-        id: shopify
-        run: |
-          CLIENT_ID=$(awk -F= '/^client_id/ {gsub(/["][ ]/,"",$2); print $2}' shopify.app.toml)
-          if [ -z "$CLIENT_ID" ]; then echo "client_id missing in shopify.app.toml" && exit 1; fi
-          echo "client_id=$CLIENT_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Deploy Shopify App (production)
-        env:
-          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
-          SHOPIFY_CLI_TTY: 0
-        run: >-
-          npx shopify app deploy
-          --client-id ${{ steps.shopify.outputs.client_id }}
-          --force
-          --message "${{ github.ref_name }}:${{ steps.pkg.outputs.version }}"
-          --version "${{ github.sha }}"
+      - run: echo "Use .github/workflows/cloudflare.yml and .github/workflows/shopify.yml instead."
 
 
