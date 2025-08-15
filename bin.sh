@@ -31,13 +31,23 @@ function triggerWebhook() {
 }
 
 function triggerWorkflow() {
-	workflow=${1:-github}
-	act \
-		--action-offline-mode \
-		--container-architecture=linux/amd64 \
-		--eventpath=.github/act/event.${workflow}.json \
-		--remote-name=github \
-		--workflows=.github/workflows/${workflow}.yml
+	workflow=${1:-deploy}
+
+	if command -v act >/dev/null 2>&1; then
+		echo "[triggerWorkflow] Running GitHub Actions locally with act..."
+		act push \
+			-e .github/act/event.${workflow}.json \
+			-W .github/workflows/${workflow}.yml \
+			--container-architecture linux/amd64 \
+			--action-offline-mode
+	else
+		echo "[triggerWorkflow] 'act' not found, simulating CI locally..."
+		npm ci
+		npm run build
+		echo "[triggerWorkflow] Wrangler dry-run deploy (staging config)"
+		npx wrangler deploy -c wrangler.json --dry-run --outdir .wrangler-dryrun || true
+		echo "[triggerWorkflow] Dry-run bundle in .wrangler-dryrun/"
+	fi
 }
 
 function update() {

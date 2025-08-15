@@ -4,6 +4,7 @@
 # Cloudflare
 /.wrangler
 /dist/
+/.wrangler-dryrun/
 
 # React Router
 /.react-router/
