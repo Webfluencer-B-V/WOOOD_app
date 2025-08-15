@@ -22,6 +22,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { type DeliveryDate, useDeliveryDates } from "./hooks/useDeliveryDates";
+import { type InventoryResponse, isInventoryResponse } from "./types/api";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -495,29 +496,39 @@ function DeliveryDatePicker() {
 				if (!res.ok) throw new Error(await res.text());
 				return res.json();
 			})
-			.then((data) => {
-				console.log(`✅ [Inventory Check] API Response:`, data);
-				if (data?.success && data.inventory) {
-					setInventory(data.inventory);
+			.then((rawData) => {
+				console.log(`✅ [Inventory Check] API Response:`, rawData);
+				if (isInventoryResponse(rawData)) {
+					const data = rawData as InventoryResponse;
+					if (data.success && data.inventory) {
+						setInventory(data.inventory);
 
-					// Log inventory details for debugging
-					const inventoryDetails = Object.entries(data.inventory).map(
-						([variantId, qty]) => ({
-							variantId,
-							quantity: qty,
-							inStock:
-								qty === null ||
-								qty === undefined ||
-								(typeof qty === "number" && qty > 0),
-						}),
-					);
-					console.log(
-						`📊 [Inventory Check] Inventory details:`,
-						inventoryDetails,
-					);
+						// Log inventory details for debugging
+						const inventoryDetails = Object.entries(data.inventory).map(
+							([variantId, qty]) => ({
+								variantId,
+								quantity: qty,
+								inStock:
+									qty === null ||
+									qty === undefined ||
+									(typeof qty === "number" && qty > 0),
+							}),
+						);
+						console.log(
+							`📊 [Inventory Check] Inventory details:`,
+							inventoryDetails,
+						);
+					} else {
+						console.warn(`⚠️ [Inventory Check] Invalid API response:`, data);
+						setInventoryError("Inventory API error");
+						setInventory(null);
+					}
 				} else {
-					console.warn(`⚠️ [Inventory Check] Invalid API response:`, data);
-					setInventoryError("Inventory API error");
+					console.warn(
+						"❌ [Inventory Check] Invalid response format:",
+						rawData,
+					);
+					setInventoryError("Invalid response format");
 					setInventory(null);
 				}
 			})

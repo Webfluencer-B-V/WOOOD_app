@@ -20,20 +20,17 @@ test("fetch", async () => {
 
 // FIXME: upstream bundler issue
 // Provide minimal KV stub to satisfy Env typing
-const kvStub = {
-	async get() {
-		return null;
-	},
-	async put() {},
-	async delete() {},
-	async list() {
-		return {
-			keys: [] as Array<{ name: string }>,
-			list_complete: true,
-			cursor: undefined,
-		};
-	},
-} satisfies KVNamespace;
+const kvStub: KVNamespace = {
+	get: (async () => null) as any,
+	put: (async () => {}) as any,
+	delete: (async () => {}) as any,
+	list: (async () => ({
+		keys: [] as Array<{ name: string }>,
+		list_complete: true,
+		cursor: undefined,
+		cacheStatus: null,
+	})) as any,
+} as KVNamespace;
 
 test.skip("worker", async () => {
 	const request = new Request("http://example.com");

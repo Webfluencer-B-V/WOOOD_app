@@ -35,7 +35,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export default function App({ loaderData }: Route.ComponentProps) {
-	const { appHandle, apiKey } = loaderData;
+	const { apiKey } = loaderData;
 
 	const { t } = useTranslation(["app", "polaris"]);
 	const i18n = {

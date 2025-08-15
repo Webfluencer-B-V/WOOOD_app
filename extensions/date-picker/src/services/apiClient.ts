@@ -1,13 +1,13 @@
+import {
+	type ApiResponse,
+	type BulkInventoryResponse,
+	isApiResponse,
+	isBulkInventoryResponse,
+} from "../types/api";
+
 export interface DeliveryDate {
 	date: string;
 	displayName: string;
-}
-
-export interface ApiResponse {
-	success: boolean;
-	data?: DeliveryDate[];
-	error?: string;
-	message?: string;
 }
 
 export interface FetchConfig {
@@ -79,13 +79,18 @@ export async function fetchDeliveryDates(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const data = await response.json();
+		const rawData = await response.json();
 
+		if (!isApiResponse(rawData)) {
+			throw new Error("Invalid API response format");
+		}
+
+		const data = rawData as ApiResponse;
 		if (data.success && Array.isArray(data.data)) {
 			console.log(`✅ Successfully fetched ${data.data.length} delivery dates`);
 			return data.data;
 		} else {
-			throw new Error("Invalid response format");
+			throw new Error(data.error || "Invalid response format");
 		}
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -170,13 +175,16 @@ export async function triggerExperienceCenterUpdate(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
-		console.log("✅ Successfully triggered experience center sync:", result);
+		const rawResult = await response.json();
+		console.log("✅ Successfully triggered experience center sync:", rawResult);
 
-		if (result.summary) {
-			console.log(
-				`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`,
-			);
+		if (isBulkInventoryResponse(rawResult)) {
+			const result = rawResult as BulkInventoryResponse;
+			if (result.summary) {
+				console.log(
+					`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`,
+				);
+			}
 		}
 
 		return true;
@@ -250,13 +258,16 @@ export async function triggerStoreLocatorUpdate(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
-		console.log("✅ Successfully triggered store locator sync:", result);
+		const rawResult = await response.json();
+		console.log("✅ Successfully triggered store locator sync:", rawResult);
 
-		if (result.summary) {
-			console.log(
-				`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`,
-			);
+		if (isBulkInventoryResponse(rawResult)) {
+			const result = rawResult as BulkInventoryResponse;
+			if (result.summary) {
+				console.log(
+					`📊 Summary: ${result.summary.successfulShops}/${result.summary.totalShops} shops processed`,
+				);
+			}
 		}
 
 		return true;

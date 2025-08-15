@@ -22,10 +22,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web (React Router)
-        run: npm run build:web
-
-      - name: Build app (Shopify CLI)
+      - name: Build app (single step: web + extensions)
         run: npm run build
 
       - name: Select production Shopify config (production branch)

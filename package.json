@@ -4,7 +4,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"build": "shopify app build",
+		"build": "react-router build && shopify app build",
 		"build:web": "react-router build",
 		"check": "concurrently 'npm:check:*'",
 		"check:actions": "if command -v actionlint 2>&1 >/dev/null; then actionlint; fi",
@@ -67,8 +67,8 @@
 		"wrangler": "4.28.1"
 	},
 	"optionalDependencies": {
-		"@shopify/cli": "3.83.3",
-		"@rollup/rollup-linux-x64-gnu": "^4.21.0"
+		"@rollup/rollup-linux-x64-gnu": "4.46.2",
+		"@shopify/cli": "3.83.3"
 	},
 	"engines": {
 		"node": "^22.14.0",
