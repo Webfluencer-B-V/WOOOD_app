@@ -26,14 +26,44 @@ jobs:
       - name: Build npm app
         run: npm run build
 
-      - name: Deploy Cloudflare Worker (staging)
+      - name: Set staging env
         if: github.ref == 'refs/heads/staging'
+        run: echo "SHOPIFY_APP_ENV=staging" >> $GITHUB_ENV
+
+      - name: Set production env
+        if: github.ref == 'refs/heads/production'
+        run: echo "SHOPIFY_APP_ENV=production" >> $GITHUB_ENV
+
+      - name: Deploy Cloudflare Worker (staging)
+        if: github.ref == 'refs/heads/staging' && env.CF_TOKEN != ''
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run deploy:cloudflare
+
+      - name: Simulate CF deploy (staging, no token)
+        if: github.ref == 'refs/heads/staging' && env.CF_TOKEN == ''
+        run: npx wrangler deploy -c build/server/wrangler.json --dry-run --outdir .wrangler-dryrun
 
       - name: Prepare production wrangler config
         if: github.ref == 'refs/heads/production'
         run: cp wrangler.production.json build/server/wrangler.json
 
       - name: Deploy Cloudflare Worker (production)
-        if: github.ref == 'refs/heads/production'
+        if: github.ref == 'refs/heads/production' && env.CF_TOKEN != ''
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run deploy:cloudflare
+
+      - name: Simulate CF deploy (production, no token)
+        if: github.ref == 'refs/heads/production' && env.CF_TOKEN == ''
+        run: npx wrangler deploy -c build/server/wrangler.json --dry-run --outdir .wrangler-dryrun
+
+      - name: Deploy Shopify app
+        if: github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/production'
+        run: npm run deploy:shopify
+        env:
+          SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+          SHOPIFY_FLAG_FORCE: true
+          SHOPIFY_CLI_TTY: 0
