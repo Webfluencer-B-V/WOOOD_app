@@ -2,7 +2,7 @@ import { env } from "node:process";
 import type { AppLoadContext } from "react-router";
 import { describe, expect, test } from "vitest";
 
-import { API_VERSION } from "../const";
+import { API_VERSION } from "~/const";
 import type { Route } from "./+types/shopify.webhooks";
 import { action } from "./shopify.webhooks";
 
@@ -66,7 +66,7 @@ describe("action", () => {
 		const request = new Request("http://localhost", {
 			body: "123",
 			headers: {
-				"X-Shopify-Hmac-Sha256": await getHmac("123"),
+				"X-Shopify-Hmac-Sha256": "tKI9km9Efxo6gfUjbUBCo3XJ0CmqMLgb4xNzNhpQhK0=",
 			},
 			method: "POST",
 		});
@@ -94,8 +94,8 @@ describe("action", () => {
 
 		expect(response).toBeInstanceOf(Response);
 		expect(response.ok).toBe(true);
-		expect([200, 204]).toContain(response.status);
-		// 200 has a body, 204 does not
+		expect(response.status).toBe(204);
+		expect(response.body).toBe(null);
 	});
 });
 

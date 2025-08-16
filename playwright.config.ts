@@ -17,7 +17,7 @@ export default defineConfig({
 		serviceWorkers: "allow",
 	},
 	webServer: {
-		command: "npm run dev",
+		command: "npm run dev:tunnel",
 		reuseExistingServer: true,
 		timeout: 10 * 1000,
 		url: appUrl,

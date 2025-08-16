@@ -76,10 +76,7 @@
 		]
 	},
 	"triggers": {
-		"crons": [
-			"0 */6 * * *",
-			"0 4 * * *"
-		]
+		"crons": ["0 */6 * * *", "0 4 * * *"]
 	},
 	"upload_source_maps": true,
 	"vars": {

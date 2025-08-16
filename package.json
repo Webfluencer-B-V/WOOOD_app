@@ -1,6 +1,6 @@
 {
-	"name": "@chr33s/shopflare",
-	"version": "2.9.25",
+	"name": "@Webfluencer-B-V/WOOOD_app",
+	"version": "3.0.0",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -71,6 +71,6 @@
 		"npm": ">=9.6.4"
 	},
 	"bin": {
-		"shopflare": "./bin.sh"
+		"WOOOD": "./bin.sh"
 	}
 }

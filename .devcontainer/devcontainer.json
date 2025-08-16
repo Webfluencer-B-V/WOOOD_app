@@ -1,5 +1,5 @@
 {
-	"name": "@chr33s/shopflare",
+	"name": "@Webfluencer-B-V/WOOOD_app",
 	"image": "mcr.microsoft.com/devcontainers/typescript-node:22",
 	"features": {
 		"ghcr.io/devcontainers-extra/features/actionlint:1": {},

@@ -12,11 +12,10 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 
-test.skip("fetch", async () => {
-	const response = await SELF.fetch("http://example.com/health");
+test("fetch", async () => {
+	const response = await SELF.fetch("http://example.com");
+	expect(await response.text()).toContain("<title>WOOOD</title>");
 	expect(response.status).toBe(200);
-	const body = await response.json();
-	expect(body.status).toBe("healthy");
 });
 
 // FIXME: upstream bundler issue
