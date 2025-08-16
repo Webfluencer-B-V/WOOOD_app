@@ -4,7 +4,7 @@ import {
 	isBaseWebhookPayload,
 	isOrderWebhookPayload,
 	type WebhookPayload,
-} from "~/types/webhooks";
+} from "../types/webhooks";
 import type { Route } from "./+types/shopify.webhooks";
 
 export async function action({ context, request }: Route.ActionArgs) {
