@@ -18,6 +18,7 @@
 .env*
 .dev*
 .dev.vars
+.dev.vars.local
 !.env.example
 
 # Editor files

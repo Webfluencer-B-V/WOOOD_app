@@ -5,9 +5,8 @@ import type { LinkLikeComponentProps } from "@shopify/polaris/build/ts/src/utili
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Outlet, useNavigation } from "react-router";
-
-import { APP_BRIDGE_URL } from "../const";
 import { createShopify } from "~/shopify.server";
+import { APP_BRIDGE_URL } from "../const";
 import type { Route } from "./+types/app";
 
 export async function loader({ context, request }: Route.LoaderArgs) {

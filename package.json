@@ -1,6 +1,6 @@
 {
-	"name": "@Webfluencer-B-V/WOOOD_app",
-	"version": "3.0.0",
+	"name": "@chr33s/shopflare",
+	"version": "2.9.25",
 	"private": true,
 	"type": "module",
 	"scripts": {

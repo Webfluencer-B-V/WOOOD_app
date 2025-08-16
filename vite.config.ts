@@ -1,3 +1,4 @@
+import { reactRouter } from "@react-router/dev/vite";
 import { loadEnv } from "vite";
 import i18nextLoader from "vite-plugin-i18next-loader";
 import tsconfigPaths from "vite-tsconfig-paths";
@@ -12,7 +13,11 @@ export default defineConfig((config) => {
 		optimizeDeps: {
 			include: ["react/jsx-dev-runtime"],
 		},
-		plugins: [i18nextLoader(i18nextLoaderOptions), tsconfigPaths()],
+		plugins: [
+			reactRouter(), // required for react-router build
+			i18nextLoader(i18nextLoaderOptions),
+			tsconfigPaths(),
+		],
 		test: {
 			css: true,
 			env,

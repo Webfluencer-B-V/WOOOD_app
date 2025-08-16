@@ -1,1 +1,0 @@
-This folder contains the built output assets for the worker "woood-staging" generated at 2025-08-16T07:52:56.676Z.

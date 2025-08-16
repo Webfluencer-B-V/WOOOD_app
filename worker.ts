@@ -38,10 +38,9 @@ declare module "react-router" {
 	}
 }
 
-// Prevent bundler from resolving the virtual module at build time by using a non-literal specifier
-const serverBuildSpecifier = "virtual:react-router/server-build";
+// Load SSR build explicitly so wrangler/miniflare can resolve it
 const requestHandler = createRequestHandler(
-	() => import(serverBuildSpecifier),
+	() => import("./build/server/index.js"),
 	"production",
 );
 
