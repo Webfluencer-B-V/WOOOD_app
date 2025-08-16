@@ -3,6 +3,7 @@
 
 # Cloudflare
 /.wrangler
+.env*
 /dist/
 
 # React Router
@@ -14,8 +15,8 @@
 **/__screenshots__/*
 
 # Environment variables
-.env
-.env.*
+.env*
+.dev.vars
 !.env.example
 
 # Editor files
@@ -28,9 +29,6 @@
 extensions/**/dist
 extensions/**/generated
 shopify.app.*.toml
-
-# Backend specific
-backend/dist/
 
 # Logs
 logs
@@ -51,3 +49,4 @@ coverage/
 # Temporary folders
 tmp/
 temp/workers/.dev.vars
+.wrangler-dryrun/*

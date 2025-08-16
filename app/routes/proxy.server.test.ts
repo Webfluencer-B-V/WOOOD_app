@@ -11,7 +11,7 @@ const context = {
 } as unknown as AppLoadContext;
 
 describe("loader", () => {
-	test("error on param missing", async () => {
+	test("returns 400 if required param is missing", async () => {
 		const url = new URL("http://localhost");
 		const request = new Request(url);
 		const response = (await loader({
@@ -25,7 +25,7 @@ describe("loader", () => {
 		expect(await response?.text()).toBe("Proxy param is missing");
 	});
 
-	test("error on proxy timestamp is expired", async () => {
+	test("returns 400 if proxy timestamp is expired", async () => {
 		const url = new URL("http://localhost");
 		url.searchParams.set("signature", "123");
 		url.searchParams.set("timestamp", `${Math.trunc(Date.now() / 1_000 - 91)}`);
@@ -41,7 +41,7 @@ describe("loader", () => {
 		expect(await response?.text()).toBe("Proxy timestamp is expired");
 	});
 
-	test("error on encoded byte length mismatch", async () => {
+	test("returns 401 if encoded byte length mismatch", async () => {
 		const url = new URL("http://localhost");
 		url.searchParams.set("signature", "123");
 		url.searchParams.set("timestamp", `${Math.trunc(Date.now() / 1_000)}`);
@@ -57,12 +57,12 @@ describe("loader", () => {
 		expect(await response?.text()).toBe("Encoded byte length mismatch");
 	});
 
-	test("error on invalid hmac", async () => {
+	test("returns 401 if hmac is invalid", async () => {
 		const url = new URL("http://localhost");
 		url.searchParams.set(
 			"signature",
 			"548e324a5420c20bffa1d81318b5790de43731c278d0435108e5bcdbdc20795d",
-		); // NOTE: changed
+		);
 		url.searchParams.set("timestamp", `${Math.trunc(Date.now() / 1_000)}`);
 		const request = new Request(url, { method: "POST" });
 		const response = (await loader({
@@ -76,7 +76,7 @@ describe("loader", () => {
 		expect(await response?.text()).toBe("Invalid hmac");
 	});
 
-	test("error on no session access token", async () => {
+	test("returns 401 if no session access token", async () => {
 		const timestamp = Math.trunc(Date.now() / 1_000).toString();
 
 		const url = new URL("http://localhost");
@@ -95,7 +95,7 @@ describe("loader", () => {
 		expect(await response?.text()).toBe("No session access token");
 	});
 
-	test("success", async () => {
+	test("returns appUrl on success", async () => {
 		const shop = "test.myshopify.com";
 
 		const session = new ShopifySession(context.cloudflare.env.SESSION_STORAGE);
@@ -127,7 +127,7 @@ describe("loader", () => {
 	});
 });
 
-async function getHmac(searchParams: object) {
+async function getHmac(searchParams: Record<string, unknown>) {
 	const params = Object.entries(searchParams)
 		.filter(([key]) => key !== "signature")
 		.map(
@@ -156,6 +156,6 @@ async function getHmac(searchParams: object) {
 	const hmac = [...new Uint8Array(signature)].reduce(
 		(a, b) => a + b.toString(16).padStart(2, "0"),
 		"",
-	); // hex
+	);
 	return hmac;
 }
