@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Outlet, useNavigation } from "react-router";
 
-import { APP_BRIDGE_URL } from "~/const";
+import { APP_BRIDGE_URL } from "../const";
 import { createShopify } from "~/shopify.server";
 import type { Route } from "./+types/app";
 
