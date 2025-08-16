@@ -75,4 +75,3 @@ jobs:
       - run: npx shopify app release --force --version="release:${{ github.sha }}"
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
-
