@@ -43,7 +43,7 @@ export default defineConfig((config) => {
 					},
 				},
 				mergeConfig(
-					{},
+					{ plugins: [i18nextLoader(i18nextLoaderOptions), tsconfigPaths()] },
 					defineWorkersProject({
 						test: {
 							alias: [
