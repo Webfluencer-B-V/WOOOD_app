@@ -27,22 +27,19 @@ jobs:
         run: npm run build
 
       - name: Deploy Cloudflare Worker (staging)
-        if: github.ref == 'refs/heads/staging' && github.actor != 'nektos/act'
+        if: github.ref == 'refs/heads/staging'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c wrangler.json --keep-vars
+          command: deploy -c build/server/wrangler.json --keep-vars
+
+      - name: Prepare production wrangler config
+        if: github.ref == 'refs/heads/production'
+        run: cp wrangler.production.json build/server/wrangler.json
 
       - name: Deploy Cloudflare Worker (production)
-        if: github.ref == 'refs/heads/production' && github.actor != 'nektos/act'
+        if: github.ref == 'refs/heads/production'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c wrangler.production.json --keep-vars
-
-      - name: Simulate deploy with wrangler (act)
-        if: github.actor == 'nektos/act'
-        run: |
-          npm ci
-          npm run build
-          npx wrangler deploy -c wrangler.json --dry-run --outdir .wrangler-dryrun
+          command: deploy -c build/server/wrangler.json --keep-vars
