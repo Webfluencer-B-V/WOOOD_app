@@ -26,7 +26,8 @@ jobs:
           node-version-file: "package.json"
           cache: "npm"
       - run: npm ci
-      - run: npm run build --ignore-scripts
+      - run: npm run gen
+      - run: npm run build:web
         env:
           SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
       - name: Install Playwright browsers
