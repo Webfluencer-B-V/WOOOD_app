@@ -1,7 +1,7 @@
 import { env } from "node:process";
 import { defineConfig } from "@playwright/test";
 
-const appUrl = env.HOST ?? env.SHOPIFY_APP_URL;
+const appUrl = env.SHOPIFY_APP_URL;
 
 export default defineConfig({
 	outputDir: "node_modules/.playwright",

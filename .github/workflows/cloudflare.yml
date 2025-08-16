@@ -29,6 +29,7 @@ jobs:
       - run: npm run build --ignore-scripts
         env:
           SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
+
       - run: npm test
       - uses: actions/upload-artifact@v4
         with:
