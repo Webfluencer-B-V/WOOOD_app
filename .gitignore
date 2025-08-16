@@ -3,6 +3,7 @@
 
 # Cloudflare
 /.wrangler
+/.wrangler-dryrun/
 /dist/
 
 # React Router
@@ -14,8 +15,7 @@
 **/__screenshots__/*
 
 # Environment variables
-.env
-.env.*
+.env*
 !.env.example
 
 # Editor files
@@ -23,14 +23,6 @@
 .idea/
 *.swp
 *.swo
-
-# Shopify
-extensions/**/dist
-extensions/**/generated
-shopify.app.*.toml
-
-# Backend specific
-backend/dist/
 
 # Logs
 logs
@@ -45,9 +37,7 @@ pids
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
-coverage/
-
 # Temporary folders
 tmp/
 temp/workers/.dev.vars
+.devcontainer/devcontainer.env

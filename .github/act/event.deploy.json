@@ -1,5 +1,0 @@
-{
-  "ref": "refs/heads/staging",
-  "after": "0000000000000000000000000000000000000000",
-  "repository": { "full_name": "local/WOOOD_app", "default_branch": "staging" }
-}

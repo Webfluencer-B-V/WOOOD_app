@@ -10,7 +10,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 		shopify.utils.log.debug("shopify.webhooks", { ...webhook });
 
 		const session = await shopify.session.get(webhook.domain);
-		const payload = await request.json();
+		const payload = (await request.json()) as unknown;
 
 		switch (webhook.topic) {
 			case "APP_UNINSTALLED":
@@ -36,7 +36,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 				// No immediate action needed here, just log the webhook
 				shopify.utils.log.debug(`Order webhook received: ${webhook.topic}`, {
 					shop: webhook.domain,
-					orderId: payload?.id,
+					orderId: (payload as { id?: string | number })?.id,
 				});
 				break;
 		}

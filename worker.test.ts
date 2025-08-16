@@ -31,9 +31,10 @@ const kvStub = {
 			keys: [] as Array<{ name: string }>,
 			list_complete: true,
 			cursor: undefined,
+			cacheStatus: null,
 		};
 	},
-} satisfies KVNamespace;
+} as unknown as KVNamespace;
 
 test.skip("worker", async () => {
 	const request = new Request("http://example.com");

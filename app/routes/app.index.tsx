@@ -59,7 +59,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 	try {
 		const { data, errors } = (await client.request(/* GraphQL */ `
 			#graphql
-			query Shop {
+			query ShopInfo {
 				shop {
 					name
 					myshopifyDomain
@@ -636,7 +636,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 	// Get shop domain for status tracking
 	const { data: shopData } = (await client.request(/* GraphQL */ `
 		#graphql
-		query Shop {
+		query ShopForAction {
 			shop {
 				myshopifyDomain
 			}

@@ -79,7 +79,7 @@ export async function fetchDeliveryDates(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const data = await response.json();
+		const data: ApiResponse = await response.json();
 
 		if (data.success && Array.isArray(data.data)) {
 			console.log(`✅ Successfully fetched ${data.data.length} delivery dates`);
@@ -133,7 +133,7 @@ export async function saveOrderMetafields(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
+		const result: { success?: boolean; [key: string]: unknown } = await response.json();
 		console.log("✅ Successfully saved order metafields:", result);
 		return true;
 	} catch (error: unknown) {
@@ -170,7 +170,8 @@ export async function triggerExperienceCenterUpdate(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
+		const result: { summary?: { successfulShops: number; totalShops: number } } =
+			await response.json();
 		console.log("✅ Successfully triggered experience center sync:", result);
 
 		if (result.summary) {
@@ -212,7 +213,7 @@ export async function getExperienceCenterStatus(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
+		const result: unknown = await response.json();
 		console.log("✅ Successfully fetched experience center status:", result);
 
 		return result;
@@ -250,7 +251,8 @@ export async function triggerStoreLocatorUpdate(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
+		const result: { summary?: { successfulShops: number; totalShops: number } } =
+			await response.json();
 		console.log("✅ Successfully triggered store locator sync:", result);
 
 		if (result.summary) {
@@ -292,7 +294,7 @@ export async function getStoreLocatorStatus(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const result = await response.json();
+		const result: unknown = await response.json();
 		console.log("✅ Successfully fetched store locator status:", result);
 
 		return result;

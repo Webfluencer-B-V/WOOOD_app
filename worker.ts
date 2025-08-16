@@ -409,10 +409,9 @@ export default {
 		return requestHandler(request, { cloudflare: { env, ctx } });
 	},
 
-	// Strongly-typed minimal queue batch type compatible with Workers
-	// without relying on external type packages
+	// Strongly-typed queue handler aligned with Workers types
 	async queue(
-		batch: { messages: Array<{ ack: () => void }> },
+		batch: MessageBatch<QueueMessage>,
 		env: Env,
 		_ctx: ExecutionContext,
 	): Promise<void> {

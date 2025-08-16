@@ -474,7 +474,10 @@ function DeliveryDatePicker() {
 		})
 			.then(async (res) => {
 				if (!res.ok) throw new Error(await res.text());
-				return res.json();
+				return res.json() as Promise<{
+					success?: boolean;
+					inventory?: Record<string, number | null>;
+				}>;
 			})
 			.then((data) => {
 				console.log(`✅ [Inventory Check] API Response:`, data);

@@ -31,13 +31,30 @@ function triggerWebhook() {
 }
 
 function triggerWorkflow() {
-	workflow=${1:-github}
+	workflow=${1:-cloudflare}
+	job=${2:-build}
+	echo "[triggerWorkflow] act -> .github/workflows/${workflow}.yml (job=${job})"
+	ACT_SECRET_FILE=""
+	ACT_VAR_FILE=""
+	test -f .github/act/.secrets && ACT_SECRET_FILE="--secret-file=.github/act/.secrets"
+	test -f .github/act/.vars && ACT_VAR_FILE="--var-file=.github/act/.vars"
+
 	act \
 		--action-offline-mode \
 		--container-architecture=linux/amd64 \
 		--eventpath=.github/act/event.${workflow}.json \
 		--remote-name=github \
-		--workflows=.github/workflows/${workflow}.yml
+		--workflows=.github/workflows/${workflow}.yml \
+		--job ${job} \
+		--artifact-server-path=.artifacts \
+		${ACT_SECRET_FILE} \
+		${ACT_VAR_FILE}
+}
+
+function dryRun() {
+	npm ci
+	npm run build
+	npx wrangler deploy -c build/server/wrangler.json --dry-run --outdir .wrangler-dryrun
 }
 
 function update() {
