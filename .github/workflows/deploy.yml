@@ -28,10 +28,7 @@ jobs:
 
       - name: Deploy Cloudflare Worker (staging)
         if: github.ref == 'refs/heads/staging'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c build/server/wrangler.json --keep-vars
+        run: npm run deploy:cloudflare
 
       - name: Prepare production wrangler config
         if: github.ref == 'refs/heads/production'
@@ -39,7 +36,4 @@ jobs:
 
       - name: Deploy Cloudflare Worker (production)
         if: github.ref == 'refs/heads/production'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          command: deploy -c build/server/wrangler.json --keep-vars
+        run: npm run deploy:cloudflare

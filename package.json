@@ -13,7 +13,7 @@
 		"check:types": "tsc",
 		"clean": "rm -rf .{react-router,shopify,wrangler} build node_modules/.{cache,mf,tmp,vite,vite-temp} && find . -type d -name __screenshots__ -exec rm -rf {} \\;",
 		"deploy": "concurrently 'npm:deploy:*'",
-		"deploy:cloudflare": "wrangler deploy",
+		"deploy:cloudflare": "wrangler deploy -c build/server/wrangler.json --keep-vars",
 		"deploy:shopify": "shopify app deploy --message=$(git rev-parse --abbrev-ref HEAD):$npm_package_version --version=$(git rev-parse HEAD)",
 		"dev": "shopify app dev --localhost-port=8080 --use-localhost",
 		"dev:tunnel": "source .env && shopify app dev --tunnel-url=${SHOPIFY_APP_URL}:${PORT:-8080}",
