@@ -2,7 +2,7 @@ import { env } from "node:process";
 import type { AppLoadContext } from "react-router";
 import { describe, expect, test } from "vitest";
 
-import { API_VERSION } from "~/const";
+import { API_VERSION } from "../const";
 import type { Route } from "./+types/shopify.webhooks";
 import { action } from "./shopify.webhooks";
 
