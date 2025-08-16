@@ -1,4 +1,4 @@
-import { createShopify } from "~/shopify.server";
+import { createShopify } from "../shopify.server";
 import {
 	isAppScopesUpdatePayload,
 	isBaseWebhookPayload,
