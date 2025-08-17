@@ -8,7 +8,23 @@ import i18nextLoaderOptions from "./i18n.config";
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), "");
-	const app = new URL(env.SHOPIFY_APP_URL);
+
+	const rawAppUrl = env.SHOPIFY_APP_URL;
+	let app: URL;
+	if (!rawAppUrl) {
+		// Fall back to localhost in environments (like CI) where SHOPIFY_APP_URL is not provided
+		// This keeps build tools working without requiring deployment URL configuration
+		console.warn(
+			"[vite] SHOPIFY_APP_URL is not set; falling back to http://localhost:8080",
+		);
+		app = new URL("http://localhost:8080");
+	} else {
+		try {
+			app = new URL(rawAppUrl);
+		} catch (error) {
+			throw new Error(`Invalid SHOPIFY_APP_URL: ${rawAppUrl}`);
+		}
+	}
 
 	return {
 		base: app.href,

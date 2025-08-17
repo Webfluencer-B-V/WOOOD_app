@@ -18,6 +18,7 @@ jobs:
     name: Build
     if: ${{ !contains(github.event.head_commit.message, '[skip-ci]') }}
     runs-on: ubuntu-latest
+    environment: staging
     permissions:
       contents: read
     steps:
@@ -33,6 +34,7 @@ jobs:
       - run: npx shopify app build
         env:
           SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
+          SHOPIFY_APP_URL: ${{ vars.SHOPIFY_APP_URL }}
       - uses: actions/upload-artifact@v4
         with:
           name: extensions
@@ -43,6 +45,7 @@ jobs:
     if: ${{ github.ref_type == 'branch' }}
     needs: build
     runs-on: ubuntu-latest
+    environment: staging
     permissions:
       contents: read
     steps:
@@ -61,12 +64,14 @@ jobs:
         env:
           COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+          SHOPIFY_APP_URL: ${{ vars.SHOPIFY_APP_URL }}
 
   release:
     name: Release
     if: ${{ github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: read
     steps:
@@ -82,3 +87,4 @@ jobs:
       - run: npx shopify app release --force --version="release-${{ github.sha }}"
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
+          SHOPIFY_APP_URL: ${{ vars.SHOPIFY_APP_URL }}
