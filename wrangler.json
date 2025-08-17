@@ -76,7 +76,10 @@
 		]
 	},
 	"triggers": {
-		"crons": ["0 */6 * * *", "0 4 * * *"]
+		"crons": [
+			"0 */6 * * *",
+			"0 4 * * *"
+		]
 	},
 	"upload_source_maps": true,
 	"vars": {
@@ -85,12 +88,13 @@
 		"SHOPIFY_APP_URL": "https://woood-staging.leander-4e0.workers.dev",
 		"SHOPIFY_APP_HANDLE": "woood-2",
 		"SHOPIFY_APP_LOG_LEVEL": "debug",
-		"OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
+		"DUTCH_FURNITURE_BASE_URL": "https://portal.dutchfurniturefulfilment.nl",
 		"PRICING_MAX_DISCOUNT_PERCENTAGE": "90",
 		"PRICING_BASE_PRICE_TOLERANCE": "5",
 		"PRICING_ENFORCE_BASE_PRICE_MATCH": "true",
 		"EMAIL_PROVIDER": "cloudflare",
 		"EMAIL_FROM": "noreply@woood-staging.leander-4e0.workers.dev",
+		"OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
 		"OMNIA_EMAIL_RECIPIENTS": "leander@webfluencer.nl",
 		"EMAIL_SUBJECT_PREFIX": "[WOOOD Staging] "
 	}

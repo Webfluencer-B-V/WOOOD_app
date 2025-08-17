@@ -65,7 +65,10 @@
 		]
 	},
 	"triggers": {
-		"crons": ["0 */6 * * *", "0 4 * * *"]
+		"crons": [
+			"0 */6 * * *",
+			"0 4 * * *"
+		]
 	},
 	"upload_source_maps": true,
 	"vars": {
@@ -74,6 +77,7 @@
 		"SHOPIFY_APP_URL": "https://woood-production.leander-4e0.workers.dev",
 		"SHOPIFY_APP_HANDLE": "woood",
 		"SHOPIFY_APP_LOG_LEVEL": "info",
+		"DUTCH_FURNITURE_BASE_URL": "https://portal.dutchfurniturefulfilment.nl",
 		"OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
 		"PRICING_MAX_DISCOUNT_PERCENTAGE": "90",
 		"PRICING_BASE_PRICE_TOLERANCE": "5",
