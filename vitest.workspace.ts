@@ -11,7 +11,7 @@ export default defineWorkspace([
 		test: {
 			browser: {
 				headless: true,
-				enabled: true,
+				enabled: process.env.CI !== "true" && process.env.CI !== "1",
 				instances: [{ browser: "webkit" }],
 				provider: "playwright",
 			},
