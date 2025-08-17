@@ -59,19 +59,22 @@ export async function action({ context, request }: Route.ActionArgs) {
 			}
 		}
 
-		await context.cloudflare.env.WEBHOOK_QUEUE?.send(
-			{
-				payload,
-				webhook,
-			},
-			{ contentType: "json" },
-		);
+		// Send to webhook queue if available
+		if (context.cloudflare.env.WEBHOOK_QUEUE) {
+			await context.cloudflare.env.WEBHOOK_QUEUE.send(
+				{
+					payload,
+					webhook,
+				},
+				{ contentType: "json" },
+			);
+		}
 
-		return new Response(undefined, { status: 204 });
+		return new Response(null, { status: 204 });
 		// biome-ignore lint/suspicious/noExplicitAny: catch(err)
 	} catch (error: any) {
 		return new Response(error.message, {
-			status: error.status,
+			status: error.status || 500,
 			statusText: "Unauthorized",
 		});
 	}

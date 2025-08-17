@@ -14,7 +14,7 @@ scopes = "read_products, write_products, write_app_proxy, write_checkouts, write
 use_legacy_install_flow = false
 
 [app_proxy]
-url = "https://woood-staging.leander-4e0.workers.dev/apps/woood"
+url = "https://woood-staging.leander-4e0.workers.dev/apps"
 subpath = "woood"
 prefix = "apps"
 

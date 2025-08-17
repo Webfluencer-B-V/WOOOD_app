@@ -6,7 +6,23 @@ import { API_VERSION } from "~/const";
 import type { Route } from "./+types/shopify.webhooks";
 import { action } from "./shopify.webhooks";
 
-const context = { cloudflare: { env } } as unknown as AppLoadContext;
+// Mock KVNamespace for SESSION_STORAGE
+const mockKV = {
+	get: () => Promise.resolve(null),
+	put: () => Promise.resolve(),
+	delete: () => Promise.resolve(),
+	list: () => Promise.resolve({ keys: [], list_complete: true, cursor: "" }),
+	getWithMetadata: () => Promise.resolve({ value: null, metadata: null }),
+} as unknown as KVNamespace;
+
+const context = {
+	cloudflare: {
+		env: {
+			...env,
+			SESSION_STORAGE: mockKV,
+		},
+	},
+} as unknown as AppLoadContext;
 
 describe("action", () => {
 	test("error on body missing", async () => {
@@ -50,7 +66,7 @@ describe("action", () => {
 		const request = new Request("http://localhost", {
 			body: "132", // NOTE: changed
 			headers: {
-				"X-Shopify-Hmac-Sha256": "tKI9km9Efxo6gfUjbUBCo3XJ0CmqMLgb4xNzNhpQhK0=",
+				"X-Shopify-Hmac-Sha256": await getHmac("123"), // HMAC for different data
 			},
 			method: "POST",
 		});
@@ -66,7 +82,7 @@ describe("action", () => {
 		const request = new Request("http://localhost", {
 			body: "123",
 			headers: {
-				"X-Shopify-Hmac-Sha256": "tKI9km9Efxo6gfUjbUBCo3XJ0CmqMLgb4xNzNhpQhK0=",
+				"X-Shopify-Hmac-Sha256": await getHmac("123"),
 			},
 			method: "POST",
 		});
@@ -79,12 +95,13 @@ describe("action", () => {
 	});
 
 	test("success", async () => {
+		const body = JSON.stringify({ id: 123, domain: "test.myshopify.com" });
 		const request = new Request("http://localhost", {
-			body: "123",
+			body,
 			headers: {
 				"X-Shopify-API-Version": API_VERSION,
 				"X-Shopify-Shop-Domain": "test.myshopify.com",
-				"X-Shopify-Hmac-Sha256": await getHmac("123"),
+				"X-Shopify-Hmac-Sha256": await getHmac(body),
 				"X-Shopify-Topic": "app/uninstalled",
 				"X-Shopify-Webhook-Id": "test",
 			},
