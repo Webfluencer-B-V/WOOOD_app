@@ -31,30 +31,30 @@ function triggerWebhook() {
 }
 
 function triggerWorkflow() {
-	workflow=${1:-cloudflare}
-	job=${2:-build}
-	echo "[triggerWorkflow] act -> .github/workflows/${workflow}.yml (job=${job})"
-	ACT_SECRET_FILE=""
-	ACT_VAR_FILE=""
-	test -f .github/act/.secrets && ACT_SECRET_FILE="--secret-file=.github/act/.secrets"
-	test -f .github/act/.vars && ACT_VAR_FILE="--var-file=.github/act/.vars"
+	workflow=${1:-github}
+	# Forward common env needed for non-interactive Shopify CLI auth and app config
+	ACT_ENV_VARS=(
+		"SHOPIFY_CLI_PARTNERS_TOKEN=${SHOPIFY_CLI_PARTNERS_TOKEN}"
+		"SHOPIFY_API_KEY=${SHOPIFY_API_KEY}"
+		"SHOPIFY_API_SECRET_KEY=${SHOPIFY_API_SECRET_KEY}"
+		"SHOPIFY_APP_ENV=${SHOPIFY_APP_ENV}"
+		"SHOPIFY_APP_URL=${SHOPIFY_APP_URL}"
+	)
 
+	# shellcheck disable=SC2068
+	ACT_ENV_FLAGS=$(printf -- " --env %s" ${ACT_ENV_VARS[@]})
+
+	# Run act with envs and artifact server
 	act \
 		--action-offline-mode \
 		--container-architecture=linux/amd64 \
+		--artifact-server-path .artifacts \
+		--secret-file .github/act/.secrets \
+		--env-file .env \
 		--eventpath=.github/act/event.${workflow}.json \
 		--remote-name=github \
 		--workflows=.github/workflows/${workflow}.yml \
-		--job ${job} \
-		--artifact-server-path=.artifacts \
-		${ACT_SECRET_FILE} \
-		${ACT_VAR_FILE}
-}
-
-function dryRun() {
-	npm ci
-	npm run build
-	npx wrangler deploy -c build/server/wrangler.json --dry-run --outdir .wrangler-dryrun
+		${ACT_ENV_FLAGS}
 }
 
 function update() {

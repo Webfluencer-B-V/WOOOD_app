@@ -4,7 +4,11 @@ import type { Route } from "./+types/index";
 
 export async function loader({ request }: Route.LoaderArgs) {
 	const url = new URL(request.url);
-	if (url.searchParams.has("shop")) {
+
+	// if Shopify context params are present, hand off to
+	const contextParams = ["shop", "host", "embedded", "id_token", "session"];
+	const hasShopifyContext = contextParams.some((p) => url.searchParams.has(p));
+	if (hasShopifyContext) {
 		return redirect(`/app?${url.searchParams.toString()}`);
 	}
 

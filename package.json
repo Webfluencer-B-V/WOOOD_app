@@ -1,6 +1,6 @@
 {
 	"name": "@Webfluencer-B-V/WOOOD_app",
-	"version": "2.9.25",
+	"version": "3.0.3",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -13,14 +13,14 @@
 		"clean": "rm -rf .{react-router,shopify,wrangler} build node_modules/.{cache,mf,tmp,vite,vite-temp} && find . -type d -name __screenshots__ -exec rm -rf {} \\;",
 		"deploy": "concurrently 'npm:deploy:*'",
 		"deploy:cloudflare": "wrangler deploy",
-		"deploy:shopify": "shopify app deploy --message=$(git rev-parse --abbrev-ref HEAD):$npm_package_version --version=$(git rev-parse HEAD)",
+		"deploy:shopify": "shopify app build && shopify app deploy --force --message=$(git rev-parse --abbrev-ref HEAD)-$npm_package_version --version=$(git rev-parse HEAD)",
 		"dev": "shopify app dev --localhost-port=8080 --use-localhost",
 		"dev:tunnel": "source .env && shopify app dev --tunnel-url=${SHOPIFY_APP_URL}:${PORT:-8080}",
 		"gen": "concurrently 'npm:gen:*'",
 		"gen:code": "graphql-codegen --errors-only",
 		"gen:types": "wrangler types && react-router typegen",
 		"postinstall": "patch-package",
-		"prepare": "[[ $NODE_ENV = 'production' ]] && exit 0; cp node_modules/@shopify/polaris/locales/en.json ./app/i18n/en/polaris.json && biome check --write ./app/i18n/en/polaris.json",
+		"prepare": "[ \"$NODE_ENV\" = \"production\" ] && exit 0; cp node_modules/@shopify/polaris/locales/en.json ./app/i18n/en/polaris.json && biome check --write ./app/i18n/en/polaris.json",
 		"start": "wrangler dev",
 		"test": "vitest --run",
 		"test:e2e": "node --env-file=.env --env-file=.env.test $(npm root)/.bin/playwright test",
@@ -52,8 +52,6 @@
 		"@types/react": "19.1.9",
 		"@types/react-dom": "19.1.7",
 		"@vitest/browser": "3.2.4",
-		"@vitest/runner": "3.2.4",
-		"@vitest/snapshot": "3.2.4",
 		"concurrently": "9.2.0",
 		"happy-dom": "18.0.1",
 		"playwright": "1.54.2",
@@ -66,21 +64,13 @@
 		"wrangler": "4.28.1"
 	},
 	"optionalDependencies": {
-		"@shopify/cli": "3.83.3",
-		"@rollup/rollup-linux-x64-gnu": "^4.21.0"
+		"@shopify/cli": "3.83.3"
 	},
 	"engines": {
 		"node": "^22.14.0",
 		"npm": ">=9.6.4"
 	},
-	"packageManager": "npm@10.0.0",
 	"bin": {
 		"WOOOD": "./bin.sh"
-	},
-	"resolutions": {
-		"react": "19.1.1",
-		"react-dom": "19.1.1",
-		"@types/react": "19.1.9",
-		"@types/react-dom": "19.1.7"
 	}
 }

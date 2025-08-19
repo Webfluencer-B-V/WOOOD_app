@@ -7,14 +7,20 @@ import {
 } from "@react-router/dev/routes";
 
 export default [
+	// Main entry point - handles authentication and redirects to app
 	index("routes/index.tsx"),
+
+	// Main app routes - authenticated area
 	...prefix("app", [
 		layout("./routes/app.tsx", [index("routes/app.index.tsx")]),
 	]),
-	// NOTE: route path must match proxy path ~ shopify.url/:subpathPrefix((a|apps|community|tools)/:subpath == proxy.url/:subpathPrefix/:subpath
+
+	// App proxy routes for storefront features
 	...prefix("apps/:subpath", [
 		layout("./routes/proxy.tsx", [index("./routes/proxy.index.tsx")]),
 	]),
+
+	// Shopify-specific routes
 	...prefix("shopify", [
 		...prefix("auth", [
 			route("login", "./routes/shopify.auth.login.tsx"),

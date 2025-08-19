@@ -10,6 +10,7 @@ import {
 	useApi,
 	useApplyAttributeChange,
 	useAppMetafields,
+	useAttributes,
 	useCartLines,
 	useDeliveryGroups,
 	useSettings,
@@ -21,6 +22,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { type DeliveryDate, useDeliveryDates } from "./hooks/useDeliveryDates";
+import { type InventoryResponse, isInventoryResponse } from "./types/api";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -292,6 +294,7 @@ function useSaveMetadataToAttributes(
 	shouldSave: boolean = true,
 ) {
 	const applyAttributeChange = useApplyAttributeChange();
+	const _attributes = useAttributes();
 	const lastSavedRef = useRef<string>("");
 
 	useEffect(() => {
@@ -348,6 +351,18 @@ function useSaveMetadataToAttributes(
 function DeliveryDatePicker() {
 	const [errorKey, setErrorKey] = useState<string | null>(null);
 	const [selectedDate, setSelectedDate] = useState<string | null>(null);
+	const _isSavingRef = useRef(false);
+	const attributes = useAttributes();
+
+	// Sync selectedDate from checkout attributes to prevent visual reset on re-render
+	useEffect(() => {
+		const existing = attributes?.find?.(
+			(a: { key: string; value: string }) => a.key === "delivery_date",
+		)?.value as string | undefined;
+		if (existing && existing !== selectedDate) {
+			setSelectedDate(existing);
+		}
+	}, [attributes, selectedDate]);
 	const [selectedShippingMethod, setSelectedShippingMethod] = useState<
 		string | null
 	>(null);
@@ -403,7 +418,7 @@ function DeliveryDatePicker() {
 		.filter((code: string) => code.length > 0); // Remove empty strings
 
 	const countryCode = shippingAddress?.countryCode;
-	const canShowPicker =
+	const _canShowPicker =
 		countryCode &&
 		activeCountryCodesList.includes(countryCode) &&
 		shouldShowDatePicker;
@@ -418,8 +433,8 @@ function DeliveryDatePicker() {
 	useSaveMetadataToAttributes(metadataResult, shouldSaveShippingData);
 
 	// Hide extension completely if disabled
-	const isExtensionDisabledUI = isExtensionDisabled;
-	const onlyShippingDataUI = onlyShippingData;
+	const _isExtensionDisabledUI = isExtensionDisabled;
+	const _onlyShippingDataUI = onlyShippingData;
 	const hidePickerDueToEarlyDelivery = useMemo(() => {
 		if (!minimumDeliveryDate || hidePicker === 0) return false;
 		const today = new Date();
@@ -457,6 +472,11 @@ function DeliveryDatePicker() {
 			return;
 		}
 
+		// Skip inventory fetch while saving attribute to avoid flicker
+		if (_isSavingRef.current) {
+			return;
+		}
+
 		console.log(
 			`🔍 [Inventory Check] Starting for ${variantIds.length} variants in shop: ${shop.myshopifyDomain}`,
 		);
@@ -474,34 +494,41 @@ function DeliveryDatePicker() {
 		})
 			.then(async (res) => {
 				if (!res.ok) throw new Error(await res.text());
-				return res.json() as Promise<{
-					success?: boolean;
-					inventory?: Record<string, number | null>;
-				}>;
+				return res.json();
 			})
-			.then((data) => {
-				console.log(`✅ [Inventory Check] API Response:`, data);
-				if (data?.success && data.inventory) {
-					setInventory(data.inventory);
+			.then((rawData) => {
+				console.log(`✅ [Inventory Check] API Response:`, rawData);
+				if (isInventoryResponse(rawData)) {
+					const data = rawData as InventoryResponse;
+					if (data.success && data.inventory) {
+						setInventory(data.inventory);
 
-					// Log inventory details for debugging
-					const inventoryDetails = Object.entries(data.inventory).map(
-						([variantId, qty]) => ({
-							variantId,
-							quantity: qty,
-							inStock:
-								qty === null ||
-								qty === undefined ||
-								(typeof qty === "number" && qty > 0),
-						}),
-					);
-					console.log(
-						`📊 [Inventory Check] Inventory details:`,
-						inventoryDetails,
-					);
+						// Log inventory details for debugging
+						const inventoryDetails = Object.entries(data.inventory).map(
+							([variantId, qty]) => ({
+								variantId,
+								quantity: qty,
+								inStock:
+									qty === null ||
+									qty === undefined ||
+									(typeof qty === "number" && qty > 0),
+							}),
+						);
+						console.log(
+							`📊 [Inventory Check] Inventory details:`,
+							inventoryDetails,
+						);
+					} else {
+						console.warn(`⚠️ [Inventory Check] Invalid API response:`, data);
+						setInventoryError("Inventory API error");
+						setInventory(null);
+					}
 				} else {
-					console.warn(`⚠️ [Inventory Check] Invalid API response:`, data);
-					setInventoryError("Inventory API error");
+					console.warn(
+						"❌ [Inventory Check] Invalid response format:",
+						rawData,
+					);
+					setInventoryError("Invalid response format");
 					setInventory(null);
 				}
 			})
@@ -563,14 +590,7 @@ function DeliveryDatePicker() {
 		console.log(
 			`🔍 [Stock Check Passed] enableOnlyShowIfInStock: ${allProductsInStock}`,
 		);
-		if (!allProductsInStock) {
-			console.log(
-				`🔍 [Stock Check Passed] Stock check failed, returning false`,
-			);
-			return false; // Stock check failed
-		}
-		console.log(`🔍 [Stock Check Passed] Stock check passed, returning true`);
-		return true; // Stock check passed
+		return allProductsInStock;
 	}, [allProductsInStock]);
 
 	// STEP 2: Dutch Order Check Logic - REMOVED, now always proceed
@@ -788,25 +808,31 @@ function DeliveryDatePicker() {
 	// Save selected delivery date separately
 	const handleDateSelect = useCallback(
 		async (dateString: string) => {
+			// Avoid redundant state updates and re-renders
+			if (selectedDate === dateString) return;
 			setSelectedDate(dateString);
-
+			const current = attributes?.find?.(
+				(a: { key: string; value: string }) => a.key === "delivery_date",
+			)?.value as string | undefined;
+			if (current === dateString) return;
 			try {
+				_isSavingRef.current = true;
 				const result = await applyAttributeChange({
 					type: "updateAttribute",
 					key: "delivery_date",
 					value: dateString,
 				});
-
 				if (result.type === "error") {
 					throw new Error("Failed to save delivery date");
 				}
-
 				console.log("✅ Saved delivery date:", dateString);
 			} catch (_err) {
 				setErrorKey("error_saving");
+			} finally {
+				_isSavingRef.current = false;
 			}
 		},
-		[applyAttributeChange],
+		[applyAttributeChange, attributes, selectedDate],
 	);
 
 	const handleRetry = useCallback(() => {

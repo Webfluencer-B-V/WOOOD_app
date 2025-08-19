@@ -1,9 +1,10 @@
 .DS_Store
 **/node_modules/
+.artifacts/
 
 # Cloudflare
 /.wrangler
-/.wrangler-dryrun/
+.env*
 /dist/
 
 # React Router
@@ -16,28 +17,7 @@
 
 # Environment variables
 .env*
+.dev*
+.dev.vars
+.dev.vars.local
 !.env.example
-
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Temporary folders
-tmp/
-temp/workers/.dev.vars
-.devcontainer/devcontainer.env

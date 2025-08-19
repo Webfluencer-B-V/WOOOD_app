@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type { ServerBuild } from "react-router";
 import { createRequestHandler } from "react-router";
 import type {
 	WorkerEnv as Env,
@@ -38,9 +39,13 @@ declare module "react-router" {
 	}
 }
 
+// Load SSR build using React Router's virtual module so TypeScript can type it
 const requestHandler = createRequestHandler(
-	// virtual module injected by build tool
-	() => import("virtual:react-router/server-build"),
+	() =>
+		import("virtual:react-router/server-build").then((m: unknown) => {
+			const mod = m as { default?: ServerBuild } & ServerBuild;
+			return (mod?.default ?? (mod as ServerBuild)) as ServerBuild;
+		}),
 	"production",
 );
 
@@ -409,7 +414,6 @@ export default {
 		return requestHandler(request, { cloudflare: { env, ctx } });
 	},
 
-	// Strongly-typed queue handler aligned with Workers types
 	async queue(
 		batch: MessageBatch<QueueMessage>,
 		env: Env,

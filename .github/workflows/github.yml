@@ -1,0 +1,70 @@
+name: Github
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+on:
+  push:
+    tags: [releases/*]
+
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  codeql:
+    name: CodeQL
+    if: ${{ github.repository == 'Webfluencer-B-V/WOOOD_app' && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          build-mode: none
+          languages: actions, javascript-typescript
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: "package.json"
+          cache: "npm"
+      - run: npm ci --legacy-peer-deps
+      - uses: github/codeql-action/analyze@v3
+
+  release:
+    name: Release
+    if: ${{ github.repository == 'Webfluencer-B-V/WOOOD_app' && github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const tag_name = context.ref;
+            const name = tag_name.replace(/^refs\/tags\/releases\//, '');
+            const version = name.split("/").at(-1);
+            const prerelease = version.startsWith("0.") || version.includes("-");
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const { data: latestRelease } = await github.rest.repos.getLatestRelease({
+              owner,
+              repo,
+            });
+            const latestReleaseTagName = latestRelease.tag_name;
+            const latestReleaseVersion = latestReleaseTagName.split("/").at(-1);
+            const body = `changes: [${latestReleaseVersion}...${version}](https://github.com/${owner}/${repo}/compare/${latestReleaseTagName}...${tag_name})`;
+
+            await github.rest.repos.createRelease({
+              body,
+              name,
+              owner,
+              prerelease,
+              repo,
+              tag_name,
+            });

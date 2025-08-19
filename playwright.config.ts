@@ -1,20 +1,35 @@
 import { env } from "node:process";
 import { defineConfig } from "@playwright/test";
 
-const appUrl = env.HOST ?? env.SHOPIFY_APP_URL;
+const isCI = env.CI === "true" || env.CI === "1";
+const appUrl = env.SHOPIFY_APP_URL;
 
-export default defineConfig({
-	outputDir: "node_modules/.playwright",
-	testDir: "./tests",
-	testMatch: /.*\.e2e.test.ts/,
-	use: {
-		baseURL: appUrl,
-		extraHTTPHeaders: {
-			Accept: "application/json",
-			// Authorization: `token ${env.SHOPIFY_STOREFRONT_ACCESS_TOKEN}`,
-		},
-		locale: "en",
-		serviceWorkers: "allow",
-	},
-	// keep minimal server usage; using env-provided URL
-});
+const config = defineConfig(
+	isCI
+		? {
+				testDir: "./",
+				testMatch: /a^/,
+			}
+		: {
+				outputDir: "node_modules/.playwright",
+				testDir: "./",
+				testMatch: /.*\.e2e\.test\.ts/,
+				use: {
+					baseURL: appUrl,
+					extraHTTPHeaders: {
+						Accept: "application/json",
+						// Authorization: `token ${env.SHOPIFY_STOREFRONT_ACCESS_TOKEN}`,
+					},
+					locale: "en",
+					serviceWorkers: "allow",
+				},
+				webServer: {
+					command: "npm run dev:tunnel",
+					reuseExistingServer: true,
+					timeout: 10 * 1000,
+					url: appUrl,
+				},
+			},
+);
+
+export default config;

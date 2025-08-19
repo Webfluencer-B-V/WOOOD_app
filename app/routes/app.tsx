@@ -5,7 +5,6 @@ import type { LinkLikeComponentProps } from "@shopify/polaris/build/ts/src/utili
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Outlet, useNavigation } from "react-router";
-
 import { APP_BRIDGE_URL } from "~/const";
 import { createShopify } from "~/shopify.server";
 import type { Route } from "./+types/app";
@@ -35,7 +34,7 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 }
 
 export default function App({ loaderData }: Route.ComponentProps) {
-	const { appHandle, apiKey } = loaderData;
+	const { apiKey } = loaderData;
 
 	const { t } = useTranslation(["app", "polaris"]);
 	const i18n = {
@@ -53,12 +52,6 @@ export default function App({ loaderData }: Route.ComponentProps) {
 				<NavMenu>
 					<Link rel="home" to="/app">
 						{t("app")}
-					</Link>
-					<Link
-						target="_top"
-						to={`shopify://admin/charges/${appHandle}/pricing_plans`}
-					>
-						{t("pricingPlans")}
 					</Link>
 					<Link to="/app?section=experience-center">EC</Link>
 					<Link to="/app?section=store-locator">Store Locator</Link>

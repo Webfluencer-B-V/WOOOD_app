@@ -1,4 +1,10 @@
-import { createShopify } from "~/shopify.server";
+import { createShopify } from "../shopify.server";
+import {
+	isAppScopesUpdatePayload,
+	isBaseWebhookPayload,
+	isOrderWebhookPayload,
+	type WebhookPayload,
+} from "../types/webhooks";
 import type { Route } from "./+types/shopify.webhooks";
 
 export async function action({ context, request }: Route.ActionArgs) {
@@ -10,7 +16,13 @@ export async function action({ context, request }: Route.ActionArgs) {
 		shopify.utils.log.debug("shopify.webhooks", { ...webhook });
 
 		const session = await shopify.session.get(webhook.domain);
-		const payload = (await request.json()) as unknown;
+		const rawPayload = await request.json();
+
+		// Type-safe payload handling
+		if (!isBaseWebhookPayload(rawPayload)) {
+			throw new Error("Invalid webhook payload format");
+		}
+		const payload = rawPayload as WebhookPayload;
 
 		switch (webhook.topic) {
 			case "APP_UNINSTALLED":
@@ -20,10 +32,10 @@ export async function action({ context, request }: Route.ActionArgs) {
 				break;
 
 			case "APP_SCOPES_UPDATE":
-				if (session) {
+				if (session && isAppScopesUpdatePayload(payload)) {
 					await shopify.session.set({
 						...session,
-						scope: (payload as { current: string[] }).current.toString(),
+						scope: payload.current.toString(),
 					});
 				}
 				break;
@@ -31,29 +43,38 @@ export async function action({ context, request }: Route.ActionArgs) {
 			case "ORDERS_PAID":
 			case "ORDERS_CREATE":
 			case "ORDERS_UPDATED":
-			case "ORDERS_CANCELLED":
+			case "ORDERS_CANCELLED": {
 				// Order webhooks are enqueued for processing by the worker
 				// No immediate action needed here, just log the webhook
+				const orderId = isOrderWebhookPayload(payload)
+					? payload.id
+					: isBaseWebhookPayload(payload)
+						? payload.id
+						: undefined;
 				shopify.utils.log.debug(`Order webhook received: ${webhook.topic}`, {
 					shop: webhook.domain,
-					orderId: (payload as { id?: string | number })?.id,
+					orderId,
 				});
 				break;
+			}
 		}
 
-		await context.cloudflare.env.WEBHOOK_QUEUE?.send(
-			{
-				payload,
-				webhook,
-			},
-			{ contentType: "json" },
-		);
+		// Send to webhook queue if available
+		if (context.cloudflare.env.WEBHOOK_QUEUE) {
+			await context.cloudflare.env.WEBHOOK_QUEUE.send(
+				{
+					payload,
+					webhook,
+				},
+				{ contentType: "json" },
+			);
+		}
 
-		return new Response(undefined, { status: 204 });
+		return new Response(null, { status: 204 });
 		// biome-ignore lint/suspicious/noExplicitAny: catch(err)
 	} catch (error: any) {
 		return new Response(error.message, {
-			status: error.status,
+			status: error.status || 500,
 			statusText: "Unauthorized",
 		});
 	}

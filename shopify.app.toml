@@ -1,5 +1,4 @@
-# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
-
+# Staging configuration for Shopify app
 client_id = "1c7701d2e09d4ede7616f35e13d472ef"
 application_url = "https://woood-staging.leander-4e0.workers.dev"
 embedded = true
@@ -20,16 +19,12 @@ subpath = "woood"
 prefix = "apps"
 
 [auth]
-redirect_urls = [
-  "https://woood-staging.leander-4e0.workers.dev/auth/callback",
-  "https://woood-staging.leander-4e0.workers.dev/auth/shopify/callback",
-  "https://woood-staging.leander-4e0.workers.dev/api/auth/callback"
-]
+redirect_urls = ["https://woood-staging.leander-4e0.workers.dev/auth/callback", "https://woood-staging.leander-4e0.workers.dev/auth/shopify/callback", "https://woood-staging.leander-4e0.workers.dev/api/auth/callback"]
 
 [build]
 automatically_update_urls_on_dev = false
-include_config_on_deploy = true
 dev_store_url = "webfluencer-panda.myshopify.com"
+include_config_on_deploy = true
 
 [webhooks]
 api_version = "2025-07"

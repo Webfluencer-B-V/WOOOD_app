@@ -1,0 +1,16 @@
+{
+	"biome.enabled": true,
+	"biome.lspBin": "node_modules/@biomejs/biome/bin/biome",
+	"editor.codeActionsOnSave": {
+		"quickfix.biome": "explicit",
+		"source.fixAll.biome": "explicit",
+		"source.organizeImports.biome": "explicit"
+	},
+	"editor.defaultFormatter": "biomejs.biome",
+	"files.associations": {
+		".*.vars": "properties",
+		".env*": "properties"
+	},
+	"typescript.tsdk": "node_modules/typescript/lib",
+	"typescript.enablePromptUseWorkspaceTsdk": true
+}
