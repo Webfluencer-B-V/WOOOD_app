@@ -569,6 +569,12 @@ export async function processOmniaFeedWithBulkOperations(
 
 	console.log(`🎯 Found ${totalMatches} product matches from ${omniaProducts.length} Omnia feed items`);
 
+	// Debug: Show sample of what the matches look like
+	if (matches.length > 0) {
+		const sample = matches[0];
+		console.log(`📊 Sample match: EAN ${sample.ean}, current €${sample.currentPrice}, new €${sample.newPrice}, compareAt ${sample.currentCompareAtPrice}→${sample.newCompareAtPrice}`);
+	}
+
 	// Validate matches
 	const config = validationConfig || {
 		maxDiscountPercentage: 90,
@@ -579,6 +585,7 @@ export async function processOmniaFeedWithBulkOperations(
 	};
 
 	// Filter out no-op updates before validation (Shopify often returns no changes)
+	let debugCount = 0;
 	const filtered = matches.filter((m) => {
 		const pOld = +m.currentPrice.toFixed(2);
 		const pNew = +m.newPrice.toFixed(2);
@@ -588,8 +595,18 @@ export async function processOmniaFeedWithBulkOperations(
 				: null;
 		const capNewValid =
 			m.newCompareAtPrice > m.newPrice ? +m.newCompareAtPrice.toFixed(2) : null;
-		return pOld !== pNew || capOld !== capNewValid;
+		const hasChange = pOld !== pNew || capOld !== capNewValid;
+
+		// Debug first few filtered items to understand the pattern
+		if (!hasChange && debugCount < 3) {
+			console.log(`🔍 No-change filter: EAN ${m.ean}, ${pOld}→${pNew}, compareAt ${capOld}→${capNewValid}`);
+			debugCount++;
+		}
+
+		return hasChange;
 	});
+
+	console.log(`🔄 Filter results: ${filtered.length} changes from ${matches.length} matches`);
 
 	const validationResult = validatePriceMatches(filtered, config);
 	let validMatches = validationResult.valid;
@@ -605,13 +622,30 @@ export async function processOmniaFeedWithBulkOperations(
 		validMatches = limited;
 	}
 
-	if (validMatches.length === 0) {
-		console.log("ℹ️ No valid matches - skipping price updates");
-	}
-
 	// Generate a unique runId for this pricing sync
 	const runId = `omnia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 	const timestamp = new Date().toISOString();
+
+	if (validMatches.length === 0) {
+		console.log("ℹ️ No valid matches - skipping price updates");
+
+		// Return early with success result when no updates needed
+		return {
+			successful: 0,
+			failed: 0,
+			errors: [],
+			totalMatches,
+			validMatches: 0,
+			invalidMatches: validationResult.invalid.length,
+			priceIncreases: 0,
+			priceDecreases: 0,
+			priceUnchanged: totalMatches,
+			sourceTotal: omniaProducts.length,
+			updatedSamples: [],
+			invalidSamples: validationResult.invalid.slice(0, 50),
+			runId,
+		};
+	}
 
 	// Update prices in larger batches for better performance
 	const batchSize = 100;

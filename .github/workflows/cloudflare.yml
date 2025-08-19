@@ -8,6 +8,8 @@ on:
   push:
     branches: [main]
     tags: [releases/*]
+  pull_request:
+    branches: [main]
 
 env:
   WRANGLER_SEND_METRICS: false
@@ -30,6 +32,9 @@ jobs:
         env:
           SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
       - run: npm test
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: build
@@ -43,9 +48,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: build
+          path: build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -59,9 +66,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: build
+          path: build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

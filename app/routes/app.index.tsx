@@ -498,7 +498,7 @@ export default function AppIndex({
 													0 && (
 													<>
 														<Text as="p" tone="subdued">
-															Recent updates (by product):
+															Recent price adjustments (by product):
 														</Text>
 														<Scrollable
 															shadow
@@ -506,8 +506,9 @@ export default function AppIndex({
 															style={{ maxHeight: 320 }}
 														>
 															<List type="bullet">
-																{omniaPricingStatus.summary.updatedSamples.map(
-																	(u) => {
+																{omniaPricingStatus.summary.updatedSamples
+																	.filter((u) => u.priceChange !== 0)
+																	.map((u) => {
 																		const productTitle =
 																			u.productTitle ||
 																			`Product ${u.productId.split("/").pop()}`;
