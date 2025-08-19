@@ -19,7 +19,6 @@ jobs:
     name: Build
     if: ${{ !contains(github.event.head_commit.message, '[skip-ci]') }}
     runs-on: ubuntu-latest
-    environment: staging
     permissions:
       contents: read
     steps:
@@ -32,16 +31,10 @@ jobs:
       - run: npm run build --ignore-scripts
         env:
           SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
-          SHOPIFY_APP_URL: ${{ vars.SHOPIFY_APP_URL }}
-
-      - name: Test
+      - run: npm test
         if: ${{ github.event_name == 'pull_request' }}
-        run: npm test
         env:
           SHOPIFY_API_SECRET_KEY: ${{ secrets.SHOPIFY_API_SECRET_KEY }}
-          SHOPIFY_API_KEY: ${{ vars.SHOPIFY_API_KEY }}
-          SHOPIFY_APP_URL: ${{ vars.SHOPIFY_APP_URL }}
-
       - uses: actions/upload-artifact@v4
         with:
           name: build
@@ -52,13 +45,14 @@ jobs:
     if: ${{ github.ref_type == 'branch' }}
     needs: build
     runs-on: ubuntu-latest
-    environment: staging
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: build
+          path: build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -69,13 +63,14 @@ jobs:
     if: ${{ github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-latest
-    environment: production
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: build
+          path: build
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

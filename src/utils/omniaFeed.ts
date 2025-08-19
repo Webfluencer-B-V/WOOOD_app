@@ -526,11 +526,8 @@ export async function processOmniaFeedWithBulkOperations(
 		} catch {}
 	}
 
-	// Debug visibility
-	console.log("Omnia bulk parsed products", {
-		productsCount: products.size,
-		sample: Array.from(products.values()).slice(0, 3),
-	});
+	// High-level summary only
+	console.log(`📦 Parsed ${products.size} products from bulk operation`);
 
 	// Match products by EAN
 	const eanMap = new Map<string, OmniaFeedRow>();
@@ -570,10 +567,13 @@ export async function processOmniaFeedWithBulkOperations(
 		}
 	}
 
-	console.log("Omnia bulk matching summary", {
-		totalMatches,
-		omniaProductsCount: omniaProducts.length,
-	});
+	console.log(`🎯 Found ${totalMatches} product matches from ${omniaProducts.length} Omnia feed items`);
+
+	// Debug: Show sample of what the matches look like
+	if (matches.length > 0) {
+		const sample = matches[0];
+		console.log(`📊 Sample match: EAN ${sample.ean}, current €${sample.currentPrice}, new €${sample.newPrice}, compareAt ${sample.currentCompareAtPrice}→${sample.newCompareAtPrice}`);
+	}
 
 	// Validate matches
 	const config = validationConfig || {
@@ -585,6 +585,7 @@ export async function processOmniaFeedWithBulkOperations(
 	};
 
 	// Filter out no-op updates before validation (Shopify often returns no changes)
+	let debugCount = 0;
 	const filtered = matches.filter((m) => {
 		const pOld = +m.currentPrice.toFixed(2);
 		const pNew = +m.newPrice.toFixed(2);
@@ -594,17 +595,23 @@ export async function processOmniaFeedWithBulkOperations(
 				: null;
 		const capNewValid =
 			m.newCompareAtPrice > m.newPrice ? +m.newCompareAtPrice.toFixed(2) : null;
-		return pOld !== pNew || capOld !== capNewValid;
+		const hasChange = pOld !== pNew || capOld !== capNewValid;
+
+		// Debug first few filtered items to understand the pattern
+		if (!hasChange && debugCount < 3) {
+			console.log(`🔍 No-change filter: EAN ${m.ean}, ${pOld}→${pNew}, compareAt ${capOld}→${capNewValid}`);
+			debugCount++;
+		}
+
+		return hasChange;
 	});
+
+	console.log(`🔄 Filter results: ${filtered.length} changes from ${matches.length} matches`);
 
 	const validationResult = validatePriceMatches(filtered, config);
 	let validMatches = validationResult.valid;
 
-	console.log("Omnia valid matches", {
-		totalMatches,
-		valid: validMatches.length,
-		invalid: validationResult.invalid.length,
-	});
+	console.log(`✅ Validation: ${validMatches.length} valid, ${validationResult.invalid.length} invalid from ${totalMatches} total matches`);
 
 	if (typeof testLimit === "number" && testLimit > 0) {
 		const limited = validMatches.slice(0, testLimit);
@@ -615,16 +622,33 @@ export async function processOmniaFeedWithBulkOperations(
 		validMatches = limited;
 	}
 
-	if (validMatches.length === 0) {
-		console.log("ℹ️ No valid matches - skipping price updates");
-	}
-
 	// Generate a unique runId for this pricing sync
 	const runId = `omnia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 	const timestamp = new Date().toISOString();
 
-	// Update prices in batches (same pattern as EC)
-	const batchSize = 10;
+	if (validMatches.length === 0) {
+		console.log("ℹ️ No valid matches - skipping price updates");
+
+		// Return early with success result when no updates needed
+		return {
+			successful: 0,
+			failed: 0,
+			errors: [],
+			totalMatches,
+			validMatches: 0,
+			invalidMatches: validationResult.invalid.length,
+			priceIncreases: 0,
+			priceDecreases: 0,
+			priceUnchanged: totalMatches,
+			sourceTotal: omniaProducts.length,
+			updatedSamples: [],
+			invalidSamples: validationResult.invalid.slice(0, 50),
+			runId,
+		};
+	}
+
+	// Update prices in larger batches for better performance
+	const batchSize = 100;
 	let totalSuccessful = 0;
 	let totalFailed = 0;
 	let priceIncreases = 0;
@@ -699,22 +723,25 @@ export async function processOmniaFeedWithBulkOperations(
 				}
 			}
 
-			if (i + batchSize < validMatches.length) await delay(1000);
+			// Reduced delay for better performance
+			if (i + batchSize < validMatches.length) await delay(200);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			const variantIds = batch.map((m) => m.variantId).slice(0, 10);
-			console.error("❌ Batch update failed", { message, variantIds });
+			console.error("❌ Batch update failed", { message, variantCount: batch.length });
 			allErrors.push(
-				`Batch error: ${message}; variants: ${variantIds.join(",")}`,
+				`Batch error: ${message}; ${batch.length} variants failed`,
 			);
 			totalFailed += batch.length;
 		}
 	}
 
+	// High-level summary instead of per-product details
+	console.log(`🎉 Bulk update complete: ${totalSuccessful} successful, ${totalFailed} failed from ${validMatches.length} valid matches`);
+
 	return {
 		successful: totalSuccessful,
 		failed: totalFailed,
-		errors: allErrors.slice(0, 20),
+		errors: allErrors.slice(0, 50),
 		totalMatches,
 		validMatches: validMatches.length,
 		invalidMatches: validationResult.invalid.length,
@@ -875,10 +902,10 @@ async function updateProductPricesBulk(
 		for (let i = 0; i < variants.length; i += 250) {
 			const slice = variants.slice(i, i + 250);
 
-			console.log(
-				`💰 Attempting to update ${slice.length} variants for product`,
-				{ productId, sample: slice.slice(0, 3) },
-			);
+			// Reduced logging - only log every 10th batch to prevent log bloat
+			if (i === 0) {
+				console.log(`💰 Updating ${slice.length} variants for product batch (${productId.split('/').pop()})`);
+			}
 
 			const result = (await adminClient.request(mutation, {
 				productId,
@@ -911,17 +938,17 @@ async function updateProductPricesBulk(
 			totalSuccessful += updated.length;
 			totalFailed += slice.length - updated.length;
 			successfulVariantIds.push(...updated.map((u) => u.id));
-			if (userErrors.length > 0) {
-				errors.push(...userErrors.map((e) => `${e.field}: ${e.message}`));
+			if (userErrors.length > 0 && errors.length < 100) {
+				// Cap errors to prevent log bloat
+				const remainingCapacity = 100 - errors.length;
+				const errorsToAdd = userErrors.slice(0, remainingCapacity);
+				errors.push(...errorsToAdd.map((e) => `${e.field}: ${e.message}`));
 			}
 
-			console.log(`💰 Price update results (per product)`, {
-				productId,
-				successful: updated.length,
-				failed: slice.length - updated.length,
-				userErrors: userErrors.length > 0 ? userErrors : "none",
-				sampleUpdated: updated.slice(0, 3).map((u) => u.id),
-			});
+			// Only log errors or significant issues, not every successful update
+			if (userErrors.length > 0) {
+				console.log(`⚠️ Product ${productId.split('/').pop()}: ${updated.length} successful, ${slice.length - updated.length} failed, ${userErrors.length} errors`);
+			}
 		}
 	}
 

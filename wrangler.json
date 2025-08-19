@@ -96,6 +96,8 @@
 		"EMAIL_FROM": "noreply@woood-staging.leander-4e0.workers.dev",
 		"OMNIA_FEED_URL": "https://feed.omniaretail.com/?feedid=6869d712-9fc4-4352-ad05-209ca3a75b88&type=CSV",
 		"OMNIA_EMAIL_RECIPIENTS": "leander@webfluencer.nl",
-		"EMAIL_SUBJECT_PREFIX": "[WOOOD Staging] "
+		"EMAIL_SUBJECT_PREFIX": "[WOOOD Staging] ",
+		"DUTCH_FURNITURE_BASE_URL": "https://portal.dutchfurniturefulfilment.nl",
+		"DUTCH_FURNITURE_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiZjM5YWJiZDgtMTkwNS00NTAzLTg5NDktYjA0MjMxMzM4ZDFmIiwiSWQiOiJmMzlhYmJkOC0xOTA1LTQ1MDMtODk0OS1iMDQyMzEzMzhkMWYiLCJSb2wiOiJhcGlfYWNjZXNzIiwic3ViIjoiV2ViZmx1ZW5jZXIiLCJqdGkiOiJjODhmNmNlOC0xNDEyLTRhY2YtYTNjZC1hMGMzZDJjMDEyNDQiLCJpYXQiOjE3NDY1MTg4ODcsImlzcyI6IkVudGVyIiwiYXVkIjoiaHR0cDovL2xvY2FsaG9zdDo1MDAwLyJ9.wQTphvBjVs-s0NwyLZWX3JprPwpvr_QMxmU0JQ3mdjc"
 	}
 }
