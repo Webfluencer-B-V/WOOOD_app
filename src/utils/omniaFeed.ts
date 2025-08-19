@@ -526,11 +526,8 @@ export async function processOmniaFeedWithBulkOperations(
 		} catch {}
 	}
 
-	// Debug visibility
-	console.log("Omnia bulk parsed products", {
-		productsCount: products.size,
-		sample: Array.from(products.values()).slice(0, 3),
-	});
+	// High-level summary only
+	console.log(`📦 Parsed ${products.size} products from bulk operation`);
 
 	// Match products by EAN
 	const eanMap = new Map<string, OmniaFeedRow>();
@@ -570,10 +567,7 @@ export async function processOmniaFeedWithBulkOperations(
 		}
 	}
 
-	console.log("Omnia bulk matching summary", {
-		totalMatches,
-		omniaProductsCount: omniaProducts.length,
-	});
+	console.log(`🎯 Found ${totalMatches} product matches from ${omniaProducts.length} Omnia feed items`);
 
 	// Validate matches
 	const config = validationConfig || {
@@ -600,11 +594,7 @@ export async function processOmniaFeedWithBulkOperations(
 	const validationResult = validatePriceMatches(filtered, config);
 	let validMatches = validationResult.valid;
 
-	console.log("Omnia valid matches", {
-		totalMatches,
-		valid: validMatches.length,
-		invalid: validationResult.invalid.length,
-	});
+	console.log(`✅ Validation: ${validMatches.length} valid, ${validationResult.invalid.length} invalid from ${totalMatches} total matches`);
 
 	if (typeof testLimit === "number" && testLimit > 0) {
 		const limited = validMatches.slice(0, testLimit);
@@ -623,8 +613,8 @@ export async function processOmniaFeedWithBulkOperations(
 	const runId = `omnia-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 	const timestamp = new Date().toISOString();
 
-	// Update prices in batches (same pattern as EC)
-	const batchSize = 10;
+	// Update prices in larger batches for better performance
+	const batchSize = 100;
 	let totalSuccessful = 0;
 	let totalFailed = 0;
 	let priceIncreases = 0;
@@ -699,22 +689,25 @@ export async function processOmniaFeedWithBulkOperations(
 				}
 			}
 
-			if (i + batchSize < validMatches.length) await delay(1000);
+			// Reduced delay for better performance
+			if (i + batchSize < validMatches.length) await delay(200);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			const variantIds = batch.map((m) => m.variantId).slice(0, 10);
-			console.error("❌ Batch update failed", { message, variantIds });
+			console.error("❌ Batch update failed", { message, variantCount: batch.length });
 			allErrors.push(
-				`Batch error: ${message}; variants: ${variantIds.join(",")}`,
+				`Batch error: ${message}; ${batch.length} variants failed`,
 			);
 			totalFailed += batch.length;
 		}
 	}
 
+	// High-level summary instead of per-product details
+	console.log(`🎉 Bulk update complete: ${totalSuccessful} successful, ${totalFailed} failed from ${validMatches.length} valid matches`);
+
 	return {
 		successful: totalSuccessful,
 		failed: totalFailed,
-		errors: allErrors.slice(0, 20),
+		errors: allErrors.slice(0, 50),
 		totalMatches,
 		validMatches: validMatches.length,
 		invalidMatches: validationResult.invalid.length,
@@ -875,10 +868,10 @@ async function updateProductPricesBulk(
 		for (let i = 0; i < variants.length; i += 250) {
 			const slice = variants.slice(i, i + 250);
 
-			console.log(
-				`💰 Attempting to update ${slice.length} variants for product`,
-				{ productId, sample: slice.slice(0, 3) },
-			);
+			// Reduced logging - only log every 10th batch to prevent log bloat
+			if (i === 0) {
+				console.log(`💰 Updating ${slice.length} variants for product batch (${productId.split('/').pop()})`);
+			}
 
 			const result = (await adminClient.request(mutation, {
 				productId,
@@ -911,17 +904,17 @@ async function updateProductPricesBulk(
 			totalSuccessful += updated.length;
 			totalFailed += slice.length - updated.length;
 			successfulVariantIds.push(...updated.map((u) => u.id));
-			if (userErrors.length > 0) {
-				errors.push(...userErrors.map((e) => `${e.field}: ${e.message}`));
+			if (userErrors.length > 0 && errors.length < 100) {
+				// Cap errors to prevent log bloat
+				const remainingCapacity = 100 - errors.length;
+				const errorsToAdd = userErrors.slice(0, remainingCapacity);
+				errors.push(...errorsToAdd.map((e) => `${e.field}: ${e.message}`));
 			}
 
-			console.log(`💰 Price update results (per product)`, {
-				productId,
-				successful: updated.length,
-				failed: slice.length - updated.length,
-				userErrors: userErrors.length > 0 ? userErrors : "none",
-				sampleUpdated: updated.slice(0, 3).map((u) => u.id),
-			});
+			// Only log errors or significant issues, not every successful update
+			if (userErrors.length > 0) {
+				console.log(`⚠️ Product ${productId.split('/').pop()}: ${updated.length} successful, ${slice.length - updated.length} failed, ${userErrors.length} errors`);
+			}
 		}
 	}
 
