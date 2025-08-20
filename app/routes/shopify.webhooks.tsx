@@ -1,4 +1,4 @@
-import { createShopify } from "../shopify.server";
+import { createShopify, createShopifyClient } from "../shopify.server";
 import {
 	isAppScopesUpdatePayload,
 	isBaseWebhookPayload,
@@ -44,8 +44,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 			case "ORDERS_CREATE":
 			case "ORDERS_UPDATED":
 			case "ORDERS_CANCELLED": {
-				// Order webhooks are enqueued for processing by the worker
-				// No immediate action needed here, just log the webhook
+				// Process order attributes into order metafields for create/paid
 				const orderId = isOrderWebhookPayload(payload)
 					? payload.id
 					: isBaseWebhookPayload(payload)
@@ -55,6 +54,95 @@ export async function action({ context, request }: Route.ActionArgs) {
 					shop: webhook.domain,
 					orderId,
 				});
+
+				try {
+					if (
+						(session && (webhook.topic === "ORDERS_CREATE" || webhook.topic === "ORDERS_PAID")) &&
+						orderId !== undefined
+					) {
+						const adminClient = createShopifyClient({
+							headers: { "X-Shopify-Access-Token": session.accessToken },
+							shop: session.shop,
+						});
+
+						// Extract checkout note attributes
+						const raw: unknown = rawPayload;
+						const noteAttributes = Array.isArray((raw as { note_attributes?: Array<{ name?: unknown; value?: unknown }> }).note_attributes)
+							? ((raw as { note_attributes: Array<{ name?: unknown; value?: unknown }> }).note_attributes as Array<{ name?: unknown; value?: unknown }>)
+							: [];
+
+						const findAttr = (key: string): string | null => {
+							for (const item of noteAttributes) {
+								const name = typeof item.name === "string" ? item.name : "";
+								if (name === key) {
+									const val = item.value;
+									return typeof val === "string" ? val : val != null ? String(val) : null;
+								}
+							}
+							return null;
+						};
+
+						const deliveryDate = findAttr("delivery_date");
+						const shippingMethod = findAttr("shipping_method");
+
+						const metafields: Array<{
+							ownerId: string;
+							namespace: string;
+							key: string;
+							value: string;
+							type: string;
+						}> = [];
+
+						const orderGid = `gid://shopify/Order/${orderId}`;
+						if (deliveryDate && /^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
+							metafields.push({
+								ownerId: orderGid,
+								namespace: "custom",
+								key: "dutchned_delivery_date",
+								value: deliveryDate,
+								type: "date",
+							});
+						}
+						if (shippingMethod) {
+							metafields.push({
+								ownerId: orderGid,
+								namespace: "custom",
+								key: "ShippingMethod2",
+								value: shippingMethod,
+								type: "single_line_text_field",
+							});
+						}
+
+						if (metafields.length > 0) {
+							const mutation = `
+								mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+									metafieldsSet(metafields: $metafields) {
+										metafields { key namespace value type ownerType }
+										userErrors { field message }
+									}
+								}
+							`;
+							const result = (await adminClient.request(mutation, { metafields })) as {
+								data?: {
+									metafieldsSet?: {
+										userErrors?: Array<{ field?: string; message?: string }>;
+									};
+								};
+							};
+							const errors = result.data?.metafieldsSet?.userErrors || [];
+							if (errors.length > 0) {
+								shopify.utils.log.debug("metafieldsSet userErrors", { errors, orderId });
+							} else {
+								shopify.utils.log.debug("Order metafields saved", { orderId, metafields });
+							}
+						}
+					}
+				} catch (err) {
+					shopify.utils.log.debug("Failed processing order metafields", {
+						error: err instanceof Error ? err.message : String(err),
+						orderId,
+					});
+				}
 				break;
 			}
 		}

@@ -2,7 +2,7 @@
 client_id = "1c7701d2e09d4ede7616f35e13d472ef"
 application_url = "https://woood-staging.leander-4e0.workers.dev"
 embedded = true
-name = "woood CF (staging)"
+name = "woood V2"
 handle = "woood-2"
 
 [access.admin]
