@@ -59,7 +59,9 @@ jobs:
         with:
           name: build
           path: build
-      - run: npx wrangler versions upload --message=${{ github.ref_name }} --tag=${{ github.sha }}
+      - run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          npx wrangler versions upload --message="${{ github.ref_name }}" --tag="$SHORT_SHA"
         working-directory: build/server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -82,7 +84,9 @@ jobs:
         with:
           name: build
           path: build
-      - run: npx wrangler versions deploy
+      - run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          npx wrangler versions deploy --tag="$SHORT_SHA"
         working-directory: build/server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
