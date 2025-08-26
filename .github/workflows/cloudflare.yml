@@ -66,8 +66,8 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-  deploy:
-    name: Deploy
+  release:
+    name: Release
     if: ${{ github.ref_type == 'tag' }}
     needs: build
     runs-on: ubuntu-latest
@@ -84,9 +84,41 @@ jobs:
         with:
           name: build
           path: build
-      - run: |
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Prepare production Wrangler config
+        run: |
+          jq -s '
+            .[0] as $base | .[1] as $prod | $base
+            | .name = $prod.name
+            | .account_id = $prod.account_id
+            | .vars = $prod.vars
+            | .kv_namespaces = $prod.kv_namespaces
+            | .queues = $prod.queues
+            | .triggers = $prod.triggers
+            | .observability = $prod.observability
+            | .placement = $prod.placement
+          ' build/server/wrangler.json wrangler.production.json > build/server/wrangler.prod.json
+      - name: Upload production version
+        id: upload
+        run: |
           SHORT_SHA=${GITHUB_SHA::7}
-          npx wrangler versions deploy --tag="$SHORT_SHA"
+          OUTPUT=$(npx wrangler versions upload --message="release-${SHORT_SHA}" --tag="$SHORT_SHA" --config=wrangler.prod.json)
+          echo "$OUTPUT"
+          VERSION_ID=$(echo "$OUTPUT" | grep -oE 'Worker Version ID: [A-Za-z0-9-]+' | awk '{print $4}' | head -n1)
+          if [ -z "$VERSION_ID" ]; then
+            echo "Failed to parse Worker Version ID from upload output" >&2
+            exit 1
+          fi
+          echo "version_id=$VERSION_ID" >> "$GITHUB_OUTPUT"
         working-directory: build/server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NO_COLOR: "1"
+      - name: Deploy production version
+        run: |
+          npx wrangler versions deploy --version-id "${{ steps.upload.outputs.version_id }}" --message="release-${GITHUB_REF_NAME}" --config=wrangler.prod.json
+        working-directory: build/server
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          NO_COLOR: "1"

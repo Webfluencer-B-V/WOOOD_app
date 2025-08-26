@@ -32,6 +32,9 @@ function triggerWebhook() {
 
 function triggerWorkflow() {
 	workflow=${1:-github}
+	# Optional second argument allows choosing a different event payload file
+	# e.g. triggerWorkflow cloudflare cloudflare.tag
+	event_name=${2:-$workflow}
 	# Forward common env needed for non-interactive Shopify CLI auth and app config
 	ACT_ENV_VARS=(
 		"SHOPIFY_CLI_PARTNERS_TOKEN=${SHOPIFY_CLI_PARTNERS_TOKEN}"
@@ -51,7 +54,7 @@ function triggerWorkflow() {
 		--artifact-server-path .artifacts \
 		--secret-file .github/act/.secrets \
 		--env-file .env \
-		--eventpath=.github/act/event.${workflow}.json \
+		--eventpath=.github/act/event.${event_name}.json \
 		--remote-name=github \
 		--workflows=.github/workflows/${workflow}.yml \
 		${ACT_ENV_FLAGS}
