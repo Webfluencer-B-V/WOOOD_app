@@ -382,13 +382,11 @@ export async function processOmniaFeedWithBulkOperations(
 		};
 		const current = preflight?.data?.currentBulkOperation;
 		if (current?.status === "RUNNING" && current?.id) {
-			// Cancel stale/previous query to avoid ID-less response
 			await adminClient.request(`
 				mutation { bulkOperationCancel(id: "${current.id}") { userErrors { field message } } }
 			`);
 		}
 	} catch (_e) {
-		// Non-fatal; proceed
 	}
 
 	// Create bulk operation (same pattern as EC)

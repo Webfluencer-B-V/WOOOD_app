@@ -79,12 +79,31 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: extensions
+          path: extensions
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
       - run: npm install -g @shopify/cli@latest
-      - run: npx shopify app release --force --version="release-${{ github.sha }}"
+      - name: Install date-picker deps
+        run: npm ci --no-audit --no-fund --prefix extensions/date-picker
+      - name: Read package.json version
+        id: pkg
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^releases\///')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Ensure tag matches package.json version
+        run: |
+          if [ "${{ steps.pkg.outputs.version }}" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag version (${{ steps.version.outputs.version }}) does not match package.json (${{ steps.pkg.outputs.version }})" >&2
+            exit 1
+          fi
+      - run: npx shopify app release --force --version="release-${{ steps.pkg.outputs.version }}"
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
           SHOPIFY_APP_URL: ${{ vars.SHOPIFY_APP_URL }}

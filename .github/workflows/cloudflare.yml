@@ -86,6 +86,22 @@ jobs:
           path: build
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Read package.json version
+        id: pkg
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^releases\///')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Ensure tag matches package.json version
+        run: |
+          if [ "${{ steps.pkg.outputs.version }}" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag version (${{ steps.version.outputs.version }}) does not match package.json (${{ steps.pkg.outputs.version }})" >&2
+            exit 1
+          fi
       - name: Prepare production Wrangler config
         run: |
           jq -s '
@@ -98,12 +114,11 @@ jobs:
             | .triggers = $prod.triggers
             | .observability = $prod.observability
             | .placement = $prod.placement
-          ' build/server/wrangler.json wrangler.production.json > build/server/wrangler.prod.json
+          ' build/server/wrangler.json wrangler.prod.json > build/server/wrangler.prod.json
       - name: Upload production version
         id: upload
         run: |
-          SHORT_SHA=${GITHUB_SHA::7}
-          OUTPUT=$(npx wrangler versions upload --message="release-${SHORT_SHA}" --tag="$SHORT_SHA" --config=wrangler.prod.json)
+          OUTPUT=$(npx wrangler versions upload --message="release-${{ steps.pkg.outputs.version }}" --tag="${{ steps.pkg.outputs.version }}" --config=wrangler.prod.json)
           echo "$OUTPUT"
           VERSION_ID=$(echo "$OUTPUT" | grep -oE 'Worker Version ID: [A-Za-z0-9-]+' | awk '{print $4}' | head -n1)
           if [ -z "$VERSION_ID" ]; then
@@ -117,7 +132,7 @@ jobs:
           NO_COLOR: "1"
       - name: Deploy production version
         run: |
-          npx wrangler versions deploy --version-id "${{ steps.upload.outputs.version_id }}" --message="release-${GITHUB_REF_NAME}" --config=wrangler.prod.json
+          npx wrangler versions deploy --version-id "${{ steps.upload.outputs.version_id }}" --message="release-${{ steps.pkg.outputs.version }}" --config=wrangler.prod.json
         working-directory: build/server
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

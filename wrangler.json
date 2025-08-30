@@ -88,7 +88,6 @@
 		"SHOPIFY_APP_URL": "https://woood-staging.leander-4e0.workers.dev",
 		"SHOPIFY_APP_HANDLE": "woood-2",
 		"SHOPIFY_APP_LOG_LEVEL": "debug",
-		"DUTCH_FURNITURE_BASE_URL": "https://portal.dutchfurniturefulfilment.nl",
 		"PRICING_MAX_DISCOUNT_PERCENTAGE": "90",
 		"PRICING_BASE_PRICE_TOLERANCE": "5",
 		"PRICING_ENFORCE_BASE_PRICE_MATCH": "true",
