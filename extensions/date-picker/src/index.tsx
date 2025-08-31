@@ -375,7 +375,7 @@ function DeliveryDatePicker() {
 	const applyAttributeChange = useApplyAttributeChange();
 
 	// API base URL - hardcoded for production
-	const apiBaseUrl = "https://woood-production.leander-4e0.workers.dev";
+	const apiBaseUrl = "https://woood.leander-4e0.workers.dev";
 
 	// Extension settings
 	const extensionMode = settings.extension_mode || "Full";
@@ -554,8 +554,8 @@ function DeliveryDatePicker() {
 			return true; // If inventory check fails, assume in stock (don't block customers)
 		}
 		if (!inventory) {
-			console.log(`🔍 [Stock Check] No inventory data, assuming in stock`);
-			return true; // If no inventory data, assume in stock
+			console.log(`🔍 [Stock Check] No inventory data, assuming NOT in stock`);
+			return false; // If no inventory data, assume NOT in stock
 		}
 
 		const stockResults = cartLines.map((line) => {

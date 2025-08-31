@@ -49,6 +49,13 @@ const requestHandler = createRequestHandler(
 	"production",
 );
 
+// CORS headers for Shopify checkout extensions
+const corsHeaders: Record<string, string> = {
+    "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key",
+};
+
 function generateMockDates(): Array<{ date: string; displayName: string }> {
 	const dates: Array<{ date: string; displayName: string }> = [];
 	const today = new Date();
@@ -104,29 +111,33 @@ async function handleDeliveryDates(
 	env: Env,
 ): Promise<Response> {
 	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_DELIVERY_DATES_API")) {
-		return new Response("Delivery dates API disabled", { status: 503 });
+		return new Response("Delivery dates API disabled", { status: 503, headers: corsHeaders });
 	}
 	try {
 		const url = new URL(request.url);
-		const shop = url.searchParams.get("shop");
-		if (!shop) {
-			return new Response(
-				JSON.stringify({ error: "Shop parameter is required" }),
-				{ status: 400, headers: { "Content-Type": "application/json" } },
-			);
+		let shop: string | null = null;
+		if (request.method === "POST") {
+			try {
+				const body = (await request.json()) as { shop?: string } | undefined;
+				shop = (body?.shop as string) || null;
+			} catch {}
+		} else {
+			shop = url.searchParams.get("shop");
 		}
 		let accessToken: string | null = null;
 		if (env.WOOOD_KV) {
-			const tokenRecord = (await env.WOOOD_KV.get(
-				`shop_token:${shop}`,
-				"json",
-			)) as { accessToken?: string } | null;
-			accessToken = tokenRecord?.accessToken || null;
+			if (shop) {
+				const tokenRecord = (await env.WOOOD_KV.get(
+					`shop_token:${shop}`,
+					"json",
+				)) as { accessToken?: string } | null;
+				accessToken = tokenRecord?.accessToken || null;
+			}
 		}
 		if (!accessToken) {
 			const mockDates = generateMockDates();
 			return new Response(JSON.stringify({ dates: mockDates }), {
-				headers: { "Content-Type": "application/json" },
+				headers: { "Content-Type": "application/json", ...corsHeaders },
 			});
 		}
 		if (env.DUTCHNED_API_URL && env.DUTCHNED_API_KEY) {
@@ -140,7 +151,7 @@ async function handleDeliveryDates(
 				if (response.ok) {
 					const data = await response.json();
 					return new Response(JSON.stringify(data), {
-						headers: { "Content-Type": "application/json" },
+						headers: { "Content-Type": "application/json", ...corsHeaders },
 					});
 				}
 			} catch (error) {
@@ -149,13 +160,13 @@ async function handleDeliveryDates(
 		}
 		const mockDates = generateMockDates();
 		return new Response(JSON.stringify({ dates: mockDates }), {
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	} catch (error) {
 		console.error("Delivery dates API error:", error);
 		return new Response(JSON.stringify({ error: "Internal server error" }), {
 			status: 500,
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	}
 }
@@ -165,7 +176,7 @@ async function handleStoreLocator(
 	env: Env,
 ): Promise<Response> {
 	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_STORE_LOCATOR")) {
-		return new Response("Store locator API disabled", { status: 503 });
+		return new Response("Store locator API disabled", { status: 503, headers: corsHeaders });
 	}
 	try {
 		const url = new URL(request.url);
@@ -220,7 +231,7 @@ async function handleStoreLocator(
 					JSON.stringify({ success: false, error: message }),
 					{
 						status: 500,
-						headers: { "Content-Type": "application/json" },
+						headers: { "Content-Type": "application/json", ...corsHeaders },
 					},
 				);
 			}
@@ -230,18 +241,18 @@ async function handleStoreLocator(
 				JSON.stringify({
 					error: "Deprecated. Use app action status in dashboard.",
 				}),
-				{ status: 410, headers: { "Content-Type": "application/json" } },
+				{ status: 410, headers: { "Content-Type": "application/json", ...corsHeaders } },
 			);
 		}
 		return new Response(JSON.stringify({ error: "Invalid action parameter" }), {
 			status: 400,
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	} catch (error) {
 		console.error("Store locator API error:", error);
 		return new Response(JSON.stringify({ error: "Internal server error" }), {
 			status: 500,
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	}
 }
@@ -251,7 +262,7 @@ async function handleExperienceCenter(
 	env: Env,
 ): Promise<Response> {
 	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_EXPERIENCE_CENTER")) {
-		return new Response("Experience center API disabled", { status: 503 });
+		return new Response("Experience center API disabled", { status: 503, headers: corsHeaders });
 	}
 	try {
 		const url = new URL(request.url);
@@ -265,7 +276,7 @@ async function handleExperienceCenter(
 				for (const shop of shops) {
 					await (
 						env as unknown as {
-							WEBHOOK_QUEUE?: {
+							SCHEDULED_QUEUE?: {
 								send: (m: {
 									type: string;
 									shop?: string;
@@ -273,7 +284,7 @@ async function handleExperienceCenter(
 								}) => Promise<void>;
 							};
 						}
-					).WEBHOOK_QUEUE?.send({
+					).SCHEDULED_QUEUE?.send({
 						type: "experience-center-sync",
 						shop,
 						scheduledAt: new Date().toISOString(),
@@ -281,7 +292,7 @@ async function handleExperienceCenter(
 				}
 				return new Response(
 					JSON.stringify({ success: true, enqueued: shops.length }),
-					{ headers: { "Content-Type": "application/json" } },
+					{ headers: { "Content-Type": "application/json", ...corsHeaders } },
 				);
 			} catch (error) {
 				const err = {
@@ -295,7 +306,7 @@ async function handleExperienceCenter(
 				);
 				return new Response(JSON.stringify(err), {
 					status: 500,
-					headers: { "Content-Type": "application/json" },
+					headers: { "Content-Type": "application/json", ...corsHeaders },
 				});
 			}
 		}
@@ -334,7 +345,7 @@ async function handleExperienceCenter(
 								? { status: "available", totals }
 								: { status: "unavailable" },
 						}),
-						{ headers: { "Content-Type": "application/json" } },
+						{ headers: { "Content-Type": "application/json", ...corsHeaders } },
 					);
 				}
 
@@ -343,7 +354,7 @@ async function handleExperienceCenter(
 					JSON.stringify({
 						error: "Deprecated. Use app action status in dashboard.",
 					}),
-					{ status: 410, headers: { "Content-Type": "application/json" } },
+					{ status: 410, headers: { "Content-Type": "application/json", ...corsHeaders } },
 				);
 			} catch (error) {
 				const message =
@@ -354,19 +365,19 @@ async function handleExperienceCenter(
 						status: "unknown",
 						error: message,
 					}),
-					{ status: 500, headers: { "Content-Type": "application/json" } },
+					{ status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } },
 				);
 			}
 		}
 		return new Response(JSON.stringify({ error: "Invalid action parameter" }), {
 			status: 400,
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	} catch (error) {
 		console.error("Experience center API error:", error);
 		return new Response(JSON.stringify({ error: "Internal server error" }), {
 			status: 500,
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	}
 }
@@ -393,6 +404,9 @@ export default {
 	): Promise<Response> {
 		const url = new URL(request.url);
 		const path = url.pathname;
+		if (request.method === "OPTIONS" && path.startsWith("/api/")) {
+			return new Response(null, { headers: corsHeaders });
+		}
 		if (path.startsWith("/api/delivery-dates"))
 			return handleDeliveryDates(request, env);
 		if (path.startsWith("/api/store-locator"))
@@ -577,7 +591,7 @@ export default {
 				if (enabled === "false") continue;
 				await (
 					env as unknown as {
-						WEBHOOK_QUEUE?: {
+						SCHEDULED_QUEUE?: {
 							send: (m: {
 								type: string;
 								shop?: string;
@@ -585,7 +599,7 @@ export default {
 							}) => Promise<void>;
 						};
 					}
-				).WEBHOOK_QUEUE?.send({
+				).SCHEDULED_QUEUE?.send({
 					type: "store-locator-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
@@ -604,7 +618,7 @@ export default {
 				if (enabled === "false") continue;
 				await (
 					env as unknown as {
-						WEBHOOK_QUEUE?: {
+						SCHEDULED_QUEUE?: {
 							send: (m: {
 								type: string;
 								shop?: string;
@@ -612,7 +626,7 @@ export default {
 							}) => Promise<void>;
 						};
 					}
-				).WEBHOOK_QUEUE?.send({
+				).SCHEDULED_QUEUE?.send({
 					type: "experience-center-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
@@ -631,7 +645,7 @@ export default {
 				if (enabled === "false") continue;
 				await (
 					env as unknown as {
-						WEBHOOK_QUEUE?: {
+						SCHEDULED_QUEUE?: {
 							send: (m: {
 								type: string;
 								shop?: string;
@@ -639,7 +653,7 @@ export default {
 							}) => Promise<void>;
 						};
 					}
-				).WEBHOOK_QUEUE?.send({
+				).SCHEDULED_QUEUE?.send({
 					type: "omnia-pricing-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
@@ -650,7 +664,7 @@ export default {
 		if (event.cron === "0 2 * * *") {
 			await (
 				env as unknown as {
-					WEBHOOK_QUEUE?: {
+					SCHEDULED_QUEUE?: {
 						send: (m: {
 							type: string;
 							shop?: string;
@@ -658,7 +672,7 @@ export default {
 						}) => Promise<void>;
 					};
 				}
-			).WEBHOOK_QUEUE?.send({
+			).SCHEDULED_QUEUE?.send({
 				type: "token-cleanup",
 				scheduledAt: new Date().toISOString(),
 			});
