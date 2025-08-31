@@ -22,7 +22,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useDeliveryDates } from "./hooks/useDeliveryDates";
-import { type DeliveryDate, type InventoryResponse, isInventoryResponse } from "./types/api";
+import { type DeliveryDate } from "./types/api";
+import { type InventoryResponse, isInventoryResponse } from "./types/api";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -567,10 +568,8 @@ function DeliveryDatePicker() {
 				return true; // If no variant ID, assume in stock
 			}
 			const qty = inventory[variantId];
-			const inStock =
-				qty === null ||
-				qty === undefined ||
-				(typeof qty === "number" && qty > 0);
+			// In stock only if quantity > 0.
+			const inStock = typeof qty === "number" && qty > 0;
 			console.log(
 				`🔍 [Stock Check] Variant ${variantId}: qty=${qty}, inStock=${inStock}`,
 			);

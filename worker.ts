@@ -236,18 +236,23 @@ async function handleInventory(request: Request, env: Env): Promise<Response> {
 				nodes(ids: $ids) {
 					... on ProductVariant {
 						id
-						availableForSale
+						inventoryQuantity
+						inventoryPolicy
 					}
 				}
 			}
 		`;
 		const gqlRes = await adminClient.request(query, { ids: variantIds });
-		const nodes = Array.isArray(gqlRes?.data?.nodes) ? gqlRes.data.nodes : [];
+		const nodes = (Array.isArray(gqlRes?.data?.nodes) ? gqlRes.data.nodes : []) as Array<{
+			id?: string;
+			inventoryQuantity?: number | null;
+			inventoryPolicy?: string | null;
+		}>
 		const inventory = Object.fromEntries(
 			variantIds.map((id) => {
-				const node = nodes.find((n: any) => n && n.id === id);
-				if (!node) return [id, null as number | null];
-				return [id, node.availableForSale ? 1 : 0];
+				const node = nodes.find((n) => n?.id === id);
+				const qty = typeof node?.inventoryQuantity === "number" ? node!.inventoryQuantity! : 0;
+				return [id, qty];
 			}),
 		);
 
