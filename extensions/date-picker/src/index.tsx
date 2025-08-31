@@ -22,8 +22,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useDeliveryDates } from "./hooks/useDeliveryDates";
-import { type DeliveryDate } from "./types/api";
-import { type InventoryResponse, isInventoryResponse } from "./types/api";
+import {
+	type DeliveryDate,
+	type InventoryResponse,
+	isInventoryResponse,
+} from "./types/api";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -509,10 +512,7 @@ function DeliveryDatePicker() {
 							([variantId, qty]) => ({
 								variantId,
 								quantity: qty,
-								inStock:
-									qty === null ||
-									qty === undefined ||
-									(typeof qty === "number" && qty > 0),
+								inStock: typeof qty === "number" && qty > 0,
 							}),
 						);
 						console.log(

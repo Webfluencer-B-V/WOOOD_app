@@ -243,18 +243,23 @@ async function handleInventory(request: Request, env: Env): Promise<Response> {
 			}
 		`;
 		const gqlRes = await adminClient.request(query, { ids: variantIds });
-		const nodes = (Array.isArray(gqlRes?.data?.nodes) ? gqlRes.data.nodes : []) as Array<{
+		const nodes = (
+			Array.isArray(gqlRes?.data?.nodes) ? gqlRes.data.nodes : []
+		) as Array<{
 			id?: string;
 			inventoryQuantity?: number | null;
 			inventoryPolicy?: string | null;
-		}>
-		const inventory = Object.fromEntries(
-			variantIds.map((id) => {
-				const node = nodes.find((n) => n?.id === id);
-				const qty = typeof node?.inventoryQuantity === "number" ? node!.inventoryQuantity! : 0;
-				return [id, qty];
-			}),
+		}>;
+		// Ensure all requested variants are present with numeric quantities
+		const inventory: Record<string, number> = Object.fromEntries(
+			variantIds.map((id) => [id, 0]),
 		);
+		for (const node of nodes) {
+			const id = node?.id;
+			if (!id || !(id in inventory)) continue;
+			inventory[id] =
+				typeof node.inventoryQuantity === "number" ? node.inventoryQuantity : 0;
+		}
 
 		return new Response(JSON.stringify({ success: true, inventory }), {
 			headers: { "Content-Type": "application/json", ...corsHeaders },
