@@ -190,7 +190,7 @@ async function handleDeliveryDates(
 	}
 }
 
-async function handleInventory(request: Request, _env: Env): Promise<Response> {
+async function handleInventory(request: Request, env: Env): Promise<Response> {
 	// Only POST supported
 	if (request.method !== "POST") {
 		return new Response(JSON.stringify({ error: "Method not allowed" }), {
@@ -201,18 +201,66 @@ async function handleInventory(request: Request, _env: Env): Promise<Response> {
 
 	try {
 		const body = (await request.json()) as
-			| { variantIds?: string[] }
+			| { shop?: string; variantIds?: string[] }
 			| undefined;
+		const shop = (body?.shop as string) || null;
 		const variantIds = Array.isArray(body?.variantIds) ? body!.variantIds : [];
+		if (!shop || variantIds.length === 0) {
+			return new Response(
+				JSON.stringify({ success: false, error: "Missing shop or variantIds" }),
+				{
+					status: 400,
+					headers: { "Content-Type": "application/json", ...corsHeaders },
+				},
+			);
+		}
+
+		let adminClient: {
+			request: (q: string, v?: Record<string, unknown>) => Promise<any>;
+		};
+		try {
+			adminClient = await createAdminClientForShop(shop, env);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			return new Response(
+				JSON.stringify({ success: false, error: `Auth error: ${message}` }),
+				{
+					status: 401,
+					headers: { "Content-Type": "application/json", ...corsHeaders },
+				},
+			);
+		}
+
+		const query = `#graphql
+			query InventoryForVariants($ids: [ID!]!) {
+				nodes(ids: $ids) {
+					... on ProductVariant {
+						id
+						availableForSale
+					}
+				}
+			}
+		`;
+		const gqlRes = await adminClient.request(query, { ids: variantIds });
+		const nodes = Array.isArray(gqlRes?.data?.nodes) ? gqlRes.data.nodes : [];
 		const inventory = Object.fromEntries(
-			variantIds.map((id) => [id, null as number | null]),
+			variantIds.map((id) => {
+				const node = nodes.find((n: any) => n && n.id === id);
+				if (!node) return [id, null as number | null];
+				return [id, node.availableForSale ? 1 : 0];
+			}),
 		);
+
 		return new Response(JSON.stringify({ success: true, inventory }), {
 			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
-	} catch (_err) {
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
 		return new Response(
-			JSON.stringify({ success: false, error: "Inventory API error" }),
+			JSON.stringify({
+				success: false,
+				error: message || "Inventory API error",
+			}),
 			{
 				status: 500,
 				headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -477,27 +525,9 @@ export default {
 			return handleStoreLocator(request, env);
 		if (path.startsWith("/api/experience-center"))
 			return handleExperienceCenter(request, env);
-		// If any other /api/* path slips through, return JSON 404 with CORS to avoid SSR 500s
-		if (path.startsWith("/api/")) {
-			return new Response(JSON.stringify({ error: "Not found" }), {
-				status: 404,
-				headers: { "Content-Type": "application/json", ...corsHeaders },
-			});
-		}
 		// /api/webhooks removed (hard migration). Webhooks are handled by app route.
 		if (path === "/health") return handleHealth(request, env);
-		const res = await requestHandler(request, { cloudflare: { env, ctx } });
-		// Safety net: if somehow an /api/* path was handled by SSR, attach CORS
-		if (path.startsWith("/api/")) {
-			const headers = new Headers(res.headers);
-			for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v);
-			return new Response(res.body, {
-				status: res.status,
-				statusText: res.statusText,
-				headers,
-			});
-		}
-		return res;
+		return requestHandler(request, { cloudflare: { env, ctx } });
 	},
 
 	async queue(
