@@ -38,7 +38,7 @@ declare namespace Cloudflare {
 		EMAIL_SUBJECT_PREFIX: string;
 		NODE_VERSION: string;
 		SHOPIFY_DATE_PICKER_ID: string;
-		WEBHOOK_QUEUE: Queue;
+		SCHEDULED_QUEUE: Queue;
 		SCHEDULED_QUEUE: Queue;
 		ASSETS: Fetcher;
 	}

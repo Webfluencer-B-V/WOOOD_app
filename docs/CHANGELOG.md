@@ -258,7 +258,7 @@ Post‑validation TODO (after E2E passes on Polaris v12)
 ## Completed (App actions + Queues + Deprecations)
 
 - **routes/app.index.tsx**: Implemented loader to read per‑shop KV status (`ec_last_sync:<shop>`, `sl_last_sync:<shop>`) and actions for `sync-experience-center`, `sync-store-locator`, and `register-webhooks`. Uses `createShopify(context).admin(request)` and pure utils. Writes success/error status back to KV. Added Polaris UI (Cards, Buttons, Banners, Badges) with loading states.
-- **routes/shopify.webhooks.tsx**: Centralized webhook intake using app auth. Handles uninstall/scope updates via session APIs; logs order webhooks and enqueues to `WEBHOOK_QUEUE`.
+- **routes/shopify.webhooks.tsx**: Centralized webhook intake using app auth. Handles uninstall/scope updates via session APIs; logs order webhooks and enqueues to `SCHEDULED_QUEUE`.
 - **src/utils/experienceCenter.ts**: Refactored to pure functions: `fetchExperienceCenterData`, `processExperienceCenterWithBulkOperations`, and `setProductExperienceCenterMetafieldsBulk`. No direct `Env` access; accepts injected `ExperienceCenterApiConfig` and `ShopifyAdminClient`.
 - **src/utils/storeLocator.ts**: Refactored to pure functions: `fetchAndTransformDealers` and `upsertShopMetafield` with injected `DealerApiConfig` and `ShopifyAdminClient`.
 - **src/utils/webhooks.ts**: Kept `validateWebhookSignature`, `handleAppUninstalled` helpers; `registerWebhooks` implemented via Admin GraphQL. All accept injected dependencies.

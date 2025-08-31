@@ -63,7 +63,7 @@ export interface WorkerEnv {
   OMNIA_PRICING_STATUS?: KVNamespace;
   OMNIA_PRICING_HISTORY?: KVNamespace;
   SESSION_STORAGE: KVNamespace;
-  WEBHOOK_QUEUE?: WebhookQueue;
+  SCHEDULED_QUEUE?: WebhookQueue;
 }
 
 export interface FeatureFlags {

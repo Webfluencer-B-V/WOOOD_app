@@ -512,7 +512,10 @@ function DeliveryDatePicker() {
 							([variantId, qty]) => ({
 								variantId,
 								quantity: qty,
-								inStock: typeof qty === "number" && qty > 0,
+								inStock:
+									qty === null ||
+									qty === undefined ||
+									(typeof qty === "number" && qty > 0),
 							}),
 						);
 						console.log(

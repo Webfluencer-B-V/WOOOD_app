@@ -250,16 +250,16 @@ async function handleInventory(request: Request, env: Env): Promise<Response> {
 			inventoryQuantity?: number | null;
 			inventoryPolicy?: string | null;
 		}>;
-		// Ensure all requested variants are present with numeric quantities
-		const inventory: Record<string, number> = Object.fromEntries(
-			variantIds.map((id) => [id, 0]),
+		const inventory = Object.fromEntries(
+			variantIds.map((id) => {
+				const node = nodes.find((n) => n?.id === id);
+				const qty =
+					typeof node?.inventoryQuantity === "number"
+						? node!.inventoryQuantity!
+						: 0;
+				return [id, qty];
+			}),
 		);
-		for (const node of nodes) {
-			const id = node?.id;
-			if (!id || !(id in inventory)) continue;
-			inventory[id] =
-				typeof node.inventoryQuantity === "number" ? node.inventoryQuantity : 0;
-		}
 
 		return new Response(JSON.stringify({ success: true, inventory }), {
 			headers: { "Content-Type": "application/json", ...corsHeaders },

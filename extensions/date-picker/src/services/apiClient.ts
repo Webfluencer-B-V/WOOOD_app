@@ -20,7 +20,7 @@ export interface FetchConfig {
 const DEFAULT_CONFIG: FetchConfig = {
 	timeout: 15000, // 15 seconds
 	retries: 2,
-	apiBaseUrl: "https://woood-production.leander-4e0.workers.dev",
+	apiBaseUrl: "https://woood.leander-4e0.workers.dev",
 	enableMockMode: false,
 };
 

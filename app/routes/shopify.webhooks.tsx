@@ -241,8 +241,8 @@ export async function action({ context, request }: Route.ActionArgs) {
 		}
 
 		// Send to webhook queue if available
-		if (context.cloudflare.env.WEBHOOK_QUEUE) {
-			await context.cloudflare.env.WEBHOOK_QUEUE.send(
+		if (context.cloudflare.env.SCHEDULED_QUEUE) {
+			await context.cloudflare.env.SCHEDULED_QUEUE.send(
 				{
 					payload,
 					webhook,
