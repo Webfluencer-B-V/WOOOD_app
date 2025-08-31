@@ -15,11 +15,7 @@ export interface ApiResponse {
 	};
 }
 
-export interface InventoryResponse {
-	success: boolean;
-	inventory?: Record<string, number | null>;
-	error?: string;
-}
+// Removed: InventoryResponse (inventory API removed)
 
 export interface BulkInventoryResponse {
 	summary?: { totalShops: number; successfulShops: number };
@@ -34,13 +30,6 @@ export function isBulkInventoryResponse(x: unknown): x is BulkInventoryResponse 
 	return !!x && typeof x === "object" && "summary" in (x as Record<string, unknown>);
 }
 
-export function isInventoryResponse(x: unknown): x is InventoryResponse {
-	if (!x || typeof x !== "object") return false;
-	const obj = x as Record<string, unknown>;
-	return (
-		"success" in obj &&
-		(obj.inventory === undefined || typeof obj.inventory === "object")
-	);
-}
+// Removed: isInventoryResponse
 
 

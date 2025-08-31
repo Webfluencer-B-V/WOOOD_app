@@ -190,94 +190,7 @@ async function handleDeliveryDates(
 	}
 }
 
-async function handleInventory(request: Request, env: Env): Promise<Response> {
-	// Only POST supported
-	if (request.method !== "POST") {
-		return new Response(JSON.stringify({ error: "Method not allowed" }), {
-			status: 405,
-			headers: { "Content-Type": "application/json", ...corsHeaders },
-		});
-	}
-
-	try {
-		const body = (await request.json()) as
-			| { shop?: string; variantIds?: string[] }
-			| undefined;
-		const shop = (body?.shop as string) || null;
-		const variantIds = Array.isArray(body?.variantIds) ? body!.variantIds : [];
-		if (!shop || variantIds.length === 0) {
-			return new Response(
-				JSON.stringify({ success: false, error: "Missing shop or variantIds" }),
-				{
-					status: 400,
-					headers: { "Content-Type": "application/json", ...corsHeaders },
-				},
-			);
-		}
-
-		let adminClient: {
-			request: (q: string, v?: Record<string, unknown>) => Promise<any>;
-		};
-		try {
-			adminClient = await createAdminClientForShop(shop, env);
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			return new Response(
-				JSON.stringify({ success: false, error: `Auth error: ${message}` }),
-				{
-					status: 401,
-					headers: { "Content-Type": "application/json", ...corsHeaders },
-				},
-			);
-		}
-
-		const query = `#graphql
-			query InventoryForVariants($ids: [ID!]!) {
-				nodes(ids: $ids) {
-					... on ProductVariant {
-						id
-						inventoryQuantity
-						inventoryPolicy
-					}
-				}
-			}
-		`;
-		const gqlRes = await adminClient.request(query, { ids: variantIds });
-		const nodes = (
-			Array.isArray(gqlRes?.data?.nodes) ? gqlRes.data.nodes : []
-		) as Array<{
-			id?: string;
-			inventoryQuantity?: number | null;
-			inventoryPolicy?: string | null;
-		}>;
-		const inventory = Object.fromEntries(
-			variantIds.map((id) => {
-				const node = nodes.find((n) => n?.id === id);
-				const qty =
-					typeof node?.inventoryQuantity === "number"
-						? node!.inventoryQuantity!
-						: 0;
-				return [id, qty];
-			}),
-		);
-
-		return new Response(JSON.stringify({ success: true, inventory }), {
-			headers: { "Content-Type": "application/json", ...corsHeaders },
-		});
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: message || "Inventory API error",
-			}),
-			{
-				status: 500,
-				headers: { "Content-Type": "application/json", ...corsHeaders },
-			},
-		);
-	}
-}
+// Removed: handleInventory endpoint
 
 async function handleStoreLocator(
 	request: Request,
@@ -530,7 +443,7 @@ export default {
 		}
 		if (path.startsWith("/api/delivery-dates"))
 			return handleDeliveryDates(request, env);
-		if (path.startsWith("/api/inventory")) return handleInventory(request, env);
+		// Removed: /api/inventory endpoint
 		if (path.startsWith("/api/store-locator"))
 			return handleStoreLocator(request, env);
 		if (path.startsWith("/api/experience-center"))
@@ -685,9 +598,16 @@ export default {
 				}
 			} catch (error) {
 				console.error("Queue job failed", error);
-				const maybeRetry = (message as unknown as { retry?: () => void }).retry;
-				if (typeof maybeRetry === "function") maybeRetry();
-				else message.ack();
+				const errMsg = error instanceof Error ? error.message : String(error);
+				// Do not retry on auth/permission errors which are unlikely to succeed on retry
+				if (/\b(401|403)\b/.test(errMsg)) {
+					message.ack();
+				} else if (typeof message.retry === "function") {
+					// Call with correct `this` binding to avoid Illegal invocation errors
+					message.retry();
+				} else {
+					message.ack();
+				}
 			}
 		}
 	},

@@ -22,11 +22,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { useDeliveryDates } from "./hooks/useDeliveryDates";
-import {
-	type DeliveryDate,
-	type InventoryResponse,
-	isInventoryResponse,
-} from "./types/api";
+import type { DeliveryDate } from "./types/api";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -451,141 +447,15 @@ function DeliveryDatePicker() {
 	// Country allow-listing combined with picker mode (computed above)
 
 	const cartLines = useCartLines();
-	const [inventory, setInventory] = useState<Record<
-		string,
-		number | null
-	> | null>(null);
-	const [inventoryLoading, setInventoryLoading] = useState(false);
-	const [inventoryError, setInventoryError] = useState<string | null>(null);
+	// Inventory check removed
 
-	// Fetch inventory from worker API when cart lines or shop changes
-	useEffect(() => {
-		if (!cartLines || cartLines.length === 0 || !shop?.myshopifyDomain) {
-			setInventory(null);
-			setInventoryLoading(false);
-			setInventoryError(null);
-			return;
-		}
-		const variantIds = cartLines
-			.map((line) => line.merchandise?.id)
-			.filter(Boolean);
-		if (variantIds.length === 0) {
-			setInventory(null);
-			setInventoryLoading(false);
-			setInventoryError(null);
-			return;
-		}
-
-		// Skip inventory fetch while saving attribute to avoid flicker
-		if (_isSavingRef.current) {
-			return;
-		}
-
-		console.log(
-			`🔍 [Inventory Check] Starting for ${variantIds.length} variants in shop: ${shop.myshopifyDomain}`,
-		);
-		console.log(`🔍 [Inventory Check] Variant IDs:`, variantIds);
-
-		setInventoryLoading(true);
-		setInventoryError(null);
-		fetch(`${apiBaseUrl}/api/inventory`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"x-api-key": "Scuffed~v4ns",
-			},
-			body: JSON.stringify({ shop: shop.myshopifyDomain, variantIds }),
-		})
-			.then(async (res) => {
-				if (!res.ok) throw new Error(await res.text());
-				return res.json();
-			})
-			.then((rawData) => {
-				console.log(`✅ [Inventory Check] API Response:`, rawData);
-				if (isInventoryResponse(rawData)) {
-					const data = rawData as InventoryResponse;
-					if (data.success && data.inventory) {
-						setInventory(data.inventory);
-
-						// Log inventory details for debugging
-						const inventoryDetails = Object.entries(data.inventory).map(
-							([variantId, qty]) => ({
-								variantId,
-								quantity: qty,
-								inStock:
-									qty === null ||
-									qty === undefined ||
-									(typeof qty === "number" && qty > 0),
-							}),
-						);
-						console.log(
-							`📊 [Inventory Check] Inventory details:`,
-							inventoryDetails,
-						);
-					} else {
-						console.warn(`⚠️ [Inventory Check] Invalid API response:`, data);
-						setInventoryError("Inventory API error");
-						setInventory(null);
-					}
-				} else {
-					console.warn(
-						"❌ [Inventory Check] Invalid response format:",
-						rawData,
-					);
-					setInventoryError("Invalid response format");
-					setInventory(null);
-				}
-			})
-			.catch((err) => {
-				console.error(`❌ [Inventory Check] Error:`, err);
-				setInventoryError(
-					typeof err === "string" ? err : err.message || "Unknown error",
-				);
-				setInventory(null);
-			})
-			.finally(() => setInventoryLoading(false));
-	}, [cartLines, shop?.myshopifyDomain]);
+	// Inventory API removed; no external inventory fetch
 
 	// Determine if all products are in stock using fetched inventory
 	const allProductsInStock = useMemo(() => {
-		if (!cartLines || cartLines.length === 0) return true; // Empty cart = in stock
-		if (inventoryLoading) return false; // Don't show picker while loading
-		if (inventoryError) {
-			console.log(
-				`🔍 [Stock Check] Inventory error, assuming in stock:`,
-				inventoryError,
-			);
-			return true; // If inventory check fails, assume in stock (don't block customers)
-		}
-		if (!inventory) {
-			console.log(`🔍 [Stock Check] No inventory data, assuming NOT in stock`);
-			return false; // If no inventory data, assume NOT in stock
-		}
-
-		const stockResults = cartLines.map((line) => {
-			const variantId = line.merchandise?.id;
-			if (!variantId) {
-				console.log(
-					`🔍 [Stock Check] No variant ID for line, assuming in stock`,
-				);
-				return true; // If no variant ID, assume in stock
-			}
-			const qty = inventory[variantId];
-			// In stock only if quantity > 0.
-			const inStock = typeof qty === "number" && qty > 0;
-			console.log(
-				`🔍 [Stock Check] Variant ${variantId}: qty=${qty}, inStock=${inStock}`,
-			);
-			return inStock;
-		});
-
-		const allInStock = stockResults.every((result) => result);
-		console.log(
-			`🔍 [Stock Check] Final result: allInStock=${allInStock}, individual results:`,
-			stockResults,
-		);
-		return allInStock;
-	}, [cartLines, inventory, inventoryLoading, inventoryError]);
+		if (!cartLines || cartLines.length === 0) return true;
+		return true; // Assume in stock without inventory API
+	}, [cartLines]);
 
 	// STEP 1: Stock Check Logic - More lenient to avoid false negatives
 	const stockCheckPassed = useMemo(() => {

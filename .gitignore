@@ -5,7 +5,8 @@
 # Cloudflare
 /.wrangler
 .env*
-*dist/
+dist/
+extensions/date-picker/dist/*
 
 # React Router
 /.react-router/

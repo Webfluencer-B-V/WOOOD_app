@@ -51,6 +51,7 @@ export async function fetchAndTransformDealers(
 	}
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
+		Accept: "application/json",
 		Authorization: `Bearer ${apiKey}`,
 	};
 	// Normalize base URL: strip trailing slashes and any trailing /api
@@ -65,8 +66,13 @@ export async function fetchAndTransformDealers(
 		},
 	);
 	if (!response.ok) {
+		const contentType = response.headers.get("content-type") || "";
+		let bodySample = "";
+		try {
+			bodySample = (await response.text()).slice(0, 256);
+		} catch {}
 		throw new Error(
-			`Failed to fetch dealers: ${response.status} ${response.statusText}`,
+			`Failed to fetch dealers: ${response.status} ${response.statusText}; content-type=${contentType}; sample=${bodySample}`,
 		);
 	}
 	const contentType = response.headers.get("content-type") || "";
