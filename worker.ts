@@ -373,15 +373,7 @@ async function handleExperienceCenter(
 	}
 }
 
-async function handleWebhooks(_request: Request, _env: Env): Promise<Response> {
-	// Deprecated: Webhooks intake is handled by app route `app/routes/shopify.webhooks.tsx`
-	return new Response(
-		JSON.stringify({
-			error: "Deprecated. Use app route /shopify.webhooks.",
-		}),
-		{ status: 410, headers: { "Content-Type": "application/json" } },
-	);
-}
+// Legacy /api/webhooks removed: handled by Remix route /shopify/webhooks
 
 async function handleHealth(_request: Request, env: Env): Promise<Response> {
 	const health = {
@@ -409,7 +401,7 @@ export default {
 			return handleStoreLocator(request, env);
 		if (path.startsWith("/api/experience-center"))
 			return handleExperienceCenter(request, env);
-		if (path.startsWith("/api/webhooks")) return handleWebhooks(request, env);
+		// /api/webhooks removed (hard migration). Webhooks are handled by app route.
 		if (path === "/health") return handleHealth(request, env);
 		return requestHandler(request, { cloudflare: { env, ctx } });
 	},
@@ -452,7 +444,7 @@ export default {
 							adminClient,
 							availableEans,
 						);
-						await env.EXPERIENCE_CENTER_STATUS?.put(
+						await env.SYNC_STATUS?.put(
 							`ec_last_sync:${body.shop}`,
 							JSON.stringify({
 								timestamp: new Date().toISOString(),
@@ -477,7 +469,7 @@ export default {
 						};
 						const dealers = await fetchAndTransformDealers(config);
 						await upsertShopMetafield(adminClient, dealers);
-						await env.STORE_LOCATOR_STATUS?.put(
+						await env.SYNC_STATUS?.put(
 							`sl_last_sync:${body.shop}`,
 							JSON.stringify({
 								timestamp: new Date().toISOString(),
@@ -535,7 +527,7 @@ export default {
 							cron: true,
 						};
 
-						await env.OMNIA_PRICING_STATUS?.put(
+						await env.SYNC_STATUS?.put(
 							`omnia_last_sync:${body.shop}`,
 							JSON.stringify(status),
 						);

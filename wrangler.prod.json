@@ -14,6 +14,10 @@
 			"id": "ec5919b68f374a97b4d5aa12e1bae064"
 		},
 		{
+			"binding": "SYNC_STATUS",
+			"id": "fc265ea8b60f4e3aa8b2c3ac3e89eb69"
+		},
+		{
 			"binding": "WOOOD_KV",
 			"id": "51fa115a98f44c4d896d3fd99d942d17"
 		},

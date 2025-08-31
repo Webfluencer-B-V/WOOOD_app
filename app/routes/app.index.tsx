@@ -46,13 +46,12 @@ import {
 	fetchAndTransformDealers,
 	upsertShopMetafield,
 } from "../../src/utils/storeLocator";
-import { registerWebhooks } from "../../src/utils/webhooks";
+import { cleanupWebhooks, registerWebhooks } from "../../src/utils/webhooks";
 import type { OmniaPricingStatus } from "../types/app";
 import type { Route } from "./+types/app.index";
 
 export async function loader({ context, request }: Route.LoaderArgs) {
 	const shopify = createShopify(context);
-	shopify.utils.log.debug("app.index.loader");
 
 	const client = await shopify.admin(request);
 
@@ -78,11 +77,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 
 		if (shopDomain) {
 			try {
-				experienceCenterStatus =
-					await context.cloudflare.env.EXPERIENCE_CENTER_STATUS?.get(
-						`ec_last_sync:${shopDomain}`,
-						"json",
-					);
+				experienceCenterStatus = await context.cloudflare.env.SYNC_STATUS?.get(
+					`ec_last_sync:${shopDomain}`,
+					"json",
+				);
 			} catch {
 				console.warn("Failed to get experience center status");
 			}
@@ -97,11 +95,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			}
 
 			try {
-				storeLocatorStatus =
-					await context.cloudflare.env.STORE_LOCATOR_STATUS?.get(
-						`sl_last_sync:${shopDomain}`,
-						"json",
-					);
+				storeLocatorStatus = await context.cloudflare.env.SYNC_STATUS?.get(
+					`sl_last_sync:${shopDomain}`,
+					"json",
+				);
 			} catch {
 				console.warn("Failed to get store locator status");
 			}
@@ -116,11 +113,10 @@ export async function loader({ context, request }: Route.LoaderArgs) {
 			}
 
 			try {
-				omniaPricingStatus =
-					await context.cloudflare.env.OMNIA_PRICING_STATUS?.get(
-						`omnia_last_sync:${shopDomain}`,
-						"json",
-					);
+				omniaPricingStatus = await context.cloudflare.env.SYNC_STATUS?.get(
+					`omnia_last_sync:${shopDomain}`,
+					"json",
+				);
 			} catch {
 				console.warn("Failed to get Omnia pricing status");
 			}
@@ -550,8 +546,7 @@ export default function AppIndex({
 																				</Text>
 																			</List.Item>
 																		);
-																	},
-																)}
+																	})}
 															</List>
 														</Scrollable>
 													</>
@@ -697,7 +692,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 						},
 						shop: shopDomain,
 					};
-					await context.cloudflare.env.EXPERIENCE_CENTER_STATUS?.put(
+					await context.cloudflare.env.SYNC_STATUS?.put(
 						`ec_last_sync:${shopDomain}`,
 						JSON.stringify(status),
 					);
@@ -730,7 +725,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 						count: dealers.length,
 						shop: shopDomain,
 					};
-					await context.cloudflare.env.STORE_LOCATOR_STATUS?.put(
+					await context.cloudflare.env.SYNC_STATUS?.put(
 						`sl_last_sync:${shopDomain}`,
 						JSON.stringify(status),
 					);
@@ -749,6 +744,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 				const webhookEndpoint = `${cfUrl || context.cloudflare.env.SHOPIFY_APP_URL}/shopify/webhooks`;
 
 				await registerWebhooks(adminClientAdapter, webhookEndpoint);
+				await cleanupWebhooks(adminClientAdapter, webhookEndpoint);
 
 				return {
 					success: true,
@@ -849,7 +845,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 						},
 						shop: shopDomain,
 					};
-					await context.cloudflare.env.OMNIA_PRICING_STATUS?.put(
+					await context.cloudflare.env.SYNC_STATUS?.put(
 						`omnia_last_sync:${shopDomain}`,
 						JSON.stringify(status),
 					);
@@ -955,10 +951,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 				actionType === "sync-experience-center"
 					? `ec_last_sync:${shopDomain}`
 					: `sl_last_sync:${shopDomain}`;
-			const kvStore =
-				actionType === "sync-experience-center"
-					? context.cloudflare.env.EXPERIENCE_CENTER_STATUS
-					: context.cloudflare.env.STORE_LOCATOR_STATUS;
+			const kvStore = context.cloudflare.env.SYNC_STATUS;
 
 			const errorStatus = {
 				timestamp: new Date().toISOString(),

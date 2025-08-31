@@ -55,6 +55,9 @@ export interface WorkerEnv {
   OMNIA_EMAIL_RECIPIENTS?: string;
   EMAIL_SUBJECT_PREFIX?: string;
   WOOOD_KV?: KVNamespace;
+  // Consolidated status KV
+  SYNC_STATUS?: KVNamespace;
+  // Legacy per-feature namespaces (fallback during migration)
   STORE_LOCATOR_STATUS?: KVNamespace;
   EXPERIENCE_CENTER_STATUS?: KVNamespace;
   OMNIA_PRICING_STATUS?: KVNamespace;
