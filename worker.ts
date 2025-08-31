@@ -51,9 +51,10 @@ const requestHandler = createRequestHandler(
 
 // CORS headers for Shopify checkout extensions
 const corsHeaders: Record<string, string> = {
-	"Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 	"Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key",
+	"Access-Control-Max-Age": "86400",
 };
 
 function generateMockDates(): Array<{ date: string; displayName: string }> {
