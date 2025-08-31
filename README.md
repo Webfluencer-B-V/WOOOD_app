@@ -190,7 +190,7 @@ Automatically mark products as available in experience centers based on external
 
 ### Core Extension Endpoints
 - `GET /api/delivery-dates` - Real-time delivery date availability
-- `POST /api/webhooks/orders` - Automated order processing
+- `POST /shopify/webhooks` - Webhook intake (orders, uninstall, etc.)
 - `GET /health` - System health and status monitoring
 - `GET /admin` - Simple admin interface
 
