@@ -6,7 +6,6 @@ import type { Route } from "./+types/proxy.index";
 
 export async function loader({ context, request }: Route.LoaderArgs) {
 	const shopify = createShopify(context);
-	shopify.utils.log.debug("proxy.index");
 
 	await shopify.proxy(request);
 

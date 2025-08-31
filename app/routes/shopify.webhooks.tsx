@@ -1,3 +1,4 @@
+import { cleanupWebhooks } from "../../src/utils/webhooks";
 import { createShopify, createShopifyClient } from "../shopify.server";
 import {
 	isAppScopesUpdatePayload,
@@ -10,10 +11,9 @@ import type { Route } from "./+types/shopify.webhooks";
 export async function action({ context, request }: Route.ActionArgs) {
 	try {
 		const shopify = createShopify(context);
-		shopify.utils.log.debug("shopify.webhooks");
 
 		const webhook = await shopify.webhook(request);
-		shopify.utils.log.debug("shopify.webhooks", { ...webhook });
+		const topic = (webhook.topic || "").toString().toLowerCase();
 
 		const session = await shopify.session.get(webhook.domain);
 		const rawPayload = await request.json();
@@ -24,14 +24,37 @@ export async function action({ context, request }: Route.ActionArgs) {
 		}
 		const payload = rawPayload as WebhookPayload;
 
-		switch (webhook.topic) {
-			case "APP_UNINSTALLED":
-				if (session) {
-					await shopify.session.delete(session.id);
+		switch (topic) {
+			case "app/uninstalled":
+				{
+					// Cleanup legacy webhook endpoints on uninstall
+					const cfUrl = (context.cloudflare.env as { CLOUDFLARE_URL?: string })
+						.CLOUDFLARE_URL;
+					const webhookEndpoint = `${cfUrl || shopify.config.appUrl}/shopify/webhooks`;
+					const shopDomain = webhook.domain || undefined;
+					try {
+						if (shopDomain) {
+							const record = (await context.cloudflare.env.WOOOD_KV?.get(
+								`shop_token:${shopDomain}`,
+								"json",
+							)) as { accessToken?: string } | null;
+							const accessToken = record?.accessToken || null;
+							if (accessToken) {
+								const adminClient = createShopifyClient({
+									headers: { "X-Shopify-Access-Token": accessToken },
+									shop: shopDomain,
+								});
+								await cleanupWebhooks(adminClient, webhookEndpoint);
+							}
+						}
+					} catch {}
+					if (session) {
+						await shopify.session.delete(session.id);
+					}
 				}
 				break;
 
-			case "APP_SCOPES_UPDATE":
+			case "app/scopes_update":
 				if (session && isAppScopesUpdatePayload(payload)) {
 					await shopify.session.set({
 						...session,
@@ -40,35 +63,67 @@ export async function action({ context, request }: Route.ActionArgs) {
 				}
 				break;
 
-			case "ORDERS_PAID":
-			case "ORDERS_CREATE":
-			case "ORDERS_UPDATED":
-			case "ORDERS_CANCELLED": {
+			case "orders/paid":
+			case "orders/create":
+			case "orders/updated":
+			case "orders/cancelled": {
 				// Process order attributes into order metafields for create/paid
 				const orderId = isOrderWebhookPayload(payload)
 					? payload.id
 					: isBaseWebhookPayload(payload)
 						? payload.id
 						: undefined;
-				shopify.utils.log.debug(`Order webhook received: ${webhook.topic}`, {
-					shop: webhook.domain,
-					orderId,
-				});
+				// Minimal log; detailed results are logged after mutation
 
 				try {
 					if (
-						(session && (webhook.topic === "ORDERS_CREATE" || webhook.topic === "ORDERS_PAID")) &&
+						(topic === "orders/create" || topic === "orders/paid") &&
 						orderId !== undefined
 					) {
+						// Always-on backend: prefer online session, fallback to offline token in KV
+						let accessToken: string | null = session?.accessToken || null;
+						const shopDomain = session?.shop || webhook.domain || undefined;
+						if (!accessToken && shopDomain) {
+							try {
+								const record = (await context.cloudflare.env.WOOOD_KV?.get(
+									`shop_token:${shopDomain}`,
+									"json",
+								)) as { accessToken?: string } | null;
+								accessToken = record?.accessToken || null;
+							} catch {}
+						}
+						if (!accessToken || !shopDomain) {
+							shopify.utils.log.info("orderMetafieldsReport", {
+								orderId,
+								shop: shopDomain || webhook.domain,
+								values: null,
+								result: {
+									status: "skipped",
+									reason: !shopDomain ? "missing_shop" : "missing_access_token",
+								},
+							});
+							break;
+						}
+
 						const adminClient = createShopifyClient({
-							headers: { "X-Shopify-Access-Token": session.accessToken },
-							shop: session.shop,
+							headers: { "X-Shopify-Access-Token": accessToken },
+							shop: shopDomain,
 						});
 
 						// Extract checkout note attributes
 						const raw: unknown = rawPayload;
-						const noteAttributes = Array.isArray((raw as { note_attributes?: Array<{ name?: unknown; value?: unknown }> }).note_attributes)
-							? ((raw as { note_attributes: Array<{ name?: unknown; value?: unknown }> }).note_attributes as Array<{ name?: unknown; value?: unknown }>)
+						const noteAttributes = Array.isArray(
+							(
+								raw as {
+									note_attributes?: Array<{ name?: unknown; value?: unknown }>;
+								}
+							).note_attributes,
+						)
+							? ((
+									raw as {
+										note_attributes: Array<{ name?: unknown; value?: unknown }>;
+									}
+								).note_attributes as Array<{ name?: unknown; value?: unknown }>)
 							: [];
 
 						const findAttr = (key: string): string | null => {
@@ -76,7 +131,11 @@ export async function action({ context, request }: Route.ActionArgs) {
 								const name = typeof item.name === "string" ? item.name : "";
 								if (name === key) {
 									const val = item.value;
-									return typeof val === "string" ? val : val != null ? String(val) : null;
+									return typeof val === "string"
+										? val
+										: val != null
+											? String(val)
+											: null;
 								}
 							}
 							return null;
@@ -114,6 +173,13 @@ export async function action({ context, request }: Route.ActionArgs) {
 						}
 
 						if (metafields.length > 0) {
+							// Consolidated pre-report
+							shopify.utils.log.info("orderMetafieldsReport", {
+								orderId,
+								shop: shopDomain,
+								values: { deliveryDate, shippingMethod },
+								result: { status: "attempt" },
+							});
 							const mutation = `
 								mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
 									metafieldsSet(metafields: $metafields) {
@@ -122,23 +188,50 @@ export async function action({ context, request }: Route.ActionArgs) {
 									}
 								}
 							`;
-							const result = (await adminClient.request(mutation, { metafields })) as {
+							const result = (await adminClient.request(mutation, {
+								variables: { metafields },
+							})) as {
 								data?: {
 									metafieldsSet?: {
+										metafields?: Array<{
+											key?: string;
+											namespace?: string;
+											value?: string;
+											type?: string;
+											ownerType?: string;
+										}>;
 										userErrors?: Array<{ field?: string; message?: string }>;
 									};
 								};
 							};
 							const errors = result.data?.metafieldsSet?.userErrors || [];
+							const saved = result.data?.metafieldsSet?.metafields || [];
 							if (errors.length > 0) {
-								shopify.utils.log.debug("metafieldsSet userErrors", { errors, orderId });
+								shopify.utils.log.info("orderMetafieldsReport", {
+									orderId,
+									shop: shopDomain,
+									values: { deliveryDate, shippingMethod },
+									result: { status: "error", errors },
+								});
 							} else {
-								shopify.utils.log.debug("Order metafields saved", { orderId, metafields });
+								shopify.utils.log.info("orderMetafieldsReport", {
+									orderId,
+									shop: shopDomain,
+									values: { deliveryDate, shippingMethod },
+									result: { status: "saved", metafields: saved },
+								});
 							}
+						} else {
+							shopify.utils.log.info("orderMetafieldsReport", {
+								orderId,
+								shop: shopDomain,
+								values: { deliveryDate, shippingMethod },
+								result: { status: "skipped", reason: "no_values" },
+							});
 						}
 					}
 				} catch (err) {
-					shopify.utils.log.debug("Failed processing order metafields", {
+					shopify.utils.log.error("metafieldsSet exception", {
 						error: err instanceof Error ? err.message : String(err),
 						orderId,
 					});

@@ -228,7 +228,7 @@ export default function AppIndex({
 	};
 
 	return (
-		<Page title={t("app")}>
+		<Page>
 			{errors && (
 				<Banner tone="critical" title="Error">
 					{JSON.stringify(errors, null, 2)}
@@ -256,6 +256,67 @@ export default function AppIndex({
 						<Text as="p" tone="subdued">
 							Manage Experience Center, Store Locator, and Omnia pricing
 						</Text>
+					</Card>
+				</Layout.Section>
+
+				<Layout.Section>
+					<Card>
+						<Text variant="headingMd" as="h2">
+							Store Locator Sync
+						</Text>
+						<Text as="p" tone="subdued">
+							Update store locator data from the dealers API
+						</Text>
+
+						<div style={{ marginTop: "16px" }}>
+							<InlineStack gap="400" align="space-between">
+								<div>
+									<Text as="p">
+										<strong>Status:</strong>{" "}
+										{getStatusBadge(storeLocatorStatus)}
+									</Text>
+									<Text as="p" tone="subdued">
+										Last sync: {formatTimestamp(storeLocatorStatus?.timestamp)}
+									</Text>
+									{storeLocatorStatus?.count && (
+										<Text as="p" tone="subdued">
+											Dealers: {storeLocatorStatus.count}
+										</Text>
+									)}
+								</div>
+								<ButtonGroup>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="sync-store-locator"
+										/>
+										<Button
+											variant="primary"
+											submit
+											loading={
+												isSubmitting && actionType === "sync-store-locator"
+											}
+										>
+											Update Store Locator
+										</Button>
+									</Form>
+									<Form method="post">
+										<input
+											type="hidden"
+											name="action"
+											value="toggle-sl-scheduler"
+										/>
+										{isSlSchedulerEnabled !== null && (
+											<Button submit>
+												{isSlSchedulerEnabled ? "Disable" : "Enable"} SL
+												Scheduler
+											</Button>
+										)}
+									</Form>
+								</ButtonGroup>
+							</InlineStack>
+						</div>
 					</Card>
 				</Layout.Section>
 
@@ -348,67 +409,6 @@ export default function AppIndex({
 										{isEcSchedulerEnabled !== null && (
 											<Button submit>
 												{isEcSchedulerEnabled ? "Disable" : "Enable"} EC
-												Scheduler
-											</Button>
-										)}
-									</Form>
-								</ButtonGroup>
-							</InlineStack>
-						</div>
-					</Card>
-				</Layout.Section>
-
-				<Layout.Section>
-					<Card>
-						<Text variant="headingMd" as="h2">
-							Store Locator Sync
-						</Text>
-						<Text as="p" tone="subdued">
-							Update store locator data from the dealers API
-						</Text>
-
-						<div style={{ marginTop: "16px" }}>
-							<InlineStack gap="400" align="space-between">
-								<div>
-									<Text as="p">
-										<strong>Status:</strong>{" "}
-										{getStatusBadge(storeLocatorStatus)}
-									</Text>
-									<Text as="p" tone="subdued">
-										Last sync: {formatTimestamp(storeLocatorStatus?.timestamp)}
-									</Text>
-									{storeLocatorStatus?.count && (
-										<Text as="p" tone="subdued">
-											Dealers: {storeLocatorStatus.count}
-										</Text>
-									)}
-								</div>
-								<ButtonGroup>
-									<Form method="post">
-										<input
-											type="hidden"
-											name="action"
-											value="sync-store-locator"
-										/>
-										<Button
-											variant="primary"
-											submit
-											loading={
-												isSubmitting && actionType === "sync-store-locator"
-											}
-										>
-											Update Store Locator
-										</Button>
-									</Form>
-									<Form method="post">
-										<input
-											type="hidden"
-											name="action"
-											value="toggle-sl-scheduler"
-										/>
-										{isSlSchedulerEnabled !== null && (
-											<Button submit>
-												{isSlSchedulerEnabled ? "Disable" : "Enable"} SL
 												Scheduler
 											</Button>
 										)}

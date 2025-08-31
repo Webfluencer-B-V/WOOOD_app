@@ -6,7 +6,6 @@ import type { Route } from "./+types/shopify.auth.session-token-bounce";
 
 export async function loader({ context, request }: Route.LoaderArgs) {
 	const shopify = createShopify(context);
-	shopify.utils.log.debug("shopify.auth.session-token-bounce");
 
 	const url = new URL(request.url);
 	const shop = shopify.utils.sanitizeShop(url.searchParams.get("shop")!);

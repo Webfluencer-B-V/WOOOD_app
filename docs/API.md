@@ -228,8 +228,8 @@ User-Agent: Shopify-Captain-Hook
 ```
 
 ### Order Processing Webhook
-**Endpoint**: `POST /api/webhooks/orders`
-**Description**: Processes order webhooks and creates metafields from note_attributes.
+**Endpoint**: `POST /shopify/webhooks`
+**Description**: Processes Shopify webhooks and creates metafields from note_attributes on order topics.
 
 **Authentication**: HMAC signature validation
 

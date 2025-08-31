@@ -184,18 +184,18 @@ Migration by module
 1) `src/utils/experienceCenter.ts`
 
 - Convert helpers to be pure (no direct `env.WOOOD_KV` reads for tokens). Accept a `getAccessToken(shop)` callback or a `shopify` client instance.
-- App Action: add a Polaris “Sync Experience Center” button to the app dashboard (`/app`). The button sends a POST to an action that:
+- App Action: add a Polaris "Sync Experience Center" button to the app dashboard (`/app`). The button sends a POST to an action that:
   - Fetches EC data via `fetchExperienceCenterData(context.cloudflare.env)`
   - Gets the current shop (from session/context)
   - Gets an Admin client for that shop via `createShopify(context).admin(request)` or uses the offline token from KV
   - Runs `setProductExperienceCenterMetafieldsBulk` for that shop
   - Writes a compact status summary for that shop to `EXPERIENCE_CENTER_STATUS`
-- Optional: For very large syncs, enqueue a job for that shop and return “sync started” to the UI; consume from Queue in app environment (or Worker if we prefer), updating KV status for that shop as chunks complete.
+- Optional: For very large syncs, enqueue a job for that shop and return "sync started" to the UI; consume from Queue in app environment (or Worker if we prefer), updating KV status for that shop as chunks complete.
 
 1) `src/utils/storeLocator.ts`
 
 - Convert helpers to pure utilities. Accept injected token/client rather than reading from env directly.
-- App Action: add a Polaris “Update Store Locator” button. The action:
+- App Action: add a Polaris "Update Store Locator" button. The action:
   - Calls `fetchAndTransformDealers(env)` (Dutch Furniture API)
   - In the app, trigger the update for the current shop instance. Get the Admin client for the current shop and write the dealers JSON to the shop metafield via GraphQL.
   - Stores a brief status in `STORE_LOCATOR_STATUS`
@@ -209,16 +209,16 @@ Migration by module
 Endpoints/Routes changes
 
 - Deprecate Worker routes:
-  - `/api/experience-center` → replace with app action under `/app` (POST) for “Sync EC”, plus a `/app` loader for status.
-  - `/api/store-locator` → replace with app action under `/app` (POST) for “Update Store Locator”, plus a `/app` loader for status.
+  - `/api/experience-center` → replace with app action under `/app` (POST) for "Sync EC", plus a `/app` loader for status.
+  - `/api/store-locator` → replace with app action under `/app` (POST) for "Update Store Locator", plus a `/app` loader for status.
 - Keep `shopify.webhooks.tsx` as the single webhook intake path. Topic handling occurs here; heavy work is enqueued.
 
 UI
 
 - Add Polaris actions to `/app` (or a dedicated settings page):
-  - Button “Sync Experience Center” (POST to action)
-  - Button “Update Store Locator” (POST to action)
-  - Button “Register Webhooks” (POST to action)
+  - Button "Sync Experience Center" (POST to action)
+  - Button "Update Store Locator" (POST to action)
+  - Button "Register Webhooks" (POST to action)
 - Show compact status widgets using loaders that read KV summaries.
 
 Per‑shop execution and cron model
@@ -227,12 +227,12 @@ Per‑shop execution and cron model
 - Scheduled work (cron) must be scoped so only the designated shop(s) run it (e.g., production store + staging). Implementation:
   - Add a KV flag (e.g., `scheduler:leaderShop = <shop-domain>`) and guard scheduled handlers to no‑op unless `currentShop === leaderShop`.
   - Alternatively, maintain an allow‑list KV key (e.g., `scheduler:enabledShops = [..]`) and gate per feature.
-  - Status KV keys should be namespaced per shop (e.g., `EXPERIENCE_CENTER_STATUS:ec_last_sync:<shop>`), so dashboards show the current shop’s status only.
+  - Status KV keys should be namespaced per shop (e.g., `EXPERIENCE_CENTER_STATUS:ec_last_sync:<shop>`), so dashboards show the current shop's status only.
 
 Testing
 
 - Unit: move Admin API dependent logic behind injected clients; stub `createShopify().admin` in tests.
-- E2E: keep “public index” and “proxy” tests; add app action tests that submit forms and validate success toasts/status changes. Webhook E2E remains non-deterministic vs Shopify Admin; validate app route acceptance and queue enqueue.
+- E2E: keep "public index" and "proxy" tests; add app action tests that submit forms and validate success toasts/status changes. Webhook E2E remains non-deterministic vs Shopify Admin; validate app route acceptance and queue enqueue.
 
 Rollout steps
 
@@ -241,7 +241,7 @@ Rollout steps
 3. Update Playwright to hit the new actions (with mocks if needed)
 4. Remove Worker endpoints `/api/experience-center` and `/api/store-locator`
 5. Keep `shopify.webhooks.tsx` as the canonical intake; ensure queue consumer reads offline tokens from KV
-6. Document new flows in `docs/API.md` and update CHANGELOG with “Completed”
+6. Document new flows in `docs/API.md` and update CHANGELOG with "Completed"
 
 Notes
 

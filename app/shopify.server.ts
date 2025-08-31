@@ -203,6 +203,14 @@ export function createShopify(context: AppLoadContext) {
 			accessToken: accessTokenResponse.access_token,
 		});
 
+		// Persist offline token for always-on background processing
+		try {
+			await context.cloudflare.env.WOOOD_KV?.put(
+				`shop_token:${shop}`,
+				JSON.stringify({ accessToken: accessTokenResponse.access_token }),
+			);
+		} catch {}
+
 		const client = createShopifyClient({
 			headers: { "X-Shopify-Access-Token": accessTokenResponse.access_token },
 			shop,
@@ -526,12 +534,11 @@ export function createShopify(context: AppLoadContext) {
 
 			// biome-ignore lint/suspicious/noExplicitAny: lib: [DOM] overrides worker-configuration.d.ts
 			const valid = (crypto.subtle as any).timingSafeEqual(bufA, bufB);
-			utils.log.debug("validateHmac", {
-				hmac,
-				computed,
-				valid,
-			});
 			if (!valid) {
+				utils.log.error("validateHmac failed", {
+					hmac,
+					computed,
+				});
 				throw new ShopifyException("Invalid hmac", {
 					status: 401,
 					type: "HMAC",

@@ -12,7 +12,6 @@ import type { Route } from "./+types/app";
 export async function loader({ context, request }: Route.LoaderArgs) {
 	try {
 		const shopify = createShopify(context);
-		shopify.utils.log.debug("app");
 
 		await shopify.admin(request);
 
@@ -53,9 +52,6 @@ export default function App({ loaderData }: Route.ComponentProps) {
 					<Link rel="home" to="/app">
 						{t("app")}
 					</Link>
-					<Link to="/app?section=experience-center">EC</Link>
-					<Link to="/app?section=store-locator">Store Locator</Link>
-					<Link to="/app?section=omnia">Omnia Pricing</Link>
 				</NavMenu>
 
 				<AppOutlet />

@@ -120,7 +120,7 @@ export async function registerWebhooks(
 
 			// Check if webhook already exists with correct URL
 			const existing = existingResult.data?.webhookSubscriptions?.edges?.find(
-				(edge) => edge.node?.callbackUrl === webhook.address
+				(edge) => edge.node?.callbackUrl === webhook.address,
 			);
 
 			if (existing) {
@@ -152,7 +152,11 @@ export async function registerWebhooks(
 			const result = (await adminClient.request(mutation, variables)) as {
 				data?: {
 					webhookSubscriptionCreate?: {
-						webhookSubscription?: { id?: string; callbackUrl?: string; topic?: string };
+						webhookSubscription?: {
+							id?: string;
+							callbackUrl?: string;
+							topic?: string;
+						};
 						userErrors?: Array<{ field?: string; message?: string }>;
 					};
 				};
@@ -162,7 +166,7 @@ export async function registerWebhooks(
 			if (errors?.length) {
 				// Skip "already taken" errors as they're expected when webhook exists
 				const nonDuplicateErrors = errors.filter(
-					(error) => !error.message?.includes("already been taken")
+					(error) => !error.message?.includes("already been taken"),
 				);
 				if (nonDuplicateErrors.length > 0) {
 					console.error("Webhook registration failed", {
@@ -175,11 +179,70 @@ export async function registerWebhooks(
 			} else if (result.data?.webhookSubscriptionCreate?.webhookSubscription) {
 				console.log(`Successfully registered webhook for ${webhook.topic}`, {
 					id: result.data.webhookSubscriptionCreate.webhookSubscription.id,
-					url: result.data.webhookSubscriptionCreate.webhookSubscription.callbackUrl,
+					url: result.data.webhookSubscriptionCreate.webhookSubscription
+						.callbackUrl,
 				});
 			}
 		} catch (error) {
 			console.error("Exception registering webhook", { webhook, error });
 		}
+	}
+}
+
+export async function cleanupWebhooks(
+	adminClient: ShopifyAdminClient,
+	webhookEndpoint: string,
+): Promise<void> {
+	try {
+		const listQuery = `
+            query webhookSubscriptions($first: Int!) {
+                webhookSubscriptions(first: $first) {
+                    edges { node { id callbackUrl topic } }
+                }
+            }
+        `;
+		const listResult = (await adminClient.request(listQuery, {
+			first: 100,
+		})) as {
+			data?: {
+				webhookSubscriptions?: {
+					edges?: Array<{
+						node?: { id?: string; callbackUrl?: string; topic?: string };
+					}>;
+				};
+			};
+		};
+		const edges = listResult.data?.webhookSubscriptions?.edges || [];
+		const legacy = edges.filter(
+			(e) =>
+				typeof e?.node?.callbackUrl === "string" &&
+				e!.node!.callbackUrl !== webhookEndpoint,
+		);
+		for (const edge of legacy) {
+			const id = edge?.node?.id;
+			if (!id) continue;
+			const delMutation = `
+                mutation webhookSubscriptionDelete($id: ID!) {
+                    webhookSubscriptionDelete(id: $id) {
+                        deletedWebhookSubscriptionId
+                        userErrors { field message }
+                    }
+                }
+            `;
+			try {
+				await adminClient.request(delMutation, { id });
+				console.log("Deleted legacy webhook subscription", {
+					id,
+					topic: edge?.node?.topic,
+				});
+			} catch (error) {
+				console.error("Failed deleting legacy webhook subscription", {
+					id,
+					error,
+				});
+			}
+		}
+	} catch (error) {
+		console.error("Failed cleaning up webhooks", { error });
 	}
 }
