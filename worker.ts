@@ -51,9 +51,9 @@ const requestHandler = createRequestHandler(
 
 // CORS headers for Shopify checkout extensions
 const corsHeaders: Record<string, string> = {
-    "Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key",
+	"Access-Control-Allow-Origin": "https://extensions.shopifycdn.com",
+	"Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+	"Access-Control-Allow-Headers": "Content-Type, Authorization, x-api-key",
 };
 
 function generateMockDates(): Array<{ date: string; displayName: string }> {
@@ -111,7 +111,10 @@ async function handleDeliveryDates(
 	env: Env,
 ): Promise<Response> {
 	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_DELIVERY_DATES_API")) {
-		return new Response("Delivery dates API disabled", { status: 503, headers: corsHeaders });
+		return new Response("Delivery dates API disabled", {
+			status: 503,
+			headers: corsHeaders,
+		});
 	}
 	try {
 		const url = new URL(request.url);
@@ -171,12 +174,43 @@ async function handleDeliveryDates(
 	}
 }
 
+async function handleInventory(
+	request: Request,
+	_env: Env,
+): Promise<Response> {
+	// Only POST supported
+	if (request.method !== "POST") {
+		return new Response(
+			JSON.stringify({ error: "Method not allowed" }),
+			{ status: 405, headers: { "Content-Type": "application/json", ...corsHeaders } },
+		);
+	}
+
+	try {
+		const body = (await request.json()) as { variantIds?: string[] } | undefined;
+		const variantIds = Array.isArray(body?.variantIds) ? body!.variantIds : [];
+		const inventory = Object.fromEntries(variantIds.map((id) => [id, null as number | null]));
+		return new Response(
+			JSON.stringify({ success: true, inventory }),
+			{ headers: { "Content-Type": "application/json", ...corsHeaders } },
+		);
+	} catch (_err) {
+		return new Response(
+			JSON.stringify({ success: false, error: "Inventory API error" }),
+			{ status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } },
+		);
+	}
+}
+
 async function handleStoreLocator(
 	request: Request,
 	env: Env,
 ): Promise<Response> {
 	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_STORE_LOCATOR")) {
-		return new Response("Store locator API disabled", { status: 503, headers: corsHeaders });
+		return new Response("Store locator API disabled", {
+			status: 503,
+			headers: corsHeaders,
+		});
 	}
 	try {
 		const url = new URL(request.url);
@@ -241,7 +275,10 @@ async function handleStoreLocator(
 				JSON.stringify({
 					error: "Deprecated. Use app action status in dashboard.",
 				}),
-				{ status: 410, headers: { "Content-Type": "application/json", ...corsHeaders } },
+				{
+					status: 410,
+					headers: { "Content-Type": "application/json", ...corsHeaders },
+				},
 			);
 		}
 		return new Response(JSON.stringify({ error: "Invalid action parameter" }), {
@@ -262,7 +299,10 @@ async function handleExperienceCenter(
 	env: Env,
 ): Promise<Response> {
 	if (!isFeatureEnabled(FEATURE_FLAGS, "ENABLE_EXPERIENCE_CENTER")) {
-		return new Response("Experience center API disabled", { status: 503, headers: corsHeaders });
+		return new Response("Experience center API disabled", {
+			status: 503,
+			headers: corsHeaders,
+		});
 	}
 	try {
 		const url = new URL(request.url);
@@ -354,7 +394,10 @@ async function handleExperienceCenter(
 					JSON.stringify({
 						error: "Deprecated. Use app action status in dashboard.",
 					}),
-					{ status: 410, headers: { "Content-Type": "application/json", ...corsHeaders } },
+					{
+						status: 410,
+						headers: { "Content-Type": "application/json", ...corsHeaders },
+					},
 				);
 			} catch (error) {
 				const message =
@@ -365,7 +408,10 @@ async function handleExperienceCenter(
 						status: "unknown",
 						error: message,
 					}),
-					{ status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } },
+					{
+						status: 500,
+						headers: { "Content-Type": "application/json", ...corsHeaders },
+					},
 				);
 			}
 		}
@@ -409,6 +455,8 @@ export default {
 		}
 		if (path.startsWith("/api/delivery-dates"))
 			return handleDeliveryDates(request, env);
+		if (path.startsWith("/api/inventory"))
+			return handleInventory(request, env);
 		if (path.startsWith("/api/store-locator"))
 			return handleStoreLocator(request, env);
 		if (path.startsWith("/api/experience-center"))
