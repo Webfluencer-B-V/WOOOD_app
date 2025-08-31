@@ -48,12 +48,7 @@
 		"producers": [
 			{
 				"queue": "woood",
-				"binding": "WEBHOOK_QUEUE"
-			}
-		],
-		"consumers": [
-			{
-				"queue": "woood"
+				"binding": "SCHEDULED_QUEUE"
 			}
 		]
 	},
