@@ -139,7 +139,7 @@ async function handleDeliveryDates(
 		}
 		if (!accessToken) {
 			const mockDates = generateMockDates();
-			return new Response(JSON.stringify({ dates: mockDates }), {
+			return new Response(JSON.stringify({ success: true, data: mockDates }), {
 				headers: { "Content-Type": "application/json", ...corsHeaders },
 			});
 		}
@@ -152,8 +152,23 @@ async function handleDeliveryDates(
 					},
 				});
 				if (response.ok) {
-					const data = await response.json();
-					return new Response(JSON.stringify(data), {
+					const raw = await response.json();
+					let dates: Array<{ date: string; displayName: string }> = [];
+					if (Array.isArray(raw)) dates = raw as typeof dates;
+					else if (
+						raw &&
+						typeof raw === "object" &&
+						Array.isArray((raw as { dates?: unknown[] }).dates)
+					) {
+						dates = (raw as { dates: typeof dates }).dates;
+					} else if (
+						raw &&
+						typeof raw === "object" &&
+						Array.isArray((raw as { data?: unknown[] }).data)
+					) {
+						dates = (raw as { data: typeof dates }).data;
+					}
+					return new Response(JSON.stringify({ success: true, data: dates }), {
 						headers: { "Content-Type": "application/json", ...corsHeaders },
 					});
 				}
@@ -162,7 +177,7 @@ async function handleDeliveryDates(
 			}
 		}
 		const mockDates = generateMockDates();
-		return new Response(JSON.stringify({ dates: mockDates }), {
+		return new Response(JSON.stringify({ success: true, data: mockDates }), {
 			headers: { "Content-Type": "application/json", ...corsHeaders },
 		});
 	} catch (error) {
@@ -174,30 +189,33 @@ async function handleDeliveryDates(
 	}
 }
 
-async function handleInventory(
-	request: Request,
-	_env: Env,
-): Promise<Response> {
+async function handleInventory(request: Request, _env: Env): Promise<Response> {
 	// Only POST supported
 	if (request.method !== "POST") {
-		return new Response(
-			JSON.stringify({ error: "Method not allowed" }),
-			{ status: 405, headers: { "Content-Type": "application/json", ...corsHeaders } },
-		);
+		return new Response(JSON.stringify({ error: "Method not allowed" }), {
+			status: 405,
+			headers: { "Content-Type": "application/json", ...corsHeaders },
+		});
 	}
 
 	try {
-		const body = (await request.json()) as { variantIds?: string[] } | undefined;
+		const body = (await request.json()) as
+			| { variantIds?: string[] }
+			| undefined;
 		const variantIds = Array.isArray(body?.variantIds) ? body!.variantIds : [];
-		const inventory = Object.fromEntries(variantIds.map((id) => [id, null as number | null]));
-		return new Response(
-			JSON.stringify({ success: true, inventory }),
-			{ headers: { "Content-Type": "application/json", ...corsHeaders } },
+		const inventory = Object.fromEntries(
+			variantIds.map((id) => [id, null as number | null]),
 		);
+		return new Response(JSON.stringify({ success: true, inventory }), {
+			headers: { "Content-Type": "application/json", ...corsHeaders },
+		});
 	} catch (_err) {
 		return new Response(
 			JSON.stringify({ success: false, error: "Inventory API error" }),
-			{ status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } },
+			{
+				status: 500,
+				headers: { "Content-Type": "application/json", ...corsHeaders },
+			},
 		);
 	}
 }
@@ -455,8 +473,7 @@ export default {
 		}
 		if (path.startsWith("/api/delivery-dates"))
 			return handleDeliveryDates(request, env);
-		if (path.startsWith("/api/inventory"))
-			return handleInventory(request, env);
+		if (path.startsWith("/api/inventory")) return handleInventory(request, env);
 		if (path.startsWith("/api/store-locator"))
 			return handleStoreLocator(request, env);
 		if (path.startsWith("/api/experience-center"))
