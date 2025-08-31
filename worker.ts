@@ -584,8 +584,16 @@ export default {
 							`omnia_last_sync:${body.shop}`,
 							JSON.stringify(status),
 						);
+						const sample = (result.updatedSamples || [])
+							.slice(0, 30)
+							.map((s) => ({
+								variantId: s.variantId,
+								old: s.oldPrice,
+								new: s.newPrice,
+								title: s.productTitle,
+							}));
 						console.log(
-							`✅ Queue complete: omnia-pricing-sync shop=${body.shop} run=${status.runId} ok=${result.successful} failed=${result.failed} matches=${result.totalMatches} valid=${result.validMatches} historyWrites=${result.updatedSamples.length}`,
+							`✅ Queue complete: omnia-pricing-sync shop=${body.shop} run=${status.runId} ok=${result.successful} failed=${result.failed} matches=${result.totalMatches} valid=${result.validMatches} historyWrites=${result.updatedSamples.length} sample=${JSON.stringify(sample)}`,
 						);
 						message.ack();
 						break;
@@ -678,8 +686,9 @@ export default {
 
 		if (
 			isFeatureEnabled(FEATURE_FLAGS, "ENABLE_OMNIA_PRICING") &&
-			event.cron === "0 4 * * *"
+			(event.cron === "0 4 * * *" || event.cron === "0 */6 * * *")
 		) {
+			let enqueued = 0;
 			for (const shop of shops) {
 				const enabled = await env.WOOOD_KV?.get(
 					`scheduler:enabled:omnia-pricing:${shop}`,
@@ -700,7 +709,11 @@ export default {
 					shop,
 					scheduledAt: new Date().toISOString(),
 				});
+				enqueued++;
 			}
+			console.log(
+				`⏰ Omnia enqueue complete: cron=${event.cron} enqueued=${enqueued} totalShops=${shops.length}`,
+			);
 		}
 
 		if (event.cron === "0 2 * * *") {
