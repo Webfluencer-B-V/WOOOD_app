@@ -86,37 +86,96 @@ export async function registerWebhooks(
 		{ topic: "orders/create", address: webhookEndpoint },
 		{ topic: "app/uninstalled", address: webhookEndpoint },
 	];
+
 	for (const webhook of webhooks) {
 		try {
-			// Note: webhook registration via REST API needs to be handled differently
-			// This would typically be done via GraphQL webhookSubscriptionCreate mutation
+			// First, try to find existing webhook for this topic
+			const existingQuery = `
+				query webhookSubscriptions($first: Int!, $topics: [WebhookSubscriptionTopic!]) {
+					webhookSubscriptions(first: $first, topics: $topics) {
+						edges {
+							node {
+								id
+								callbackUrl
+								topic
+							}
+						}
+					}
+				}
+			`;
+
+			const topicEnum = webhook.topic.toUpperCase().replace("/", "_");
+			const existingResult = (await adminClient.request(existingQuery, {
+				first: 10,
+				topics: [topicEnum],
+			})) as {
+				data?: {
+					webhookSubscriptions?: {
+						edges?: Array<{
+							node?: { id?: string; callbackUrl?: string; topic?: string };
+						}>;
+					};
+				};
+			};
+
+			// Check if webhook already exists with correct URL
+			const existing = existingResult.data?.webhookSubscriptions?.edges?.find(
+				(edge) => edge.node?.callbackUrl === webhook.address
+			);
+
+			if (existing) {
+				console.log(`Webhook already exists for ${webhook.topic}`, {
+					id: existing.node?.id,
+					url: existing.node?.callbackUrl,
+				});
+				continue;
+			}
+
+			// Create new webhook subscription
 			const mutation = `
 				mutation webhookSubscriptionCreate($topic: WebhookSubscriptionTopic!, $webhookSubscription: WebhookSubscriptionInput!) {
 					webhookSubscriptionCreate(topic: $topic, webhookSubscription: $webhookSubscription) {
-						webhookSubscription { id }
+						webhookSubscription { id callbackUrl topic }
 						userErrors { field message }
 					}
 				}
 			`;
+
 			const variables = {
-				topic: webhook.topic.toUpperCase().replace("/", "_"),
+				topic: topicEnum,
 				webhookSubscription: {
 					callbackUrl: webhook.address,
 					format: "JSON",
 				},
 			};
+
 			const result = (await adminClient.request(mutation, variables)) as {
 				data?: {
 					webhookSubscriptionCreate?: {
-						webhookSubscription?: { id?: string };
+						webhookSubscription?: { id?: string; callbackUrl?: string; topic?: string };
 						userErrors?: Array<{ field?: string; message?: string }>;
 					};
 				};
 			};
-			if (result.data?.webhookSubscriptionCreate?.userErrors?.length) {
-				console.error("Webhook registration failed", {
-					errors: result.data.webhookSubscriptionCreate.userErrors,
-					webhook,
+
+			const errors = result.data?.webhookSubscriptionCreate?.userErrors;
+			if (errors?.length) {
+				// Skip "already taken" errors as they're expected when webhook exists
+				const nonDuplicateErrors = errors.filter(
+					(error) => !error.message?.includes("already been taken")
+				);
+				if (nonDuplicateErrors.length > 0) {
+					console.error("Webhook registration failed", {
+						errors: nonDuplicateErrors,
+						webhook,
+					});
+				} else {
+					console.log(`Webhook for ${webhook.topic} already registered`);
+				}
+			} else if (result.data?.webhookSubscriptionCreate?.webhookSubscription) {
+				console.log(`Successfully registered webhook for ${webhook.topic}`, {
+					id: result.data.webhookSubscriptionCreate.webhookSubscription.id,
+					url: result.data.webhookSubscriptionCreate.webhookSubscription.callbackUrl,
 				});
 			}
 		} catch (error) {

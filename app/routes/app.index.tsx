@@ -746,7 +746,7 @@ export async function action({ context, request }: Route.ActionArgs) {
 			case "register-webhooks": {
 				const cfUrl = (context.cloudflare.env as { CLOUDFLARE_URL?: string })
 					.CLOUDFLARE_URL;
-				const webhookEndpoint = `${cfUrl || context.cloudflare.env.SHOPIFY_APP_URL}/api/webhooks/orders`;
+				const webhookEndpoint = `${cfUrl || context.cloudflare.env.SHOPIFY_APP_URL}/shopify/webhooks`;
 
 				await registerWebhooks(adminClientAdapter, webhookEndpoint);
 
