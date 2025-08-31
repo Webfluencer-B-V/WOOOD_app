@@ -1,21 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-
-export interface DeliveryDate {
-	date: string;
-	displayName: string;
-}
-
-export interface ApiResponse {
-	success: boolean;
-	data?: DeliveryDate[];
-	error?: string;
-	message?: string;
-	metadata?: {
-		mockDataEnabled: boolean;
-		cacheHit: boolean;
-		responseTime: number;
-	};
-}
+import type { ApiResponse, DeliveryDate } from "../types/api";
 
 export interface UseDeliveryDatesOptions {
 	enabled?: boolean;
@@ -61,16 +45,32 @@ async function fetchDeliveryDates(
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		}
 
-		const responseData: ApiResponse = await response.json();
+		const responseData: unknown = await response.json();
 
-		// Handle both direct array response and wrapped response
+		// Handle {success,data}, {dates}, or direct array
 		let data: DeliveryDate[];
-		const metadata = responseData.metadata;
+		let metadata: ApiResponse["metadata"] | undefined;
 
-		if (responseData.success && Array.isArray(responseData.data)) {
-			data = responseData.data;
+		if (
+			responseData &&
+			typeof responseData === "object" &&
+			"success" in (responseData as Record<string, unknown>)
+		) {
+			const api = responseData as ApiResponse;
+			metadata = api.metadata;
+			if (api.success && Array.isArray(api.data)) {
+				data = api.data;
+			} else {
+				throw new Error("Invalid response format: missing data array");
+			}
+		} else if (
+			responseData &&
+			typeof responseData === "object" &&
+			Array.isArray((responseData as { dates?: unknown[] }).dates)
+		) {
+			data = (responseData as { dates: DeliveryDate[] }).dates;
 		} else if (Array.isArray(responseData)) {
-			data = responseData;
+			data = responseData as DeliveryDate[];
 		} else {
 			throw new Error(
 				"Invalid response format: expected array of delivery dates",

@@ -21,8 +21,8 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { type DeliveryDate, useDeliveryDates } from "./hooks/useDeliveryDates";
-import { type InventoryResponse, isInventoryResponse } from "./types/api";
+import { useDeliveryDates } from "./hooks/useDeliveryDates";
+import { type DeliveryDate, type InventoryResponse, isInventoryResponse } from "./types/api";
 
 // Create a client
 const queryClient = new QueryClient({

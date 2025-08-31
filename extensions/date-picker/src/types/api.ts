@@ -1,5 +1,3 @@
-// API response types for the date picker extension
-
 export interface DeliveryDate {
 	date: string;
 	displayName: string;
@@ -10,51 +8,39 @@ export interface ApiResponse {
 	data?: DeliveryDate[];
 	error?: string;
 	message?: string;
+	metadata?: {
+		mockDataEnabled: boolean;
+		cacheHit: boolean;
+		responseTime: number;
+	};
 }
 
 export interface InventoryResponse {
 	success: boolean;
 	inventory?: Record<string, number | null>;
 	error?: string;
-	message?: string;
 }
 
 export interface BulkInventoryResponse {
-	summary?: {
-		successfulShops: number;
-		totalShops: number;
-	};
-	error?: string;
-	message?: string;
+	summary?: { totalShops: number; successfulShops: number };
+	[key: string]: unknown;
 }
 
-// Type guard functions
-export function isApiResponse(data: unknown): data is ApiResponse {
+export function isApiResponse(x: unknown): x is ApiResponse {
+	return !!x && typeof x === "object" && "success" in (x as Record<string, unknown>);
+}
+
+export function isBulkInventoryResponse(x: unknown): x is BulkInventoryResponse {
+	return !!x && typeof x === "object" && "summary" in (x as Record<string, unknown>);
+}
+
+export function isInventoryResponse(x: unknown): x is InventoryResponse {
+	if (!x || typeof x !== "object") return false;
+	const obj = x as Record<string, unknown>;
 	return (
-		typeof data === "object" &&
-		data !== null &&
-		"success" in data &&
-		typeof (data as ApiResponse).success === "boolean"
+		"success" in obj &&
+		(obj.inventory === undefined || typeof obj.inventory === "object")
 	);
 }
 
-export function isInventoryResponse(data: unknown): data is InventoryResponse {
-	return (
-		typeof data === "object" &&
-		data !== null &&
-		"success" in data &&
-		typeof (data as InventoryResponse).success === "boolean" &&
-		(!("inventory" in data) || 
-		 typeof (data as InventoryResponse).inventory === "object")
-	);
-}
 
-export function isBulkInventoryResponse(data: unknown): data is BulkInventoryResponse {
-	return (
-		typeof data === "object" &&
-		data !== null &&
-		(!("summary" in data) || 
-		 (typeof (data as BulkInventoryResponse).summary === "object" &&
-		  (data as BulkInventoryResponse).summary !== null))
-	);
-}

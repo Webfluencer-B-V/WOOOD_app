@@ -276,7 +276,7 @@ async function handleStoreLocator(
 						message: "Store locator updated for all shops",
 						results,
 					}),
-					{ headers: { "Content-Type": "application/json" } },
+					{ headers: { "Content-Type": "application/json", ...corsHeaders } },
 				);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -447,8 +447,6 @@ async function handleExperienceCenter(
 	}
 }
 
-// Legacy /api/webhooks removed: handled by Remix route /shopify/webhooks
-
 async function handleHealth(_request: Request, env: Env): Promise<Response> {
 	const health = {
 		status: "healthy",
@@ -479,9 +477,27 @@ export default {
 			return handleStoreLocator(request, env);
 		if (path.startsWith("/api/experience-center"))
 			return handleExperienceCenter(request, env);
+		// If any other /api/* path slips through, return JSON 404 with CORS to avoid SSR 500s
+		if (path.startsWith("/api/")) {
+			return new Response(JSON.stringify({ error: "Not found" }), {
+				status: 404,
+				headers: { "Content-Type": "application/json", ...corsHeaders },
+			});
+		}
 		// /api/webhooks removed (hard migration). Webhooks are handled by app route.
 		if (path === "/health") return handleHealth(request, env);
-		return requestHandler(request, { cloudflare: { env, ctx } });
+		const res = await requestHandler(request, { cloudflare: { env, ctx } });
+		// Safety net: if somehow an /api/* path was handled by SSR, attach CORS
+		if (path.startsWith("/api/")) {
+			const headers = new Headers(res.headers);
+			for (const [k, v] of Object.entries(corsHeaders)) headers.set(k, v);
+			return new Response(res.body, {
+				status: res.status,
+				statusText: res.statusText,
+				headers,
+			});
+		}
+		return res;
 	},
 
 	async queue(
