@@ -196,8 +196,8 @@ async function handleStoreLocator(
 						results.push({ shop, success: false, error: message });
 					}
 				}
-				if (env.STORE_LOCATOR_STATUS) {
-					await env.STORE_LOCATOR_STATUS.put(
+				if (env.SYNC_STATUS) {
+					await env.SYNC_STATUS.put(
 						"store_locator_last_sync",
 						JSON.stringify({
 							lastSync: new Date().toISOString(),
@@ -265,7 +265,7 @@ async function handleExperienceCenter(
 				for (const shop of shops) {
 					await (
 						env as unknown as {
-							SCHEDULED_QUEUE?: {
+							WEBHOOK_QUEUE?: {
 								send: (m: {
 									type: string;
 									shop?: string;
@@ -273,7 +273,7 @@ async function handleExperienceCenter(
 								}) => Promise<void>;
 							};
 						}
-					).SCHEDULED_QUEUE?.send({
+					).WEBHOOK_QUEUE?.send({
 						type: "experience-center-sync",
 						shop,
 						scheduledAt: new Date().toISOString(),
@@ -289,12 +289,10 @@ async function handleExperienceCenter(
 					timestamp: new Date().toISOString(),
 					error: error instanceof Error ? error.message : String(error),
 				};
-				if (env.EXPERIENCE_CENTER_STATUS) {
-					await env.EXPERIENCE_CENTER_STATUS.put(
-						"experience_center_last_sync",
-						JSON.stringify(err),
-					);
-				}
+				await env.SYNC_STATUS?.put(
+					"experience_center_last_sync",
+					JSON.stringify(err),
+				);
 				return new Response(JSON.stringify(err), {
 					status: 500,
 					headers: { "Content-Type": "application/json" },
@@ -304,8 +302,8 @@ async function handleExperienceCenter(
 		if (action === "status") {
 			try {
 				let statusData: { timestamp?: string } | null = null;
-				if (env.EXPERIENCE_CENTER_STATUS) {
-					const status = await env.EXPERIENCE_CENTER_STATUS.get(
+				{
+					const status = await env.SYNC_STATUS?.get(
 						"experience_center_last_sync",
 					);
 					if (typeof status === "string" && status.length > 0) {
@@ -457,6 +455,9 @@ export default {
 								cron: true,
 							}),
 						);
+						console.log(
+							`✅ Queue complete: experience-center-sync shop=${body.shop} ok=${result.successful} failed=${result.failed} totalProducts=${result.totalProducts}`,
+						);
 						message.ack();
 						break;
 					}
@@ -478,6 +479,9 @@ export default {
 								shop: body.shop,
 								cron: true,
 							}),
+						);
+						console.log(
+							`✅ Queue complete: store-locator-sync shop=${body.shop} dealers=${dealers.length}`,
 						);
 						message.ack();
 						break;
@@ -531,29 +535,9 @@ export default {
 							`omnia_last_sync:${body.shop}`,
 							JSON.stringify(status),
 						);
-
-						// Optionally send email after successful cron sync
-						if (
-							env.EMAIL_PROVIDER === "cloudflare" &&
-							env.OMNIA_EMAIL_RECIPIENTS
-						) {
-							try {
-								const { sendOmniaReportEmail, parseEmailRecipients } =
-									await import("./src/utils/email");
-								const emailConfig = {
-									provider: "cloudflare" as const,
-									from: env.EMAIL_FROM || "noreply@woood.dev",
-									recipients: parseEmailRecipients(env.OMNIA_EMAIL_RECIPIENTS),
-									subjectPrefix: env.EMAIL_SUBJECT_PREFIX || "[WOOOD Cron] ",
-								};
-
-								await sendOmniaReportEmail(status, emailConfig);
-								console.log("📧 Cron email sent successfully");
-							} catch (emailError) {
-								console.warn("Failed to send cron email:", emailError);
-								// Don't fail the job if email fails
-							}
-						}
+						console.log(
+							`✅ Queue complete: omnia-pricing-sync shop=${body.shop} run=${status.runId} ok=${result.successful} failed=${result.failed} matches=${result.totalMatches} valid=${result.validMatches} historyWrites=${result.updatedSamples.length}`,
+						);
 						message.ack();
 						break;
 					}
@@ -593,7 +577,7 @@ export default {
 				if (enabled === "false") continue;
 				await (
 					env as unknown as {
-						SCHEDULED_QUEUE?: {
+						WEBHOOK_QUEUE?: {
 							send: (m: {
 								type: string;
 								shop?: string;
@@ -601,7 +585,7 @@ export default {
 							}) => Promise<void>;
 						};
 					}
-				).SCHEDULED_QUEUE?.send({
+				).WEBHOOK_QUEUE?.send({
 					type: "store-locator-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
@@ -620,7 +604,7 @@ export default {
 				if (enabled === "false") continue;
 				await (
 					env as unknown as {
-						SCHEDULED_QUEUE?: {
+						WEBHOOK_QUEUE?: {
 							send: (m: {
 								type: string;
 								shop?: string;
@@ -628,7 +612,7 @@ export default {
 							}) => Promise<void>;
 						};
 					}
-				).SCHEDULED_QUEUE?.send({
+				).WEBHOOK_QUEUE?.send({
 					type: "experience-center-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
@@ -647,7 +631,7 @@ export default {
 				if (enabled === "false") continue;
 				await (
 					env as unknown as {
-						SCHEDULED_QUEUE?: {
+						WEBHOOK_QUEUE?: {
 							send: (m: {
 								type: string;
 								shop?: string;
@@ -655,7 +639,7 @@ export default {
 							}) => Promise<void>;
 						};
 					}
-				).SCHEDULED_QUEUE?.send({
+				).WEBHOOK_QUEUE?.send({
 					type: "omnia-pricing-sync",
 					shop,
 					scheduledAt: new Date().toISOString(),
@@ -666,7 +650,7 @@ export default {
 		if (event.cron === "0 2 * * *") {
 			await (
 				env as unknown as {
-					SCHEDULED_QUEUE?: {
+					WEBHOOK_QUEUE?: {
 						send: (m: {
 							type: string;
 							shop?: string;
@@ -674,7 +658,7 @@ export default {
 						}) => Promise<void>;
 					};
 				}
-			).SCHEDULED_QUEUE?.send({
+			).WEBHOOK_QUEUE?.send({
 				type: "token-cleanup",
 				scheduledAt: new Date().toISOString(),
 			});
