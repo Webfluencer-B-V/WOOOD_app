@@ -22,14 +22,16 @@ export async function fetchExperienceCenterData(
 		"Content-Type": "application/json",
 		Accept: "application/json",
 		Authorization: `Bearer ${apiKey}`,
+		"User-Agent": "WOOOD-Worker/1.0",
+		"x-api-key": apiKey,
 	};
 
-	// Normalize base URL: strip trailing slashes and any trailing /api
+	// Build endpoint URL without duplicating /api segment if already present
 	const trimmed = baseUrl.replace(/\/+$/, "");
-	const baseWithoutApi = trimmed.endsWith("/api")
-		? trimmed.slice(0, -4)
-		: trimmed;
-	const experienceCenterUrl = `${baseWithoutApi}/api/productAvailability/query?fields=ean&fields=channel&fields=itemcode`;
+	const parsed = new URL(trimmed);
+	const hasApiSegment = /(^|\/)api(\/.|$)/i.test(parsed.pathname);
+	const pathSuffix = "productAvailability/query";
+	const experienceCenterUrl = `${trimmed}${hasApiSegment ? "" : "/api"}/${pathSuffix}?fields=ean&fields=channel&fields=itemcode`;
 	const response = await fetch(experienceCenterUrl, { headers });
 	if (!response.ok) {
 		let extra = "";

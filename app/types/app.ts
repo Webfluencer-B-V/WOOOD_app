@@ -27,8 +27,9 @@ export type QueueMessage = WebhookQueueMessage | ScheduledJobMessage;
 
 export interface WebhookQueue {
   send: (
-    message: WebhookQueueMessage,
-    options?: { contentType?: string },
+    // Use any to be compatible with Cloudflare Queue stubs in tests and runtime
+    message: any,
+    options?: any,
   ) => Promise<void>;
 }
 

@@ -58,7 +58,7 @@
 	"upload_source_maps": true,
 	"vars": {
 		"NODE_VERSION": 22,
-		"SHOPIFY_API_KEY": "1c7701d2e09d4ede7616f35e13d472ef",
+		"SHOPIFY_API_KEY": "10a8926387f7ea9e09395b64b1f798c2",
 		"SHOPIFY_APP_URL": "https://woood.leander-4e0.workers.dev",
 		"SHOPIFY_APP_HANDLE": "woood",
 		"SHOPIFY_APP_LOG_LEVEL": "debug",

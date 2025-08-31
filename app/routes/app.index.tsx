@@ -786,6 +786,10 @@ export async function action({ context, request }: Route.ActionArgs) {
 			}
 
 			case "sync-omnia-pricing": {
+				shopify.utils.log.info("sync-omnia-pricing:start", {
+					shop: shopDomain,
+					feedUrl: context.cloudflare.env.OMNIA_FEED_URL ? "set" : "missing",
+				});
 				const config: OmniaFeedApiConfig = {
 					feedUrl: context.cloudflare.env.OMNIA_FEED_URL || "",
 					userAgent: "WOOOD-Shopify-Integration/1.0",
@@ -827,6 +831,15 @@ export async function action({ context, request }: Route.ActionArgs) {
 					"manual",
 					testLimit ?? undefined,
 				);
+
+				shopify.utils.log.info("sync-omnia-pricing:done", {
+					shop: shopDomain,
+					runId: result.runId,
+					successful: result.successful,
+					failed: result.failed,
+					totalMatches: result.totalMatches,
+					validMatches: result.validMatches,
+				});
 
 				// Store status in KV
 				if (shopDomain) {
@@ -942,24 +955,29 @@ export async function action({ context, request }: Route.ActionArgs) {
 		const message = error instanceof Error ? error.message : String(error);
 
 		// Store error status in KV
-		if (
-			shopDomain &&
-			(actionType === "sync-experience-center" ||
-				actionType === "sync-store-locator")
-		) {
-			const statusKey =
-				actionType === "sync-experience-center"
-					? `ec_last_sync:${shopDomain}`
-					: `sl_last_sync:${shopDomain}`;
-			const kvStore = context.cloudflare.env.SYNC_STATUS;
-
-			const errorStatus = {
-				timestamp: new Date().toISOString(),
-				success: false,
-				error: message,
-				shop: shopDomain,
-			};
-			await kvStore?.put(statusKey, JSON.stringify(errorStatus));
+		if (shopDomain) {
+			let statusKey: string | null = null;
+			switch (actionType) {
+				case "sync-experience-center":
+					statusKey = `ec_last_sync:${shopDomain}`;
+					break;
+				case "sync-store-locator":
+					statusKey = `sl_last_sync:${shopDomain}`;
+					break;
+				case "sync-omnia-pricing":
+					statusKey = `omnia_last_sync:${shopDomain}`;
+					break;
+			}
+			if (statusKey) {
+				const kvStore = context.cloudflare.env.SYNC_STATUS;
+				const errorStatus = {
+					timestamp: new Date().toISOString(),
+					success: false,
+					error: message,
+					shop: shopDomain,
+				};
+				await kvStore?.put(statusKey, JSON.stringify(errorStatus));
+			}
 		}
 
 		return {

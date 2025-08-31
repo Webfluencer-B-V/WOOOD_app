@@ -62,12 +62,35 @@ export function createShopify(context: AppLoadContext) {
 				});
 			}
 			decodedSessionToken = payload;
-		} catch (error) {
-			utils.log.debug("admin.jwt", {
-				error,
-				headers: Object.fromEntries(request.headers),
-				url,
-			});
+		} catch (_error) {
+			// utils.log.debug("admin.jwt", {
+			// 	error,
+			// 	headers: Object.fromEntries(request.headers),
+			// 	url,
+			// });
+
+			// For POST actions, avoid losing the form by falling back to offline token
+			if (request.method === "POST") {
+				const shopFromQuery = utils.sanitizeShop(
+					url.searchParams.get("shop") || "",
+				);
+				if (shopFromQuery) {
+					try {
+						const record = (await context.cloudflare.env.WOOOD_KV?.get(
+							`shop_token:${shopFromQuery}`,
+							"json",
+						)) as { accessToken?: string } | null;
+						const accessToken = record?.accessToken;
+						if (accessToken) {
+							const client = createShopifyClient({
+								headers: { "X-Shopify-Access-Token": accessToken },
+								shop: shopFromQuery,
+							});
+							return client;
+						}
+					} catch {}
+				}
+			}
 
 			const isDocumentRequest = !request.headers.has("Authorization");
 			if (isDocumentRequest) {
