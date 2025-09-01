@@ -292,7 +292,6 @@ function useCartMetadataOptimized(): MetadataResult {
 function useSaveMetadataToAttributes(
 	metadataResult: MetadataResult,
 	shouldSave: boolean = true,
-	fallbackShippingMethod?: string | null,
 ) {
 	const applyAttributeChange = useApplyAttributeChange();
 	const _attributes = useAttributes();
@@ -301,9 +300,8 @@ function useSaveMetadataToAttributes(
 	useEffect(() => {
 		if (!metadataResult.debugInfo.processed || !shouldSave) return;
 
-		// Prefer cart metadata; fall back to selected delivery option
-		const methodString =
-			metadataResult.highestShippingMethod || fallbackShippingMethod || null;
+		// Use only highestShippingMethod from cart metadata
+		const methodString = metadataResult.highestShippingMethod || null;
 
 		// Skip empty/placeholder values to avoid writing "none" or 0
 		if (!methodString || methodString === "none") {
@@ -361,12 +359,7 @@ function useSaveMetadataToAttributes(
 		};
 
 		saveAttributes();
-	}, [
-		metadataResult,
-		applyAttributeChange,
-		shouldSave,
-		fallbackShippingMethod,
-	]);
+	}, [metadataResult, applyAttributeChange, shouldSave]);
 }
 
 function DeliveryDatePicker() {
@@ -451,11 +444,7 @@ function DeliveryDatePicker() {
 	// Save metadata to attributes based on extension mode
 	const shouldSaveShippingData =
 		extensionMode === "Shipping Data Only" || extensionMode === "Full";
-	useSaveMetadataToAttributes(
-		metadataResult,
-		shouldSaveShippingData,
-		selectedShippingMethod,
-	);
+	useSaveMetadataToAttributes(metadataResult, shouldSaveShippingData);
 
 	// Hide extension completely if disabled
 	const _isExtensionDisabledUI = isExtensionDisabled;
@@ -556,7 +545,12 @@ function DeliveryDatePicker() {
 		loading: apiLoading,
 		error: fetchError,
 		refetch,
-	} = useDeliveryDates(apiBaseUrl, false, shop.myshopifyDomain, enableDutchnedFetch);
+	} = useDeliveryDates(
+		apiBaseUrl,
+		false,
+		shop.myshopifyDomain,
+		enableDutchnedFetch,
+	);
 
 	// Determine which dates to use based on delivery type
 	const deliveryDates = useMemo(() => {
