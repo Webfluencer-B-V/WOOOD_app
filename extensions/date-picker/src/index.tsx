@@ -292,6 +292,7 @@ function useCartMetadataOptimized(): MetadataResult {
 function useSaveMetadataToAttributes(
 	metadataResult: MetadataResult,
 	shouldSave: boolean = true,
+	fallbackShippingMethod?: string | null,
 ) {
 	const applyAttributeChange = useApplyAttributeChange();
 	const _attributes = useAttributes();
@@ -300,10 +301,19 @@ function useSaveMetadataToAttributes(
 	useEffect(() => {
 		if (!metadataResult.debugInfo.processed || !shouldSave) return;
 
+		// Prefer cart metadata; fall back to selected delivery option
+		const methodString =
+			metadataResult.highestShippingMethod || fallbackShippingMethod || null;
+
+		// Skip empty/placeholder values to avoid writing "none" or 0
+		if (!methodString || methodString === "none") {
+			return;
+		}
+
 		// Create a unique signature for this metadata to prevent duplicate saves
 		const metadataSignature = JSON.stringify({
 			minDate: metadataResult.debugInfo.latestMinimumDate,
-			shippingMethod: metadataResult.highestShippingMethod,
+			shippingMethod: methodString,
 			erpCount: metadataResult.debugInfo.productsWithErpData,
 		});
 
@@ -317,22 +327,16 @@ function useSaveMetadataToAttributes(
 
 		const saveAttributes = async () => {
 			try {
-				console.log("💾 Saving cart metadata to order attributes...");
+				// console.log("💾 Saving cart metadata to order attributes...");
 
 				const attributes = [
 					{
 						key: "shipping_method",
-						value: metadataResult.highestShippingMethod || "none",
+						value: methodString,
 					},
 					{
 						key: "shipping_method_number",
-						value: metadataResult.highestShippingMethod
-							? String(
-									extractShippingMethodNumber(
-										metadataResult.highestShippingMethod,
-									),
-								)
-							: "0",
+						value: String(extractShippingMethodNumber(methodString)),
 					},
 				];
 
@@ -357,7 +361,12 @@ function useSaveMetadataToAttributes(
 		};
 
 		saveAttributes();
-	}, [metadataResult, applyAttributeChange, shouldSave]);
+	}, [
+		metadataResult,
+		applyAttributeChange,
+		shouldSave,
+		fallbackShippingMethod,
+	]);
 }
 
 function DeliveryDatePicker() {
@@ -442,7 +451,11 @@ function DeliveryDatePicker() {
 	// Save metadata to attributes based on extension mode
 	const shouldSaveShippingData =
 		extensionMode === "Shipping Data Only" || extensionMode === "Full";
-	useSaveMetadataToAttributes(metadataResult, shouldSaveShippingData);
+	useSaveMetadataToAttributes(
+		metadataResult,
+		shouldSaveShippingData,
+		selectedShippingMethod,
+	);
 
 	// Hide extension completely if disabled
 	const _isExtensionDisabledUI = isExtensionDisabled;
@@ -485,9 +498,17 @@ function DeliveryDatePicker() {
 		return "POST";
 	}, [isDutchnedDelivery]);
 
-	console.log(
-		`📋 [Flow Summary] Highest Method: "${highestShippingMethod}", Delivery Type: ${deliveryType}`,
-	);
+	// Log flow summary only when values change to reduce noise
+	const lastFlowRef = useRef<string>("");
+	useEffect(() => {
+		const sig = `${highestShippingMethod}|${deliveryType}`;
+		if (sig !== lastFlowRef.current) {
+			lastFlowRef.current = sig;
+			console.log(
+				`📋 [Flow Summary] Highest Method: "${highestShippingMethod}", Delivery Type: ${deliveryType}`,
+			);
+		}
+	}, [highestShippingMethod, deliveryType]);
 
 	// Generate localized mock delivery dates for POST delivery
 	const generateLocalizedMockDates = useCallback((): DeliveryDate[] => {
@@ -529,12 +550,13 @@ function DeliveryDatePicker() {
 	}, [maxDatesToShow, t]);
 
 	// External API call for delivery dates (only for Dutchned)
+	const enableDutchnedFetch = deliveryType === "DUTCHNED";
 	const {
 		deliveryDates: apiDeliveryDates,
 		loading: apiLoading,
 		error: fetchError,
 		refetch,
-	} = useDeliveryDates(apiBaseUrl, false, shop.myshopifyDomain);
+	} = useDeliveryDates(apiBaseUrl, false, shop.myshopifyDomain, enableDutchnedFetch);
 
 	// Determine which dates to use based on delivery type
 	const deliveryDates = useMemo(() => {
@@ -720,49 +742,7 @@ function DeliveryDatePicker() {
 		return null;
 	}
 
-	// Show ERP delivery message when stock check fails
-	if (stockCheckPassed === false) {
-		// Don't show stock check failures to customers - only in preview mode for debugging
-		if (isCheckoutPreview) {
-			return (
-				<View border="base" cornerRadius="base" padding="base">
-					<BlockStack spacing="base">
-						<Heading level={2}>{t("title")}</Heading>
-						<Banner status="warning">
-							<Text size="small">
-								📦 {t("stock_check_out_of_stock")} (Preview only - hidden from
-								customers)
-							</Text>
-						</Banner>
-					</BlockStack>
-				</View>
-			);
-		}
-		// In actual checkout, don't show anything - let the flow continue
-		return null;
-	}
-
-	// Show loading state for stock check
-	if (stockCheckPassed === null) {
-		// Only show loading in preview mode - customers shouldn't see stock check loading
-		if (isCheckoutPreview) {
-			return (
-				<View border="base" cornerRadius="base" padding="base">
-					<BlockStack spacing="base">
-						<Heading level={2}>{t("title")}</Heading>
-						<Banner status="info">
-							<Text size="small">
-								🔍 {t("stock_check_loading")} (Preview only - hidden from
-								customers)
-							</Text>
-						</Banner>
-					</BlockStack>
-				</View>
-			);
-		}
-		// In actual checkout, don't show loading state
-		return null;
-	}
+	// Remove preview-only stock check UI to reduce re-renders
 
 	// Don't show date picker if minimum delivery date is within configured days
 	if (hidePickerDueToEarlyDelivery) {
