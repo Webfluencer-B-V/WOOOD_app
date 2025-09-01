@@ -317,12 +317,22 @@ function useSaveMetadataToAttributes(
 
 		const saveAttributes = async () => {
 			try {
-				// console.log('💾 Saving cart metadata to order attributes...');
+				console.log("💾 Saving cart metadata to order attributes...");
 
 				const attributes = [
 					{
 						key: "shipping_method",
 						value: metadataResult.highestShippingMethod || "none",
+					},
+					{
+						key: "shipping_method_number",
+						value: metadataResult.highestShippingMethod
+							? String(
+									extractShippingMethodNumber(
+										metadataResult.highestShippingMethod,
+									),
+								)
+							: "0",
 					},
 				];
 
@@ -334,13 +344,15 @@ function useSaveMetadataToAttributes(
 					});
 
 					if (result.type === "error") {
-						// console.warn(`⚠️ Failed to save ${attr.key} to attributes`);
+						console.warn(`⚠️ Failed to save ${attr.key} to attributes`);
+					} else {
+						console.log(`✅ Saved attribute ${attr.key}=${attr.value}`);
 					}
 				}
 
-				// console.log('✅ Saved cart metadata to order attributes');
+				console.log("✅ Saved cart metadata to order attributes");
 			} catch (_err) {
-				// console.error('❌ Error saving cart metadata to attributes:', err);
+				console.error("❌ Error saving cart metadata to attributes:", _err);
 			}
 		};
 
@@ -400,9 +412,9 @@ function DeliveryDatePicker() {
 			? settings.delivery_method_cutoff
 			: 30;
 
-	console.log(
-		`🔧 [Settings] Extension Mode: ${extensionMode}, Cutoff: ${deliveryMethodCutoff}, Preview: ${isCheckoutPreview}`,
-	);
+	// console.log(
+	// 	`🔧 [Settings] Extension Mode: ${extensionMode}, Cutoff: ${deliveryMethodCutoff}, Preview: ${isCheckoutPreview}`,
+	// );
 
 	// Derived settings
 	const isExtensionDisabled = extensionMode === "Disabled";
@@ -444,31 +456,7 @@ function DeliveryDatePicker() {
 		return daysUntilDelivery <= hidePicker;
 	}, [minimumDeliveryDate, hidePicker]);
 
-	// Country allow-listing combined with picker mode (computed above)
-
-	const cartLines = useCartLines();
-	// Inventory check removed
-
-	// Inventory API removed; no external inventory fetch
-
-	// Determine if all products are in stock using fetched inventory
-	const allProductsInStock = useMemo(() => {
-		if (!cartLines || cartLines.length === 0) return true;
-		return true; // Assume in stock without inventory API
-	}, [cartLines]);
-
-	// STEP 1: Stock Check Logic - More lenient to avoid false negatives
-	const stockCheckPassed = useMemo(() => {
-		console.log(
-			`🔍 [Stock Check Passed] enableOnlyShowIfInStock: ${allProductsInStock}`,
-		);
-		return allProductsInStock;
-	}, [allProductsInStock]);
-
-	// STEP 2: Dutch Order Check Logic - REMOVED, now always proceed
-	const _isDutchOrder = true; // Always proceed regardless of country
-
-	// STEP 3: Delivery Method Check Logic
+	// Delivery Method Check Logic
 	const deliveryMethodNumber = useMemo(() => {
 		// Use highestShippingMethod from cart metadata instead of selectedShippingMethod
 		// This is more reliable as it's calculated from product metafields
@@ -493,13 +481,12 @@ function DeliveryDatePicker() {
 
 	// Determine overall delivery type for logging
 	const deliveryType = useMemo(() => {
-		if (stockCheckPassed === false) return "ERP";
 		if (isDutchnedDelivery) return "DUTCHNED";
 		return "POST";
-	}, [stockCheckPassed, isDutchnedDelivery]);
+	}, [isDutchnedDelivery]);
 
 	console.log(
-		`📋 [Flow Summary] Stock: ${stockCheckPassed}, Highest Method: "${highestShippingMethod}", Delivery Type: ${deliveryType}`,
+		`📋 [Flow Summary] Highest Method: "${highestShippingMethod}", Delivery Type: ${deliveryType}`,
 	);
 
 	// Generate localized mock delivery dates for POST delivery
@@ -566,7 +553,6 @@ function DeliveryDatePicker() {
 				`📅 [Date Source] DUTCHNED delivery - Using ${dates.length} API dates from Dutchned`,
 			);
 		} else {
-			// ERP delivery - no dates
 			dates = [];
 			console.log(`📅 [Date Source] ERP delivery - No dates available`);
 		}
@@ -820,7 +806,6 @@ function DeliveryDatePicker() {
 								`${t("dutchned_delivery")} (>= ${deliveryMethodCutoff})`}
 							{deliveryType === "POST" &&
 								`${t("post_delivery")} (< ${deliveryMethodCutoff})`}
-							{deliveryType === "ERP" && t("erp_delivery_info")}
 						</Text>
 					</Banner>
 				)}

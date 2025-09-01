@@ -21,13 +21,13 @@ export default defineConfig(({ mode }) => {
 	} else {
 		try {
 			app = new URL(rawAppUrl);
-		} catch (error) {
+		} catch (_error) {
 			throw new Error(`Invalid SHOPIFY_APP_URL: ${rawAppUrl}`);
 		}
 	}
 
 	return {
-		base: app.href,
+		base: "/",
 		clearScreen: false,
 		plugins: [
 			i18nextLoader(i18nextLoaderOptions),
