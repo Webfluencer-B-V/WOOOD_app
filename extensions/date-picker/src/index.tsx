@@ -841,21 +841,7 @@ function DeliveryDatePicker() {
 						</BlockStack>
 					)}
 
-				{/* Show filtering info when dates are filtered out */}
-				{!loading &&
-					!errorKey &&
-					filteredDates.length === 0 &&
-					deliveryDates.length > 0 &&
-					enableWeekNumberFiltering &&
-					minimumDeliveryDate && (
-						<Banner status="warning">
-							<Text>
-								{t("no_dates_after_minimum_delivery", {
-									date: minimumDeliveryDate.toLocaleDateString("nl-NL"),
-								})}
-							</Text>
-						</Banner>
-					)}
+				{/* Removed banner for no_dates_after_minimum_delivery */}
 
 				{/* Show no dates available */}
 				{!loading && !errorKey && deliveryDates.length === 0 && (
