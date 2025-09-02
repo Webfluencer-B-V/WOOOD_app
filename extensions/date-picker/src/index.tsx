@@ -760,6 +760,18 @@ function DeliveryDatePicker() {
 		}
 	}
 
+	// Hide the date picker entirely if ERP filtering eliminates all dates
+	if (
+		!loading &&
+		!errorKey &&
+		filteredDates.length === 0 &&
+		deliveryDates.length > 0 &&
+		enableWeekNumberFiltering &&
+		minimumDeliveryDate
+	) {
+		return null;
+	}
+
 	return (
 		<View border="base" cornerRadius="base" padding="base">
 			<BlockStack spacing="base">
@@ -841,7 +853,7 @@ function DeliveryDatePicker() {
 						</BlockStack>
 					)}
 
-				{/* Removed banner for no_dates_after_minimum_delivery */}
+				{/* Removed: filtering banner when ERP eliminates all dates */}
 
 				{/* Show no dates available */}
 				{!loading && !errorKey && deliveryDates.length === 0 && (
