@@ -654,6 +654,16 @@ function DeliveryDatePicker() {
 		deliveryType,
 	]);
 
+	// Hide the title when ERP filtering eliminates choices but raw dates existed
+	const hideTitleDueToFiltering = useMemo(() => {
+		return (
+			filteredDates.length === 0 &&
+			deliveryDates.length > 0 &&
+			enableWeekNumberFiltering &&
+			Boolean(minimumDeliveryDate)
+		);
+	}, [filteredDates, deliveryDates.length, enableWeekNumberFiltering, minimumDeliveryDate]);
+
 	// Detect selected shipping method from delivery groups
 	useEffect(() => {
 		if (deliveryGroups && deliveryGroups.length > 0) {
@@ -775,7 +785,7 @@ function DeliveryDatePicker() {
 	return (
 		<View border="base" cornerRadius="base" padding="base">
 			<BlockStack spacing="base">
-				<Heading level={2}>{t("title")}</Heading>
+				{!hideTitleDueToFiltering && <Heading level={2}>{t("title")}</Heading>}
 
 				{/* Show configuration info */}
 				{enableMockMode && isCheckoutPreview && (
