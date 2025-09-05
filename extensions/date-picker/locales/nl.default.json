@@ -45,5 +45,6 @@
 	"month_8": "sep",
 	"month_9": "okt",
 	"month_10": "nov",
-	"month_11": "dec"
+	"month_11": "dec",
+	"select_date_required": "Selecteer een bezorgdatum om verder te gaan."
 }

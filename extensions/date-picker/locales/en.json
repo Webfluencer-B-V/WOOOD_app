@@ -45,5 +45,6 @@
 	"month_8": "Sep",
 	"month_9": "Oct",
 	"month_10": "Nov",
-	"month_11": "Dec"
+	"month_11": "Dec",
+	"select_date_required": "Please select a delivery date to continue."
 }

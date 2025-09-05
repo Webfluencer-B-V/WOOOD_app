@@ -11,6 +11,7 @@ import {
 	useApplyAttributeChange,
 	useAppMetafields,
 	useAttributes,
+	useBuyerJourneyIntercept,
 	useCartLines,
 	useDeliveryGroups,
 	useSettings,
@@ -662,7 +663,38 @@ function DeliveryDatePicker() {
 			enableWeekNumberFiltering &&
 			Boolean(minimumDeliveryDate)
 		);
-	}, [filteredDates, deliveryDates.length, enableWeekNumberFiltering, minimumDeliveryDate]);
+	}, [
+		filteredDates,
+		deliveryDates.length,
+		enableWeekNumberFiltering,
+		minimumDeliveryDate,
+	]);
+
+	// Optionally block checkout progress if dates exist but none selected
+	const requireDateSelection =
+		typeof settings.require_date_selection === "boolean"
+			? settings.require_date_selection
+			: false;
+
+	useBuyerJourneyIntercept(({ canBlockProgress }) => {
+		if (!canBlockProgress) return;
+
+		const datesAvailable =
+			(deliveryType === "DUTCHNED" || deliveryType === "POST") &&
+			filteredDates.length > 0;
+
+		if (requireDateSelection && datesAvailable && !selectedDate) {
+			return {
+				behavior: "block",
+				reason: "delivery-date-required",
+				errors: [
+					{
+						message: t("select_date_required") || "Selecteer een bezorgdatum.",
+					},
+				],
+			};
+		}
+	});
 
 	// Detect selected shipping method from delivery groups
 	useEffect(() => {

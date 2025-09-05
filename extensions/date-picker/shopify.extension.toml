@@ -104,3 +104,10 @@ name = "Preview Mode"
 description = "Show preview-only UI with debug information (for testing in Checkout Editor) - Default: false"
 
 
+[[extensions.settings.fields]]
+key = "require_date_selection"
+type = "boolean"
+name = "Require date selection"
+description = "When dates are available, prevent checkout progress until a date is selected."
+
+
